@@ -10,14 +10,13 @@ class Roster(Qt.QMainWindow, roster.Ui_roster_window):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
-        print(dir(self.action_add_contact))
         self.action_add_contact.triggered.connect(
             self._on_add_contact)
 
     def _on_add_contact(self, checked):
         @asyncio.coroutine
         def test():
-            print((yield from add_contact.add_contact()))
+            print((yield from add_contact.add_contact(self)))
 
         asyncio.async(test())
 

@@ -12,24 +12,32 @@ class JIDValidator(Qt.QValidator):
         try:
             jid = asyncio_xmpp.jid.JID.fromstr(s)
         except ValueError:
-            return (1, )+args  # intermediate
+            return (1, )+args  # invalid
+        else:
+            if not jid.localpart or jid.resource:
+                return (1, )+args  # intermediate
         return (2, )+args  # valid
 
 class DlgAddContact(Qt.QDialog, dlg_add_contact.Ui_dlg_add_contact):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent):
+        super().__init__(parent)
         self.setupUi(self)
         test = Qt.QIntValidator(1, 1000)
         print(test.validate("foo", 1))
         self.contact_jid.setValidator(JIDValidator())
 
+    def accept(self):
+        if self.contact_jid.validator().validate(self.contact_jid.text(), 0)[0] != 2:
+            return
+        return super().accept()
+
 @asyncio.coroutine
-def add_contact():
+def add_contact(parent):
     fut = asyncio.Future()
     def finished(arg):
         fut.set_result(arg)
 
-    dlg = DlgAddContact()
+    dlg = DlgAddContact(parent)
     dlg.finished.connect(finished)
     dlg.show()
     return (yield from fut)
