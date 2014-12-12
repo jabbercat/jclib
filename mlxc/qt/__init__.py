@@ -3,7 +3,7 @@ import functools
 import logging
 import signal
 
-import mlxc.roster
+from . import roster
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,8 @@ def main(loop):
     loop.add_signal_handler(
         signal.SIGTERM,
         functools.partial(handle_sigintterm, loop))
-    roster = mlxc.roster.Roster()
-    roster.show()
+    roster_window = roster.Roster()
+    roster_window.show()
     fut = asyncio.Future()
     yield from fut
 
