@@ -1,6 +1,6 @@
 import asyncio
 
-import PyQt4.Qt as Qt
+from . import Qt
 
 from .ui import roster
 

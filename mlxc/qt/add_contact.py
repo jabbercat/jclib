@@ -2,8 +2,7 @@ import asyncio
 
 import asyncio_xmpp.jid
 
-import PyQt4.Qt as Qt
-
+from . import Qt
 from .ui import dlg_add_contact
 
 class JIDValidator(Qt.QValidator):
