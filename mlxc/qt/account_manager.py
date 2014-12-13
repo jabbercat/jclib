@@ -89,11 +89,11 @@ class QtAccountManager(mlxc.account.AccountManager):
         )
 
 class DlgAccountManager(Qt.QDialog, Ui_dlg_account_manager):
-    def __init__(self, parent=None):
+    def __init__(self, accounts, parent=None):
        super().__init__(parent)
        self.setupUi(self)
        self.setModal(False)
-       self.accounts = QtAccountManager()
+       self.accounts = accounts
        self.account_list.setModel(self.accounts.model)
        self.account_list.setSelectionBehavior(Qt.QTableView.SelectRows);
        self.account_list.setSelectionMode(Qt.QTableView.SingleSelection);

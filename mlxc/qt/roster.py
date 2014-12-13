@@ -7,12 +7,12 @@ from .main import run_async_user_task
 
 from .ui import roster
 
-from . import add_contact, account_manager, presence_state_list_model
+from . import add_contact, account_manager, presence_state_list_model, utils
 
 import mlxc.account
 
 class Roster(Qt.QMainWindow, roster.Ui_roster_window):
-    def __init__(self):
+    def __init__(self, client):
         self.tray_icon = None
         super().__init__()
         self.setupUi(self)
@@ -35,7 +35,9 @@ class Roster(Qt.QMainWindow, roster.Ui_roster_window):
         else:
             self.tray_icon = None
 
-        self.account_manager_dlg = account_manager.DlgAccountManager()
+        self.client = client
+        self.account_manager_dlg = account_manager.DlgAccountManager(
+            self.client.accounts)
 
         self.account_manager_dlg.accounts.new_account(
             "test@sotecware.net/mlxc",
@@ -68,7 +70,13 @@ class Roster(Qt.QMainWindow, roster.Ui_roster_window):
         asyncio.get_event_loop().stop()
 
     def _on_presence_state_changed(self, index):
-        print(index)
+        if not self.client.accounts:
+            return
+        presence = self.presence_state_selector.model().states[index]
+        utils.block_widget_for_coro(
+            self.presence_state_selector,
+            self.client.set_global_presence(*presence[:2])
+        )
 
     def event(self, *args):
         # print(args)
