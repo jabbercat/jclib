@@ -88,6 +88,23 @@ class QtAccountManager(mlxc.account.AccountManager):
             self.model.index(index, 1)
         )
 
+    @asyncio.coroutine
+    def password_provider(self, jid, nattempt):
+        if nattempt == 0:
+            try:
+                return (yield from super().password_provider(jid, nattempt))
+            except KeyError:
+                pass
+        password, ok = Qt.QInputDialog.getText(
+            None,
+            "Password required",
+            "A password is required to log into {!s}".format(jid),
+            mode=Qt.QLineEdit.Password)
+        if not ok:
+            return None
+        return password
+
+
 class DlgAccountManager(Qt.QDialog, Ui_dlg_account_manager):
     def __init__(self, accounts, parent=None):
        super().__init__(parent)
