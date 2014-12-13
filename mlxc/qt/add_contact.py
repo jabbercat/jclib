@@ -1,29 +1,15 @@
 import asyncio
 
-import asyncio_xmpp.jid
-
 from . import Qt
 from .ui import dlg_add_contact
-
-class JIDValidator(Qt.QValidator):
-    def validate(self, *args):
-        s, _ = args
-        try:
-            jid = asyncio_xmpp.jid.JID.fromstr(s)
-        except ValueError:
-            return (Qt.QValidator.Intermediate, )+args
-        else:
-            if not jid.localpart or jid.resource:
-                return (Qt.QValidator.Intermediate, )+args  # intermediate
-        return (Qt.QValidator.Acceptable, )+args  # valid
+from . import validators
 
 class DlgAddContact(Qt.QDialog, dlg_add_contact.Ui_dlg_add_contact):
-    def __init__(self, parent):
+    def __init__(self, parent, accounts):
         super().__init__(parent)
         self.setupUi(self)
-        test = Qt.QIntValidator(1, 1000)
-        print(test.validate("foo", 1))
-        self.contact_jid.setValidator(JIDValidator())
+        self.contact_jid.setValidator(validators.JIDValidator())
+        self.local_account.setModel(accounts)
 
     def accept(self):
         if self.contact_jid.validator().validate(self.contact_jid.text(), 0)[0] != 2:
@@ -31,12 +17,12 @@ class DlgAddContact(Qt.QDialog, dlg_add_contact.Ui_dlg_add_contact):
         return super().accept()
 
 @asyncio.coroutine
-def add_contact(parent):
+def add_contact(parent, accounts):
     fut = asyncio.Future()
     def finished(arg):
         fut.set_result(arg)
 
-    dlg = DlgAddContact(parent)
+    dlg = DlgAddContact(parent, accounts)
     dlg.finished.connect(finished)
     dlg.show()
     return (yield from fut)
