@@ -9,13 +9,16 @@ import keyring  # python3-keyring
 import asyncio_xmpp.node
 import asyncio_xmpp.jid
 
+class AccountState:
+    enabled = False
+
 _AccountInfo = collections.namedtuple(
     "AccountInfo",
     [
         "jid",
-        "name"
+        "name",
+        "state",
     ])
-
 
 _AccountInfo.replace = _AccountInfo._replace
 
@@ -37,6 +40,17 @@ class AccountManager:
         self._loop = asyncio.get_event_loop()
         self._jids = {}
         self._jidlist = []
+        self._on_account_enabled = None
+        self._on_account_disabled = None
+
+    def _account_enabled(self, jid):
+        if self._on_account_enabled:
+            self._on_account_enabled(jid)
+
+    def _account_disabled(self, jid, *, reason=None):
+        if self._on_account_disabled:
+            self._on_account_disabled(jid)
+
 
     def _get_keyring_account_name(self, jid):
         return self.KEYRING_JID_FORMAT.format(
@@ -51,8 +65,11 @@ class AccountManager:
         jid = asyncio_xmpp.jid.JID.fromstr(jid)
         self._require_jid_unique(jid)
 
-        self._jids[jid] = AccountInfo(jid, name)
+        state = AccountState()
+        info = AccountInfo(jid, name, state)
+        self._jids[jid] = info
         self._jidlist.append(jid)
+        return info, jid
 
     def get_info(self, jid):
         return self._jids[jid]
@@ -141,3 +158,13 @@ class AccountManager:
 
     def update_account(self, jid, **kwargs):
         self._jids[jid] = self._jids[jid].replace(**kwargs)
+
+    def set_account_enabled(self, jid, enabled, *, reason=None):
+        state = self.get_info(jid).state
+        if state.enabled == enabled:
+            return
+        state.enabled = enabled
+        if enabled:
+            self._account_enabled(jid)
+        else:
+            self._account_disabled(jid, reason=reason)

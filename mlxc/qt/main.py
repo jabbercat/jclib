@@ -24,6 +24,11 @@ class QtClient(mlxc.client.Client):
         from .account_manager import QtAccountManager
         return QtAccountManager()
 
+    @classmethod
+    def roster_group_factory(cls, label):
+        from .roster import QtRosterGroup
+        return QtRosterGroup(label)
+
 @asyncio.coroutine
 def main(loop):
     loop.add_signal_handler(

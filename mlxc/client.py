@@ -1,10 +1,40 @@
+import abc
 import asyncio
 import logging
+import weakref
 
 import asyncio_xmpp.node
 import asyncio_xmpp.security_layer
+import asyncio_xmpp.presence
+import asyncio_xmpp.plugins.roster
+
+import mlxc.roster_model
+
+from .utils import *
 
 logger = logging.getLogger(__name__)
+
+class AccountState:
+    def __init__(self, account_jid, node, global_roster_root):
+        self.account_jid = account_jid
+        self.global_roster_root = global_roster_root
+        self.node = node
+        self.task = logged_async(node.manage())
+        self.proster = asyncio_xmpp.plugins.roster.Client(
+            self.node)
+        self.proster.callbacks.add_callback(
+            "initial_roster",
+            self._initial_roster)
+
+    def _initial_roster(self, mapping):
+        for item in mapping.values():
+            if item.groups:
+                for group in item.groups:
+                    grp = self.global_roster_root.get_group(group.name)
+                    grp.append_via(self.account_jid, item.jid, item.name)
+            else:
+                self.global_roster_root.append_via(
+                    self.account_jid, item.jid, item.name)
 
 class Client:
     @classmethod
@@ -12,68 +42,60 @@ class Client:
         import mlxc.account
         return mlxc.account.AccountManager()
 
+    def node_factory(self, jid, initial_presence):
+        return asyncio_xmpp.node.PresenceManagedClient(
+            jid,
+            asyncio_xmpp.security_layer.tls_with_password_based_authentication(
+                self.accounts.password_provider,
+                certificate_verifier_factory=asyncio_xmpp.security_layer._NullVerifier),
+            initial_presence)
+
+    def account_factory(self, node):
+        return AccountState(node.client_jid, node, self.roster_root)
+
+    @classmethod
+    def roster_group_factory(cls, label):
+        return mlxc.roster_model.RosterGroup(label)
+
     def __init__(self):
         self.accounts = self.account_manager_factory()
         self.nodes = {}
+        self.roster_root = self.roster_group_factory("")
+        self.accounts._on_account_enabled = self._on_account_enabled
+        self.accounts._on_account_disabled = self._on_account_disabled
+        self._global_presence = asyncio_xmpp.presence.PresenceState()
 
-    @asyncio.coroutine
-    def set_global_presence(self, type_, additional_tag):
-        if type_ == "unavailable":
-            yield from self._go_offline()
-        elif type_ is None:
-            yield from self._go_online()
+    def _on_account_enabled(self, jid):
+        if jid in self.nodes:
+            logger.warning("inconsistent state: %s got enabled, but is already"
+                           " tracked",
+                           jid)
+            return
+        node = self.node_factory(jid, self._global_presence)
+        state = self.account_factory(node)
+        logger.debug("account enabled: %s", jid)
+        self.nodes[jid] = state
 
-    def _auto_node(self, jid):
+    def _on_account_disabled(self, jid):
         try:
-            return self.nodes[jid]
+            state = self.nodes.pop(jid)
         except KeyError:
-            self.nodes[jid] = asyncio_xmpp.node.Client(
-                jid,
-                asyncio_xmpp.security_layer.tls_with_password_based_authentication(
-                    self.accounts.password_provider,
-                    certificate_verifier_factory=asyncio_xmpp.security_layer._NullVerifier)
-            )
-            return self._auto_node(jid)
-
-    def _connection_task_terminated(self, task):
-        try:
-            logger.warning("connection task terminated: %s",
-                        task.result())
-        except asyncio.CancelledError:
-            pass
-        except:
-            logger.exception("connection task terminated:",)
-
-    @asyncio.coroutine
-    def _go_online(self):
-        futuremap = {}
-        for account in self.accounts:
-            node = self._auto_node(account.jid)
-            future = asyncio.async(node.connect())
-            futuremap[future] = node
-
-        if not futuremap:
+            logger.warning("inconsistent state: %s got disabled, but was not"
+                           " tracked",
+                           jid)
             return
-
-        done, pending = yield from asyncio.wait(futuremap.keys())
-        for future in done:
-            try:
-                future.result()
-            except:
-                logger.exception("a connection failed to establish:")
-                continue
-            node = futuremap[future]
-            # send initial presence
-            node.enqueue_stanza(node.make_presence())
-            task = asyncio.async(node.stay_connected())
-            task.add_done_callback(self._connection_task_terminated)
+        if state.task is not None:
+            # this will disconnect
+            state.task.cancel()
+        logger.debug("account disabled: %s", jid)
 
     @asyncio.coroutine
-    def _go_offline(self):
+    def set_global_presence(self, new_presence):
+        logger.debug("setting global presence to: %r", new_presence)
         futures = []
-        for node in self.nodes.values():
-            futures.append(asyncio.async(node.disconnect()))
-        self.nodes.clear()
-        if not futures:
-            return
-        yield from asyncio.wait(futures)
+        for state in self.nodes.values():
+            futures.append(
+                state.node.set_presence(new_presence)
+            )
+        self._global_presence = new_presence
+        yield from asyncio.gather(*futures)

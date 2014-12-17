@@ -1,12 +1,13 @@
 import collections
 
+import asyncio_xmpp.presence
+
 from . import Qt
 
 PresenceState = collections.namedtuple(
     "PresenceState",
     [
-        "typeattr",
-        "additional_tag",
+        "presence",
         "display_name"
     ]
 )
@@ -15,8 +16,10 @@ class PresenceStateListModel(Qt.QAbstractListModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.states = [
-            PresenceState(None, None, "Available"),
-            PresenceState("unavailable", None, "Offline")
+            PresenceState(asyncio_xmpp.presence.PresenceState(True),
+                          "Available"),
+            PresenceState(asyncio_xmpp.presence.PresenceState(False),
+                          "Offline")
         ]
 
     def rowCount(self, parent):
@@ -31,7 +34,7 @@ class PresenceStateListModel(Qt.QAbstractListModel):
             return None
 
         if role == Qt.Qt.DisplayRole:
-            return item[2]
+            return item[1]
         return None
 
     def flags(self, index):
