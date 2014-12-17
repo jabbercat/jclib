@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import logging
 
 import asyncio_xmpp.jid
@@ -6,7 +7,7 @@ import asyncio_xmpp.jid
 from . import Qt
 from .main import run_async_user_task
 
-from .ui import roster
+from .ui import Ui_roster_window, Ui_roster_msg_box, Ui_roster_msg_box_stack
 
 from . import add_contact, account_manager, presence_state_list_model, utils
 
@@ -264,10 +265,133 @@ class QtRosterGroup(mlxc.roster_model.RosterGroup, QtRosterNode):
         # mimedata = event.mimeData()
         # print(" ".join(mimedata.formats()))
 
-class Roster(Qt.QMainWindow, roster.Ui_roster_window):
-    def __init__(self, client):
+class RosterMsgBox(Qt.QWidget, Ui_roster_msg_box):
+    done = Qt.pyqtSignal()
+
+    def __init__(self, text,
+                 account_jid=None,
+                 reconnect_callback=None,
+                 parent=None):
+        super().__init__(parent)
+        self.setupUi(self)
+        self.message.setText(text)
+
+        self.account_jid = account_jid
+
+        any_button_visible = False
+        if account_jid is not None:
+            any_button_visible = True
+            self.btn_modify.setVisible(True)
+            self.btn_modify.clicked.connect(self.done)
+            self.btn_modify.clicked.connect(self._modify_triggered)
+        else:
+            self.btn_modify.setVisible(False)
+
+        if reconnect_callback is not None:
+            any_button_visible = True
+            self.btn_retry.setVisible(True)
+            self.btn_retry.clicked.connect(self.done)
+            self.btn_retry.clicked.connect(reconnect_callback)
+        else:
+            self.btn_retry.setVisible(False)
+
+        if not any_button_visible:
+            self.btnbox.setVisible(False)
+
+    def _modify_triggered(self):
+        print("foo")
+
+class RosterMsgBoxStack(Qt.QWidget, Ui_roster_msg_box_stack):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setupUi(self)
+
+        self._messages = []
+        self._current = None
+
+        self.btn_dismiss.clicked.connect(self._dismiss)
+
+    def _dismiss(self, *args):
+        if self._current is None:
+            self._update_view()
+            return
+        return self._dismiss_message(self._current)
+
+    def _dismiss_message(self, msg):
+        for i, (_, widget) in enumerate(self._messages):
+            if widget is msg:
+                break
+        else:
+            logger.warning("invalid message: %r", msg)
+            return
+
+        del self._messages[i]
+        if msg is self._current:
+            self.frame.layout().removeWidget(self._current)
+        self._update_view()
+
+    def add_message(self, title, *args, **kwargs):
+        msg = RosterMsgBox(*args, parent=self, **kwargs)
+        msg.setVisible(False)
+        msg.done.connect(functools.partial(self._dismiss_message, msg))
+        self._messages.append((title, msg))
+        if len(self._messages) == 1:
+            self._update_view()
+
+    def clear_account_messages(self, account_jid):
+        for _, msg in list(self._messages):
+            if msg.account_jid == account_jid:
+                self._dismiss_message(account_jid)
+
+    def _update_view(self):
+        if not self._messages:
+            self.setVisible(False)
+            return
+        self.setVisible(True)
+        title, widget = self._messages[0]
+        self.message_title.setText(title)
+        if self._current:
+            self.frame.layout().removeWidget(self._current)
+        self.frame.layout().insertWidget(1, widget)
+        self._current = widget
+        self._current.setVisible(True)
+        self.message_counter.setText("({}/{})".format(
+            1, len(self._messages)))
+
+
+class QtClient(mlxc.client.Client):
+    @classmethod
+    def account_manager_factory(cls):
+        from .account_manager import QtAccountManager
+        return QtAccountManager()
+
+    @classmethod
+    def roster_group_factory(cls, label):
+        from .roster import QtRosterGroup
+        return QtRosterGroup(label)
+
+    def __init__(self, roster_dlg):
+        super().__init__()
+        self._roster_dlg = roster_dlg
+
+    def _setup_account_state(self, jid):
+        state = super()._setup_account_state(jid)
+        state.on_error = self._on_account_error
+        return state
+
+    def _on_account_error(self, jid, exc, title, text):
+        self._roster_dlg.roster_msg_box_stack.add_message(
+            str(jid),
+            "{}: {}".format(title, text),
+            account_jid=jid)
+
+
+class Roster(Qt.QMainWindow, Ui_roster_window):
+    def __init__(self):
         self.tray_icon = None
         super().__init__()
+
+        client = QtClient(self)
 
         # XXX: This should be fixed.
         # import PyQt5.QtWidgets
@@ -284,6 +408,11 @@ class Roster(Qt.QMainWindow, roster.Ui_roster_window):
         self.action_account_manager.triggered.connect(
             self._on_account_manager)
 
+        self.roster_msg_box_stack = RosterMsgBoxStack(parent=self)
+        self.verticalLayout.layout().insertWidget(
+            1,
+            self.roster_msg_box_stack)
+
         # set up tray icon
         if Qt.QSystemTrayIcon.isSystemTrayAvailable():
             self.tray_icon = Qt.QSystemTrayIcon()
@@ -299,8 +428,11 @@ class Roster(Qt.QMainWindow, roster.Ui_roster_window):
 
         self.roster_view.setModel(self.client.roster_root.model)
 
+        # info, jid = self.client.accounts.new_account(
+        #     "j.wielicki@sotecware.net/mlxc",
+        #     "Test account")
         info, jid = self.client.accounts.new_account(
-            "j.wielicki@sotecware.net/mlxc",
+            "foo@bar.invalid",
             "Test account")
         self.client.accounts.set_account_enabled(jid, True)
 

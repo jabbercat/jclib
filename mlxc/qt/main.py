@@ -18,17 +18,6 @@ def handle_sigintterm(loop):
     # FIXME: clean shutdown please
     loop.stop()
 
-class QtClient(mlxc.client.Client):
-    @classmethod
-    def account_manager_factory(cls):
-        from .account_manager import QtAccountManager
-        return QtAccountManager()
-
-    @classmethod
-    def roster_group_factory(cls, label):
-        from .roster import QtRosterGroup
-        return QtRosterGroup(label)
-
 @asyncio.coroutine
 def main(loop):
     loop.add_signal_handler(
@@ -38,8 +27,7 @@ def main(loop):
         signal.SIGTERM,
         functools.partial(handle_sigintterm, loop))
     from . import roster
-    client = QtClient()
-    roster_window = roster.Roster(client)
+    roster_window = roster.Roster()
     roster_window.show()
     fut = asyncio.Future()
     # while True:

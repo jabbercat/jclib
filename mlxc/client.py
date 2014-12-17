@@ -15,16 +15,52 @@ from .utils import *
 logger = logging.getLogger(__name__)
 
 class AccountState:
-    def __init__(self, account_jid, node, global_roster_root):
+    def __init__(self, account_jid, node, global_roster_root, on_error=None):
         self.account_jid = account_jid
         self.global_roster_root = global_roster_root
         self.node = node
-        self.task = logged_async(node.manage())
+        self.task = asyncio.async(node.manage())
+        self.task.add_done_callback(self._on_manage_terminated)
         self.proster = asyncio_xmpp.plugins.roster.Client(
             self.node)
         self.proster.callbacks.add_callback(
             "initial_roster",
             self._initial_roster)
+        self.on_error = on_error
+
+    def _on_manage_terminated(self, task):
+        try:
+            task.result()
+        except asyncio_xmpp.errors.AuthenticationFailure as err:
+            self._report_error(
+                err,
+                title="Authentication failed")
+        except asyncio_xmpp.errors.StreamNegotiationFailure as err:
+            self._report_error(
+                err,
+                title="Stream negotiation failed")
+        except OSError as err:
+            self._report_error(
+                err,
+                title="Connection failed")
+        except asyncio.CancelledError:
+            pass
+        except Exception as err:
+            self._report_error(err)
+            return  # don’t restart on unknown error
+        else:
+            logger.error("manage() exited unexpectedly, without error")
+        self.task = asyncio.async(self.node.manage(
+            set_presence=asyncio_xmpp.presence.PresenceState()))
+        self.task.add_done_callback(self._on_manage_terminated)
+
+    def _report_error(self, err, title=None):
+        title = title or type(err).__name__
+        text = str(err)
+        if self.on_error:
+            self.on_error(self.account_jid, err, title, text)
+        else:
+            logger.error("unhandled error from account: %r", err)
 
     def _initial_roster(self, mapping):
         for item in mapping.values():
@@ -65,16 +101,19 @@ class Client:
         self.accounts._on_account_disabled = self._on_account_disabled
         self._global_presence = asyncio_xmpp.presence.PresenceState()
 
+    def _setup_account_state(self, jid):
+        node = self.node_factory(jid, self._global_presence)
+        state = self.account_factory(node)
+        return state
+
     def _on_account_enabled(self, jid):
         if jid in self.nodes:
             logger.warning("inconsistent state: %s got enabled, but is already"
                            " tracked",
                            jid)
             return
-        node = self.node_factory(jid, self._global_presence)
-        state = self.account_factory(node)
         logger.debug("account enabled: %s", jid)
-        self.nodes[jid] = state
+        self.nodes[jid] = self._setup_account_state(jid)
 
     def _on_account_disabled(self, jid):
         try:
