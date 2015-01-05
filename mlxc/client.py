@@ -1,7 +1,11 @@
 import abc
 import asyncio
+import functools
 import logging
+import os.path
 import weakref
+
+import xdg.BaseDirectory
 
 import asyncio_xmpp.node
 import asyncio_xmpp.security_layer
@@ -9,7 +13,9 @@ import asyncio_xmpp.presence
 import asyncio_xmpp.plugins.roster
 
 import mlxc.roster_model
+import mlxc.xdg
 
+from . import utils
 from .utils import *
 
 logger = logging.getLogger(__name__)
@@ -44,12 +50,13 @@ class AccountState:
                 err,
                 title="Connection failed")
         except asyncio.CancelledError:
-            pass
+            logger.error("manage() let CancelledError bubble up")
         except Exception as err:
             self._report_error(err)
             return  # don’t restart on unknown error
         else:
-            logger.error("manage() exited unexpectedly, without error")
+            # don’t restart after shutdown
+            return
         self.task = asyncio.async(self.node.manage(
             set_presence=asyncio_xmpp.presence.PresenceState()))
         self.task.add_done_callback(self._on_manage_terminated)
@@ -67,12 +74,20 @@ class AccountState:
             if item.groups:
                 for group in item.groups:
                     grp = self.global_roster_root.get_group(group.name)
-                    grp.append_via(self.account_jid, item.jid, item.name)
+                    if not grp.has_via(self.account_jid, item.jid):
+                        grp.append_via(self.account_jid, item.jid, item.name)
             else:
-                self.global_roster_root.append_via(
-                    self.account_jid, item.jid, item.name)
+                if not self.global_roster_root.has_via(self.account_jid,
+                                                       item.jid):
+                    self.global_roster_root.append_via(
+                        self.account_jid, item.jid, item.name)
 
 class Client:
+    XML_WRITER_OPTIONS = dict(
+        pretty_print=True,
+        encoding="utf-8"
+    )
+
     @classmethod
     def account_manager_factory(cls):
         import mlxc.account
@@ -128,6 +143,24 @@ class Client:
             state.task.cancel()
         logger.debug("account disabled: %s", jid)
 
+    def _save_config_path(self, name):
+        return os.path.join(
+            xdg.BaseDirectory.save_config_path(*mlxc.xdg.XDG_RESOURCE),
+            name)
+
+    @asyncio.coroutine
+    def _load_config(self, name, parser):
+        exc = None
+        for path in xdg.BaseDirectory.load_config_paths(*mlxc.xdg.XDG_RESOURCE):
+            try:
+                return (yield from parser(os.path.join(path, name)))
+            except OSError as err:
+                if exc is None:
+                    exc = err
+        if exc is not None:
+            raise exc
+        return None
+
     @asyncio.coroutine
     def set_global_presence(self, new_presence):
         logger.debug("setting global presence to: %r", new_presence)
@@ -138,3 +171,71 @@ class Client:
             )
         self._global_presence = new_presence
         yield from asyncio.gather(*futures)
+
+    @asyncio.coroutine
+    def save(self):
+        try:
+            yield from self.save_accounts()
+        except:
+            logger.exception("failed to save accounts")
+        try:
+            yield from self.save_roster()
+        except:
+            logger.exception("failed to save roster")
+
+    @asyncio.coroutine
+    def save_accounts(self):
+        yield from self.accounts.save(
+            self._save_config_path("accounts.xml"),
+            **self.XML_WRITER_OPTIONS
+        )
+
+    @asyncio.coroutine
+    def save_roster(self):
+        tree = self.roster_root.to_etree(None).getroottree()
+        yield from utils.save_etree(
+            self._save_config_path("roster.xml"),
+            tree,
+            **self.XML_WRITER_OPTIONS
+        )
+
+    @asyncio.coroutine
+    def load(self):
+        try:
+            yield from self.load_accounts()
+        except:
+            logger.exception("failed to load accounts")
+        try:
+            yield from self.load_roster()
+        except:
+            logger.exception("failed to load roster")
+
+    @asyncio.coroutine
+    def load_accounts(self):
+        try:
+            tree = yield from self._load_config(
+                "accounts.xml",
+                utils.load_etree)
+        except OSError:
+            tree = None
+        if tree is None:
+            logger.error("failed to load accounts (no or errornous directory"
+                         " structure)")
+            return
+
+        self.accounts.from_etree(tree.getroot())
+
+    @asyncio.coroutine
+    def load_roster(self):
+        try:
+            tree = yield from self._load_config(
+                "roster.xml",
+                utils.load_etree)
+        except OSError:
+            tree = None
+        if tree is None:
+            logger.error("failed to load roster (no or errornous directory"
+                         " structure)")
+            return
+
+        self.roster_root.from_etree_inplace(tree.getroot())

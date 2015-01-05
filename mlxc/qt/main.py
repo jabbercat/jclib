@@ -1,41 +1,109 @@
 import asyncio
 import functools
 import logging
+import os
 import signal
-
-__all__ = [
-    "run_async_user_task",
-    "spawn_main",
-]
+import time
 
 import mlxc.client
+import mlxc.singletonify
+
+from . import roster
+
+from mlxc.utils import *
 
 logger = logging.getLogger(__name__)
 
-def handle_sigintterm(loop):
-    print()
-    print("SIGINT / SIGTERM received")
-    # FIXME: clean shutdown please
-    loop.stop()
+class QuitException(Exception):
+    pass
 
-@asyncio.coroutine
-def main(loop):
-    loop.add_signal_handler(
-        signal.SIGINT,
-        functools.partial(handle_sigintterm, loop))
-    loop.add_signal_handler(
-        signal.SIGTERM,
-        functools.partial(handle_sigintterm, loop))
-    from . import roster
-    roster_window = roster.Roster()
-    roster_window.show()
-    fut = asyncio.Future()
-    # while True:
-    #     yield from asyncio.sleep(1)
-    #     print("tick")
-    #     yield from asyncio.sleep(1)
-    #     print("tock")
-    yield from fut
+class MLXCQt:
+    """
+    This class is a singleton \o/.
+    """
+
+    def __init__(self, loop):
+        MLXCQt.__instance = self
+        self._loop = loop
+        self._loop.add_signal_handler(
+            signal.SIGINT,
+            self.handle_sigint_sigterm)
+        self._loop.add_signal_handler(
+            signal.SIGTERM,
+            self.handle_sigint_sigterm)
+        self._future = asyncio.Future()
+        self._terminated_at = None
+        self.returncode = 0
+        self._task = logged_async(self.main(), loop=loop)
+
+    def quit(self):
+        if self._future.done():
+            return
+        self._future.set_exception(QuitException())
+
+    def handle_sigint_sigterm(self):
+        print()
+        logger.debug("SIGINT / SIGTERM received")
+        if self._terminated_at is not None and time.monotonic() - self._terminated_at > 3:
+            logger.error("SIGTERM received several times, killing myself :(")
+            self._loop.stop()
+            return
+        self.quit()
+        if self._terminated_at is None:
+            self._terminated_at = time.monotonic()
+
+    @asyncio.coroutine
+    def main(self):
+        try:
+            self._singleton = mlxc.singletonify.get_singleton_impl()
+        except RuntimeError:
+            logger.warning("failed to acquire singleton implementation for this platform",
+                           exc_info=True)
+            self._singleton = None
+        else:
+            logger.debug("starting singleton implementation")
+            try:
+                success = yield from self._singleton.start()
+            except:
+                logger.exception("singleton acquiration failed for unknown reason")
+                self._loop.stop()
+                return
+            if not success:
+                logger.error("singleton acquiration failed")
+                print("Another instance of MLXC is running. Terminating.")
+                self._loop.stop()
+
+        try:
+            self._client = roster.QtClient()
+            yield from self._client.load()
+            self._roster = roster.Roster(self._client)
+            self._roster.show()
+            try:
+                yield from self._future
+            except QuitException:
+                pass
+        except Exception:
+            logger.exception("fatal error")
+            if self.returncode is None:
+                self.returncode = 1
+            raise
+        else:
+            yield from self._client.save()
+        finally:
+            logger.debug("stopping singleton implementation")
+            yield from self._singleton.stop()
+            logger.debug("shutting down event loop")
+            self._loop.remove_signal_handler(signal.SIGINT)
+            self._loop.remove_signal_handler(signal.SIGTERM)
+            self._loop.stop()
+
+
+    @classmethod
+    def get_instance(cls):
+        try:
+            return cls.__instance
+        except AttributeError:
+            raise RuntimeError("MLXCQt has not been initialized yet.")
 
 def async_user_task_done(task):
     try:
@@ -49,13 +117,6 @@ def main_done(loop, task):
     except:
         logger.exception("main task failed:")
         loop.stop()
-
-def spawn_main(loop):
-    task = asyncio.async(main(loop),
-                         loop=loop)
-    task.add_done_callback(
-        functools.partial(main_done, loop)
-    )
 
 def run_async_user_task(coro):
     task = asyncio.async(coro)

@@ -1,35 +1,106 @@
 import asyncio
-import functools
-
 import collections
 import contextlib
+import functools
+import logging
 
 import keyring  # python3-keyring
 
 import asyncio_xmpp.node
 import asyncio_xmpp.jid
+import asyncio_xmpp.stringprep
 
-class AccountState:
-    enabled = False
+from . import utils
+from .utils import *
 
-_AccountInfo = collections.namedtuple(
-    "AccountInfo",
+logger = logging.getLogger(__name__)
+
+ACCOUNTS_TAG = "{{{}}}accounts".format(mlxc_namespaces.accounts)
+ACCOUNT_TAG = "{{{}}}account".format(mlxc_namespaces.accounts)
+
+_AccountSettings = collections.namedtuple(
+    "AccountSettings",
     [
         "jid",
-        "name",
-        "state",
+        "resource",
+        "override_host",
+        "override_port",
+        "enabled",
+        "require_encryption"
     ])
-
-_AccountInfo.replace = _AccountInfo._replace
 
 class PasswordStoreIsUnsafe(RuntimeError):
     pass
 
-class AccountInfo(_AccountInfo):
+class AccountSettings(_AccountSettings):
+    def __new__(cls, jid,
+                resource=None,
+                override_host=None,
+                override_port=5222,
+                enabled=False,
+                require_encryption=True):
+        return _AccountSettings.__new__(
+            cls,
+            jid, resource,
+            override_host,
+            override_port,
+            enabled,
+            require_encryption)
+
     def __str__(self):
         if not self.name:
             return str(self.jid)
         return "{} ({})".format(self.name, self.jid)
+
+    def replace(self, **kwargs):
+        resource = kwargs.pop("resource", self.resource) or None
+        if resource:
+            resource = asyncio_xmpp.stringprep.resourceprep(resource)
+        kwargs["resource"] = resource
+        return super()._replace(**kwargs)
+
+    def to_etree(self, parent):
+        el = etree.SubElement(parent, ACCOUNT_TAG)
+        el.set("jid", str(self.jid.replace(resource=self.resource)))
+        el.set("enabled", booltostr(self.enabled))
+        if self.override_host:
+            override_addr = etree.SubElement(el, "{{{}}}override-addr".format(
+                mlxc_namespaces.accounts))
+            override_addr.set("host", self.override_host)
+            override_addr.set("port", str(self.override_port))
+        if self.require_encryption:
+            etree.SubElement(el, "{{{}}}require-encryption".format(
+                mlxc_namespaces.accounts))
+        return el
+
+    @classmethod
+    def from_etree(cls, el, **kwargs):
+        require_encryption = el.find("{{{}}}require-encryption".format(
+            mlxc_namespaces.accounts))
+        override_addr = el.find("{{{}}}override-addr".format(
+            mlxc_namespaces.accounts))
+        if override_addr is not None:
+            override_host = override_addr.get("host")
+            try:
+                override_port = int(override_addr.get("port", "5222"))
+                if not 0 < override_port <= 65535:
+                    override_port = None
+            except ValueError:
+                override_port = None
+                override_host = None
+        else:
+            override_host = None
+            override_port = None
+
+        jid = asyncio_xmpp.jid.JID.fromstr(el.get("jid"))
+
+        return cls(
+            jid=jid.bare,
+            resource=jid.resource,
+            enabled=booltostr(el.get("enabled", "false")),
+            override_host=override_host,
+            override_port=override_port or 5222,
+            require_encryption=bool(require_encryption))
 
 class AccountManager:
     KEYRING_SERVICE_NAME = "net.zombofant.mlxc"
@@ -51,7 +122,6 @@ class AccountManager:
         if self._on_account_disabled:
             self._on_account_disabled(jid)
 
-
     def _get_keyring_account_name(self, jid):
         return self.KEYRING_JID_FORMAT.format(
             bare=jid.bare,
@@ -61,15 +131,24 @@ class AccountManager:
         if jid in self._jids:
             raise ValueError("JID is already in use by a different account")
 
+    def _register_account(self, info):
+        self._require_jid_unique(info.jid)
+        self._jids[info.jid] = info
+        self._jidlist.append(info.jid)
+        return info, info.jid
+
+    @staticmethod
+    def _parse_jid(jid):
+        return asyncio_xmpp.jid.JID.fromstr(jid).bare
+
     def new_account(self, jid, name=None):
         jid = asyncio_xmpp.jid.JID.fromstr(jid)
-        self._require_jid_unique(jid)
+        bare_jid = jid.bare
 
-        state = AccountState()
-        info = AccountInfo(jid, name, state)
-        self._jids[jid] = info
-        self._jidlist.append(jid)
-        return info, jid
+        info = AccountSettings(bare_jid,
+                               resource=jid.resource,
+                               enabled=False)
+        return self._register_account(info)
 
     def get_info(self, jid):
         return self._jids[jid]
@@ -147,6 +226,9 @@ class AccountManager:
         else:
             jids = [self._jidlist[index]]
         for jid in jids:
+            info = self._jids[jid]
+            if info.enabled:
+                self._account_disabled(jid)
             del self._jids[jid]
         del self._jidlist[index]
 
@@ -159,12 +241,53 @@ class AccountManager:
     def update_account(self, jid, **kwargs):
         self._jids[jid] = self._jids[jid].replace(**kwargs)
 
+    def clear(self):
+        del self[:]
+
     def set_account_enabled(self, jid, enabled, *, reason=None):
-        state = self.get_info(jid).state
-        if state.enabled == enabled:
+        info = self.get_info(jid)
+        if info.enabled == enabled:
             return
-        state.enabled = enabled
+        self.update_account(jid, enabled=enabled)
         if enabled:
             self._account_enabled(jid)
         else:
             self._account_disabled(jid, reason=reason)
+
+    @asyncio.coroutine
+    def save(self, dest, *, loop=None, **kwargs):
+        root = etree.Element(
+            ACCOUNTS_TAG,
+            nsmap={None: mlxc_namespaces.accounts})
+        for acc in self._jids.values():
+            acc.to_etree(root)
+        tree = root.getroottree()
+        yield from utils.save_etree(dest, tree, loop=loop, **kwargs)
+
+    def from_etree(self, root):
+        if root.tag != ACCOUNTS_TAG:
+            raise ValueError("root node has invalid tag")
+        self.clear()
+        any_error = False
+        for account_el in root.iterchildren(ACCOUNT_TAG):
+            try:
+                account = AccountSettings.from_etree(account_el)
+            except ValueError:
+                any_error = True
+                logger.warning("failed to load account", exc_info=True)
+                continue
+            self._register_account(account)
+            logger.debug("account loaded: %s", account.jid)
+
+        if any_error:
+            logger.error("not all accounts loaded successfully. see previous"
+                         " warnings for details")
+
+        for jid, info in self._jids.items():
+            if info.enabled:
+                self._account_enabled(jid)
+
+    @asyncio.coroutine
+    def load(self, source, *, loop=None, **kwargs):
+        tree = yield from utils.load_etree(source, loop=loop, **kwargs)
+        self.from_etree(tree.getroot())

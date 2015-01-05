@@ -3,6 +3,8 @@ import asyncio
 import collections
 import weakref
 
+import asyncio_xmpp.jid
+
 from .utils import *
 
 GROUP_TAG = "{{{}}}group".format(mlxc_namespaces.roster)
@@ -38,6 +40,8 @@ class RosterNode(metaclass=abc.ABCMeta):
 
 class RosterContainer(RosterNode):
     def _convert_index_to_slice(self, index):
+        if isinstance(index, slice):
+            return index
         if index < 0:
             if not (-len(self) <= index <= -1):
                 raise IndexError("list index out of range")
@@ -72,11 +76,14 @@ class RosterContainer(RosterNode):
             id(self),
             len(self))
 
+    def clear(self):
+        del self[:]
+
     def index(self, child):
         return self._children.index(child)
 
     def set_account_enabled(self, account_jid, enabled=True):
-        for child in self.children:
+        for child in self._children:
             child.set_account_enabled(account_jid, enabled=enabled)
 
     def _children_to_etree(self, dest):
@@ -98,7 +105,7 @@ class RosterContact(RosterContainer, RosterNode):
     def from_etree(cls, el, **kwargs):
         instance = cls(label=el.get("label"), **kwargs)
         for via_el in el.iterchildren(VIA_TAG):
-            instance._children.append(self._via_from_etree(via_el))
+            instance._children.append(instance._via_from_etree(via_el))
         return instance
 
     @property
@@ -234,7 +241,7 @@ class RosterGroup(RosterContainer, RosterNode):
             if to_metacontact.parent is not self:
                 raise ValueError("Metacontact is not in group")
         else:
-            to_metacontact = self._new_metacontact(label)
+            to_metacontact = self._new_metacontact(None)
         return to_metacontact._new_via(account_jid, peer_jid, label=label)
 
     def get_group(self, label):
@@ -252,23 +259,29 @@ class RosterGroup(RosterContainer, RosterNode):
     @classmethod
     def from_etree(cls, el, **kwargs):
         instance = cls(label=el.get("label"), **kwargs)
+        instance.from_etree_inplace(el, **kwargs)
+        return instance
+
+    def from_etree_inplace(self, el, **kwargs):
+        self.label = el.get("label")
+        self.clear()
         for item in el.iterchildren():
             if item.tag == CONTACT_TAG:
-                child = self._contact_from_etree(el)
+                child = self._contact_from_etree(item)
                 if not child:
                     continue
                 for via in child._children:
                     self._register_via(via)
             elif item.tag == GROUP_TAG:
-                child = self._group_from_etree(el)
+                child = self._group_from_etree(item)
+                self._group_cache[child.label] = child
             else:
                 continue
             self._children.append(child)
-        return instance
 
     def to_etree(self, parent):
         if parent is None:
-            el = etree.Element(GROUP_TAG)
+            el = etree.Element(GROUP_TAG, nsmap={None: mlxc_namespaces.roster})
         else:
             el = etree.SubElement(parent, GROUP_TAG)
         if self.label:
@@ -289,36 +302,3 @@ class RosterGroup(RosterContainer, RosterNode):
             file = sys.stdout
 
         self._dump_tree(obj, 0, file=file)
-
-class RosterModel:
-    def roster_group_factory(self):
-        return RosterGroup()
-
-    def roster_group_from_etree(self, tree):
-        return RosterGroup.from_etree(tree)
-
-    def __init__(self):
-        self._root_group = self.roster_group_factory()
-
-    @asyncio.coroutine
-    def load(source, *, loop=None):
-        loop = loop or asyncio.get_event_loop()
-        # XXX: This might blow up heavily. I remotely recall threading issues
-        # with lxml; these might have been special-cased for wsgi though.
-        tree = yield from loop.run_in_executor(
-            None,
-            functools.partial(lxml.etree.parse, source)
-        )
-        root = tree.getroot()
-        if root.tag != GROUP_TAG:
-            raise ValueError("root node has invalid tag")
-        self._root_group = self.roster_group_from_etree(root)
-
-    @asyncio.coroutine
-    def save(dest, *, loop=None, **kwargs):
-        loop = loop or asyncio.get_event_loop()
-        tree = self._root_group.to_etree(None)
-        yield from loop.run_in_executor(
-            None,
-            functools.partial(lxml.etree.write, tree, **kwargs)
-        )

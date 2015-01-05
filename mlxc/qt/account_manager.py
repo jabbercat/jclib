@@ -1,4 +1,6 @@
 import asyncio
+import functools
+import logging
 
 import keyring
 
@@ -9,6 +11,8 @@ from . import input_jid, utils, password_prompt
 import mlxc.account
 
 from mlxc.utils import *
+
+logger = logging.getLogger(__name__)
 
 class AccountListModel(Qt.QAbstractTableModel):
     def __init__(self, manager, parent=None):
@@ -23,7 +27,7 @@ class AccountListModel(Qt.QAbstractTableModel):
     def columnCount(self, parent):
         if parent.isValid():
             return 0
-        return 2
+        return 1
 
     def data(self, index, role):
         if role == Qt.Qt.DisplayRole:
@@ -32,27 +36,47 @@ class AccountListModel(Qt.QAbstractTableModel):
             except IndexError:
                 return None
             return {
-                0: info.name or str(info.jid),
-                1: str(info.jid),
+                0: str(info.jid),
             }.get(index.column())
         elif role == Qt.Qt.ToolTipRole:
             try:
                 return str(self.manager[index.row()].client_jid)
             except IndexError:
                 return None
+        elif role == Qt.Qt.CheckStateRole:
+            if index.column() == 0:
+                try:
+                    info = self.manager[index.row()]
+                except IndexError:
+                    return None
+                return Qt.Qt.Checked if info.enabled else Qt.Qt.Unchecked
+            return None
         else:
             return None
+
+    def setData(self, index, value, role):
+        if index.column() != 0 or role != Qt.Qt.CheckStateRole:
+            return False
+        try:
+            info = self.manager[index.row()]
+        except IndexError:
+            return False
+
+        self.manager.set_account_enabled(info.jid, bool(value))
+        return True
 
     def headerData(self, section, orientation, role):
         if role != Qt.Qt.DisplayRole:
             return
         return {
-            0: "Account name",
-            1: "JID",
+            0: "JID",
         }.get(section)
 
     def flags(self, index):
-        return Qt.Qt.ItemIsEnabled | Qt.Qt.ItemIsSelectable
+        flags = Qt.Qt.ItemIsEnabled | Qt.Qt.ItemIsSelectable
+        if index.column() == 0:
+            flags |= Qt.Qt.ItemIsUserCheckable
+        return flags
 
 class QtAccountManager(mlxc.account.AccountManager):
     def __init__(self):
@@ -94,9 +118,7 @@ class QtAccountManager(mlxc.account.AccountManager):
     @asyncio.coroutine
     def _save_password(self, jid, password):
         try:
-            print("saving...")
             yield from self.set_stored_password(jid, password)
-            print("ok")
         except mlxc.account.PasswordStoreIsUnsafe:
             dlg = Qt.QMessageBox(
                 Qt.QMessageBox.Warning,
@@ -104,7 +126,6 @@ class QtAccountManager(mlxc.account.AccountManager):
                 "Password could not be stored: No safe password store available")
             yield from utils.async_dialog(dlg)
         except Exception as err:
-            print("showing error")
             dlg = Qt.QMessageBox(
                 Qt.QMessageBox.Warning,
                 "Operation failed",
@@ -120,7 +141,6 @@ class QtAccountManager(mlxc.account.AccountManager):
         else:
             if nattempt == 0:
                 return stored_password
-        # FIXME: that aint no coroutine
         password, ok, save = yield from password_prompt.DlgPasswordPrompt(
             jid,
             password=stored_password,
@@ -129,7 +149,6 @@ class QtAccountManager(mlxc.account.AccountManager):
             return None
         if save:
             # save the password asynchronously
-            print("spawning save coroutine...")
             logged_async(self._save_password(jid, password))
         return password
 
@@ -143,17 +162,15 @@ class DlgAccountManager(Qt.QDialog, Ui_dlg_account_manager):
        self.account_list.setModel(self.accounts.model)
        self.account_list.setSelectionBehavior(Qt.QTableView.SelectRows);
        self.account_list.setSelectionMode(Qt.QTableView.SingleSelection);
-       self.account_list.doubleClicked.connect(utils.asyncify(self._modify))
+       self.account_list.doubleClicked.connect(self._modify)
 
        self.btn_manage_accounts.addAction(self.action_new_account)
        self.btn_manage_accounts.addAction(self.action_delete_account)
 
-       self.acc_name.textChanged.connect(self._modified)
        self.acc_password.textChanged.connect(self._modified)
        self.acc_save_password.toggled.connect(self._modified)
        self.acc_save_password.toggled.connect(self._on_save_password_toggled)
        self.acc_buttons.clicked.connect(self._on_acc_button_clicked)
-       self.acc_buttons.button(self.acc_buttons.Apply).setAutoDefault(False)
        self.acc_buttons.button(self.acc_buttons.Reset).setAutoDefault(False)
 
        self.action_new_account.triggered.connect(self._on_new_account)
@@ -178,7 +195,7 @@ class DlgAccountManager(Qt.QDialog, Ui_dlg_account_manager):
         elif role == Qt.QDialogButtonBox.ResetRole:
             yield from self._reset_current()
         else:
-            print("unhandled role: {}".format(role))
+            logger.debug("unhandled role: %r", role)
 
     def _on_new_account(self, *args):
         input_dlg = input_jid.InputJIDDialog(self)
@@ -202,11 +219,7 @@ class DlgAccountManager(Qt.QDialog, Ui_dlg_account_manager):
         self.acc_password.setEnabled(checked)
 
     @asyncio.coroutine
-    def _modify(self, index):
-        if index.isValid():
-            new_info = self.accounts[index.row()]
-        else:
-            new_info = None
+    def _modify_info(self, new_info):
         if     ((new_info is not None and new_info.jid == self._current_jid) or
                 (new_info is None and self._current_jid is None)):
             return
@@ -222,18 +235,31 @@ class DlgAccountManager(Qt.QDialog, Ui_dlg_account_manager):
             if result == Qt.QMessageBox.Save:
                 yield from self._save_current()
 
+        self.tabs.setCurrentIndex(0)
         if new_info is not None:
             self._current_jid = new_info.jid
-            self._current_account = new_info
         else:
             self._current_jid = None
-            self._current_account = None
         yield from self._reset_current()
+
+    @utils.asyncify
+    @asyncio.coroutine
+    def _modify(self, index):
+        if index.isValid():
+            new_info = self.accounts[index.row()]
+        else:
+            new_info = None
+        yield from self._modify_info(new_info)
+
+    @asyncio.coroutine
+    def modify_jid(self, jid):
+        info = self.accounts[self.accounts.index(jid)]
+        yield from self._modify_info(info)
 
     @asyncio.coroutine
     def _reset_current(self):
-        if self._current_account is not None:
-            self.acc_name.setText(self._current_account.name or "")
+        if self._current_jid is not None:
+            self._current_account = self.accounts.get_info(self._current_jid)
             try:
                 password = yield from utils.block_widget_for_coro(
                     self,
@@ -244,11 +270,21 @@ class DlgAccountManager(Qt.QDialog, Ui_dlg_account_manager):
             except mlxc.account.PasswordStoreIsUnsafe:
                 self.acc_save_password.setChecked(False)
                 self.acc_save_password.setEnabled(False)
+            self.acc_require_encryption.setChecked(self._current_account.require_encryption)
+            self.acc_override_host.setText(
+                self._current_account.override_host or "")
+            self.acc_override_port.setValue(
+                self._current_account.override_port or 5222)
+            self.acc_resource.setText(
+                self._current_account.resource or "")
             self.editor_widget.setEnabled(True)
         else:
-            self.acc_name.setText("")
+            self._current_account = None
             self.acc_password.setText("")
             self.acc_save_password.setChecked(False)
+            self.acc_require_encryption.setChecked(True)
+            self.acc_override_host.setText("")
+            self.acc_override_port.setValue(5222)
             self.editor_widget.setEnabled(False)
         self._modified = False
 
@@ -258,7 +294,11 @@ class DlgAccountManager(Qt.QDialog, Ui_dlg_account_manager):
             return
         self.accounts.update_account(
             self._current_jid,
-            name=self.acc_name.text()
+            override_host=self.acc_override_host.text() or None,
+            override_port=self.acc_override_port.value() or 5222,
+            require_encryption=(self.acc_require_encryption.checkState() ==
+                                Qt.Qt.Checked),
+            resource=self.acc_resource.text() or None
         )
         password = (self.acc_password.text() or None
                     if self.acc_save_password.checkState() == Qt.Qt.Checked
@@ -278,7 +318,7 @@ class DlgAccountManager(Qt.QDialog, Ui_dlg_account_manager):
     @utils.asyncify
     @asyncio.coroutine
     def done(self, r):
-        yield from self._modify(Qt.QModelIndex())
+        yield from self._modify_info(None)
         return super().done(r)
 
     def show(self):

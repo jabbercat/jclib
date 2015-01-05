@@ -5,7 +5,7 @@ import random
 
 from . import Qt
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 try:
     from quamash import inline_async
@@ -69,10 +69,10 @@ def pop_drag(key):
 
 @asyncio.coroutine
 def async_dialog(dlg):
+    logger = logging.getLogger(__name__+".async_dialog")
     fut = asyncio.Future()
     dlg.finished.connect(fut.set_result)
     dlg.show()
-    print("dialog /should/ be visible, waiting ...")
+    logger.debug("async_dialog: dialog /should/ be visible, waiting ...")
     yield from fut
-    print("done")
     dlg.finished.disconnect(fut.set_result)
