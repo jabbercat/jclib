@@ -21,17 +21,13 @@ from .utils import *
 logger = logging.getLogger(__name__)
 
 class AccountState:
-    def __init__(self, account_jid, node, global_roster_root, on_error=None):
+    def __init__(self, account_jid, node, on_error=None):
         self.account_jid = account_jid
-        self.global_roster_root = global_roster_root
         self.node = node
+        self.roster = asyncio_xmpp.plugins.roster.RosterClient(node)
+        self.presence = asyncio_xmpp.plugins.roster.PresenceClient(node)
         self.task = asyncio.async(node.manage())
         self.task.add_done_callback(self._on_manage_terminated)
-        self.proster = asyncio_xmpp.plugins.roster.Client(
-            self.node)
-        self.proster.callbacks.add_callback(
-            "initial_roster",
-            self._initial_roster)
         self.on_error = on_error
 
     def _on_manage_terminated(self, task):
@@ -69,19 +65,6 @@ class AccountState:
         else:
             logger.error("unhandled error from account: %r", err)
 
-    def _initial_roster(self, mapping):
-        for item in mapping.values():
-            if item.groups:
-                for group in item.groups:
-                    grp = self.global_roster_root.get_group(group.name)
-                    if not grp.has_via(self.account_jid, item.jid):
-                        grp.append_via(self.account_jid, item.jid, item.name)
-            else:
-                if not self.global_roster_root.has_via(self.account_jid,
-                                                       item.jid):
-                    self.global_roster_root.append_via(
-                        self.account_jid, item.jid, item.name)
-
 class Client:
     XML_WRITER_OPTIONS = dict(
         pretty_print=True,
@@ -105,13 +88,13 @@ class Client:
         return AccountState(node.client_jid, node, self.roster_root)
 
     @classmethod
-    def roster_group_factory(cls, label):
-        return mlxc.roster_model.RosterGroup(label)
+    def roster_factory(cls):
+        return mlxc.roster_model.Roster()
 
     def __init__(self):
         self.accounts = self.account_manager_factory()
         self.nodes = {}
-        self.roster_root = self.roster_group_factory("")
+        self.roster_root = self.roster_factory()
         self.accounts._on_account_enabled = self._on_account_enabled
         self.accounts._on_account_disabled = self._on_account_disabled
         self._global_presence = asyncio_xmpp.presence.PresenceState()
@@ -119,6 +102,7 @@ class Client:
     def _setup_account_state(self, jid):
         node = self.node_factory(jid, self._global_presence)
         state = self.account_factory(node)
+        self.roster_root.enable_account(state)
         return state
 
     def _on_account_enabled(self, jid):
@@ -141,6 +125,7 @@ class Client:
         if state.task is not None:
             # this will disconnect
             state.task.cancel()
+        self.roster_root.disable_account(state)
         logger.debug("account disabled: %s", jid)
 
     def _save_config_path(self, name):
@@ -192,7 +177,7 @@ class Client:
 
     @asyncio.coroutine
     def save_roster(self):
-        tree = self.roster_root.to_etree(None).getroottree()
+        tree = self.roster_root.save_to_etree(None).getroottree()
         yield from utils.save_etree(
             self._save_config_path("roster.xml"),
             tree,
@@ -238,4 +223,4 @@ class Client:
                          " structure)")
             return
 
-        self.roster_root.from_etree_inplace(tree.getroot())
+        self.roster_root.load_from_etree(tree.getroot())

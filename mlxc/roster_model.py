@@ -3,41 +3,95 @@ import asyncio
 import collections
 import collections.abc
 import contextlib
+import functools
 import logging
 import weakref
+
+from enum import Enum
 
 import asyncio_xmpp.jid
 import asyncio_xmpp.presence
 
+from . import events
+
 from .utils import *
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 GROUP_TAG = "{{{}}}group".format(mlxc_namespaces.roster)
 CONTACT_TAG = "{{{}}}contact".format(mlxc_namespaces.roster)
 VIA_TAG = "{{{}}}via".format(mlxc_namespaces.roster)
 
-class RosterNode(metaclass=abc.ABCMeta):
-    def __init__(self, *,
-                 parent=None,
-                 frontend_view_type=None):
+class RosterAccountEventType(Enum):
+    #: set all presences of this account to unavailable and hide the roster
+    #: entries
+    UNAVAILABLE = 0
+
+    #: re-show the roster entries of the account
+    AVAILABLE = 1
+
+class RosterViaEventType(Enum):
+    PRESENCE_CHANGED = 0
+    LABEL_CHANGED = 1
+
+class RosterAccountEvent(events.Event):
+    def __init__(self, type_, account_jid):
+        super().__init__(RosterAccountEventType(type_))
+        self.account_jid = account_jid
+
+class RosterViaEvent(events.Event):
+    def __init__(self, type_, account_jid, peer_jid):
+        super().__init__(RosterViaEventType(type_))
+        self.account_jid = account_jid
+        self.peer_jid = peer_jid
+
+class RosterViaPresenceChanged(RosterViaEvent):
+    def __init__(self, account_jid, peer_jid, new_presence,
+                 resources={None}):
+        super().__init__(
+            RosterViaEventType.PRESENCE_CHANGED,
+            account_jid, peer_jid)
+        self.new_presence = new_presence
+        self.resources = resources
+
+class RosterViaLabelChanged(RosterViaEvent):
+    def __init__(self, account_jid, peer_jid, new_label):
+        super().__init__(
+            RosterViaEventType.LABEL_CHANGED,
+            account_jid, peer_jid)
+        self.new_label = new_label
+
+class RosterNode(events.EventHandler):
+    def __init__(self, *, root=None, parent=None):
         super().__init__()
+        if parent is not None:
+            if root is not None:
+                if root is not parent.get_root():
+                    raise ValueError("parent root and argument root conflict")
+            root = parent.get_root()
+
+        if root is None:
+            raise ValueError("root must not be None")
+
+        self._root = root
         self._parent = None
-        if frontend_view_type is not None:
-            self._view = frontend_view_type.make_view(self)
-        else:
-            self._view = None
+        self._view = self.get_root().make_view(self)
         self.set_parent(parent)
 
     def _view_notify_prop_changed(self, prop, new_value):
         if self._view:
-            self._view.prop_changed(self, prop, new_value)
+            self._view.prop_changed(prop, new_value)
 
     @property
     def view(self):
         return self._view
 
+    def get_root(self):
+        return self._root
+
     def get_parent(self):
+        if self._parent is None:
+            return self._parent
         return self._parent()
 
     def set_parent(self, value):
@@ -45,7 +99,7 @@ class RosterNode(metaclass=abc.ABCMeta):
         if value is not None and old is not None:
             raise ValueError("Attempt to set parent while another parent is"
                              " set")
-        self._parent = weakref.ref(parent) if parent is not None else None
+        self._parent = weakref.ref(value) if value is not None else None
         if value is not None:
             self._add_to_parent(value)
         elif old is not None:
@@ -86,18 +140,20 @@ class RosterNode(metaclass=abc.ABCMeta):
         elements, the label may also be the identifying token.
         """
 
-    def notify_via_label_changed(self, account_jid, peer_jid, new_label):
-        """
-        Notify this object and all of its possible children about the fact that
-        this or another XMPP resource of the account referred to by
-        *account_jid* has changed the label of the contact at *peer_jid* to
-        *new_label*.
+    @abc.abstractclassmethod
+    def create_from_etree(cls, el, *, root=None, parent=None):
+        pass
 
-        The default implementation does nothing.
-        """
+    @abc.abstractmethod
+    def save_to_etree(self, parent):
+        pass
 
 class RosterNodeView:
-    def prop_changed(self, instance, prop, new_value):
+    def __init__(self, for_object):
+        super().__init__()
+        self._obj = for_object
+
+    def prop_changed(self, prop, new_value):
         """
         Notification that the given property *prop* has changed on *instance*
         and now has a *new_value*.
@@ -122,7 +178,7 @@ class RosterContainerView(RosterNodeView):
         pass
 
 
-class RosterContainer(RosterNode, metaclass=collections.abc.MutableSequence):
+class RosterContainer(RosterNode, collections.abc.MutableSequence):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._children = []
@@ -176,15 +232,16 @@ class RosterContainer(RosterNode, metaclass=collections.abc.MutableSequence):
         normalized integer index of the first object to be inserted and *objs*
         is a sequence of objects which are about to be inserted.
         """
-
-        if self.view:
-            self.view._pre_insert(at, objs)
-
         with contextlib.ExitStack() as stack:
             for obj in objs:
                 self._pre_insert_single(obj)
-                stack.callback(obj._pre_insert_rollback_single)
+                stack.callback(functools.partial(
+                    self._pre_insert_rollback_single,
+                    obj))
             stack.pop_all()
+
+        if self.view:
+            self.view.pre_insert(at, objs)
 
     def _post_insert(self, at, objs):
         """
@@ -193,7 +250,7 @@ class RosterContainer(RosterNode, metaclass=collections.abc.MutableSequence):
         *objs* is a sequence of objects which have been inserted.
         """
         if self.view:
-            self.view._post_insert(at, objs)
+            self.view.post_insert(at, objs)
 
     def _pre_remove_single(self, obj):
         obj.set_parent(None)
@@ -214,15 +271,16 @@ class RosterContainer(RosterNode, metaclass=collections.abc.MutableSequence):
            step is equal to 1.
 
         """
-
-        if self.view:
-            self.view._pre_remove(sl, objs)
-
         with contextlib.ExitStack() as stack:
             for obj in objs:
                 self._pre_remove_single(obj)
-                stack.callback(self._pre_remove_rollback_singlex)
+                stack.callback(functools.partial(
+                    self._pre_remove_rollback_single,
+                    obj))
             stack.pop_all()
+
+        if self.view:
+            self.view.pre_remove(sl, objs)
 
     def _post_remove(self, sl, objs):
         """
@@ -239,7 +297,7 @@ class RosterContainer(RosterNode, metaclass=collections.abc.MutableSequence):
         """
 
         if self.view:
-            self.view._post_remove(sl, objs)
+            self.view.post_remove(sl, objs)
 
     def __contains__(self, obj):
         return obj in self._children
@@ -257,7 +315,7 @@ class RosterContainer(RosterNode, metaclass=collections.abc.MutableSequence):
         return reversed(self._children)
 
     def __setitem__(self, index, src):
-        start, stop, step, src = self.index_to_indices(index, src)
+        start, stop, step, src = self._index_to_indices(index, src)
         if start == stop:
             # insertion of sequence at some point
             # we require src to be iterable mulitple times, thus we copy it into
@@ -273,7 +331,7 @@ class RosterContainer(RosterNode, metaclass=collections.abc.MutableSequence):
             self[start:start] = src
 
     def __delitem__(self, index):
-        start, stop, step, _ = self.index_to_indices(index, None)
+        start, stop, step, _ = self._index_to_indices(index, None)
         objs = self._children[start:stop:step]
         self._pre_remove(index, objs)
         del self._children[start:stop:step]
@@ -303,17 +361,32 @@ class RosterContainer(RosterNode, metaclass=collections.abc.MutableSequence):
     def reverse(self):
         raise NotImplementedError("Reversal is not implemented")
 
-
-    def notify_via_label_changed(self, account_jid, peer_jid, new_label):
+    @events.catchall
+    def forward_event(self, ev):
+        type_ = ev.type_
         for child in self._children:
-            if hasattr(child, "notify_via_label_changed"):
-                child.notify_via_label_changed(account_jid, peer_jid, new_label)
+            if events.accepts_event(child, type_):
+                child.dispatch_event(ev)
 
-    def notify_presence_changed(self, account_jid, peer_jid, new_presence):
+    def _save_children_to_etree(self, dest):
         for child in self._children:
-            if hasattr(child, "notify_presence_changed"):
-                child.notify_presence_changed(account_jid, peer_jid,
-                                              new_presence)
+            child.save_to_etree(dest)
+
+    def _load_children_from_etree(self, src):
+        new_children = []
+        for child in src:
+            if not isinstance(child.tag, str):
+                continue
+            try:
+                cls = lookup_class_by_tag(child.tag)
+            except LookupError:
+                logger.warning("failed to find roster object for %r",
+                               child)
+                continue
+            new_children.append(cls.create_from_etree(
+                child,
+                root=self.get_root()))
+        self.extend(new_children)
 
 class RosterGroup(RosterContainer):
     """
@@ -328,7 +401,7 @@ class RosterGroup(RosterContainer):
 
     def __init__(self, label, **kwargs):
         self._label = label
-        super().__init__()
+        super().__init__(**kwargs)
         self._via_cache = {}
         self._group_cache = {}
 
@@ -402,19 +475,53 @@ class RosterGroup(RosterContainer):
             parent.update_subgroup_registry(old_name)
         self._view_notify_prop_changed(RosterGroup.label, value)
 
-    def notify_via_label_changed(self, account_jid, peer_jid, new_label):
+    @events.handler_for(*RosterViaEventType)
+    def forward_via_events(self, ev):
         try:
-            peer_map = self._via_cache[account_jid]
+            peer_map = self._via_cache[ev.account_jid]
         except KeyError:
             pass
         else:
-            via = peer_map.get(peer_jid, None)
-            if via is not None:
-                via.notify_via_label_changed(account_jid, peer_jid, new_label)
+            try:
+                via = peer_map[ev.peer_jid]
+            except KeyError:
+                pass
+            else:
+                # only dispatch the event through contacts which have an
+                # affected via
+                via.get_parent().dispatch_event(ev)
 
-        for group in self._group_cache.values():
-            group.notify_via_label_changed(account_jid, peer_jid, new_label)
+        for child in self._children:
+            if     (not isinstance(child, RosterContact) and
+                    events.accepts_event(child, ev.type_)):
+                child.dispatch_event(ev)
 
+    @classmethod
+    def create_from_etree(cls, el, **kwargs):
+        instance = cls(label=el.get("label", None), **kwargs)
+        instance._load_children_from_etree(el)
+        return instance
+
+    def load_from_etree(self, el):
+        # this can fail, which is why we put it at the top
+        self.label = el.get("label", None)
+        self.clear()
+        self._load_children_from_etree(el)
+
+    def save_to_etree(self, parent):
+        if parent is None:
+            el = etree.Element(GROUP_TAG, nsmap={
+                None: mlxc_namespaces.roster
+            })
+        else:
+            el = etree.SubElement(parent, GROUP_TAG)
+
+        if self._label:
+            el.set("label", self._label)
+
+        self._save_children_to_etree(el)
+
+        return el
 
 class RosterContact(RosterContainer):
     def __init__(self, label=None, **kwargs):
@@ -423,7 +530,7 @@ class RosterContact(RosterContainer):
 
     def register_via(self, obj):
         parent = self.get_parent()
-        if parent is not None
+        if parent is not None:
             parent.register_via(obj)
 
     def unregister_via(self, obj):
@@ -431,43 +538,123 @@ class RosterContact(RosterContainer):
         if parent:
             parent.unregister_via(obj)
 
-    def add_to_parent(self, parent):
+    def _add_to_parent(self, parent):
         if not isinstance(parent, RosterGroup):
             raise TypeError("parent must be a group")
         for child in self:
             parent.register_via(child)
 
-    def remove_from_parent(self, parent):
+    def _remove_from_parent(self, parent):
         for child in self:
             parent.unregister_via(child)
 
     @property
     def label(self):
-        return self._label
+        if not self._label:
+            if len(self):
+                return self[0].label
+        return self._label or repr(self)
 
     @label.setter
     def label(self, value):
         self._label = value
         self._view_notify_prop_changed(RosterContact.label, value)
 
+    @property
+    def presence(self):
+        if not len(self):
+            logger.warning("contact without vias asked for presence")
+            return asyncio_xmpp.presence.PresenceState()
+        return max(child.presence for child in self._children)
+
+    @property
+    def any_account_available(self):
+        """
+        Return :data:`True` if at least one account used by the vias of this
+        contact is currently available (that is, attached to the roster).
+        """
+        return any(via.account_available for via in self)
+
+    @events.handler_for(RosterViaEventType.PRESENCE_CHANGED)
+    def ev_via_presence_changed(self, ev):
+        old_presence = self.presence
+        super().forward_event(ev)
+        new_presence = self.presence
+        if old_presence != new_presence:
+            self._view_notify_prop_changed(RosterContact.presence,
+                                           new_presence)
+
+    @events.handler_for(RosterViaEventType.LABEL_CHANGED)
+    def ev_via_label_changed(self, ev):
+        super().forward_event(ev)
+        if not self._label and len(self):
+            self._view_notify_prop_changed(RosterContact.label,
+                                           self.label)
+
+    @events.handler_for(*RosterAccountEventType)
+    def ev_account_changed(self, ev):
+        old_value = self.any_account_available
+        super().forward_event(ev)
+        new_value = self.any_account_available
+        if old_value != new_value:
+            self._view_notify_prop_changed(
+                RosterContact.any_account_available,
+                new_value)
+
+    @classmethod
+    def create_from_etree(cls, el, **kwargs):
+        instance = cls(label=el.get("label", None), **kwargs)
+        instance._load_children_from_etree(el)
+        return instance
+
+    def save_to_etree(self, parent):
+        el = etree.SubElement(parent, CONTACT_TAG)
+        if self._label:
+            el.set("label", self._label)
+        self._save_children_to_etree(el)
+        return el
 
 class RosterVia(RosterNode):
     def __init__(self, account_jid, peer_jid,
                  label=None,
                  presence=asyncio_xmpp.presence.PresenceState(),
+                 account_available=False,
                  **kwargs):
         self._account_jid = account_jid
         self._peer_jid = peer_jid
         super().__init__(**kwargs)
         self._label = label
         self._presence = presence
+        self._account_available = bool(account_available)
 
-    def add_to_parent(self, parent):
+    def _set_account_available(self, new_value):
+        new_value = bool(new_value)
+        if new_value == self._account_available:
+            return
+        self._account_available = new_value
+        self._view_notify_prop_changed(RosterVia.account_available,
+                                       new_value)
+
+    def _set_label(self, new_value):
+        if new_value == self._label:
+            return
+        self._label = new_value
+        self._view_notify_prop_changed(RosterVia.label,
+                                       new_value)
+
+    def _set_presence(self, new_value):
+        if new_value == self._presence:
+            return
+        self._presence = new_value
+        self._view_notify_prop_changed(RosterVia.presence,
+                                       new_value)
+
+    def _add_to_parent(self, parent):
         if not isinstance(parent, RosterContact):
             raise TypeError("parent must be a contact")
         parent.register_via(self)
 
-    def remove_from_parent(self, parent):
+    def _remove_from_parent(self, parent):
         parent.unregister_via(self)
 
     @property
@@ -492,13 +679,137 @@ class RosterVia(RosterNode):
     def presence(self):
         return self._presence
 
-    def notify_via_label_changed(self, account_jid, peer_jid, new_label):
-        if    (account_jid == self.account_jid and
-               peer_jid == self.peer_jid):
-            self._label = new_label
-            self._view_notify_prop_changed(RosterVia.label, value)
+    @property
+    def account_available(self):
+        return self._account_available
 
-    def notify_presence_changed(self, account_jid, peer_jid, new_presence):
-        if self._presence != new_presence:
-            self._presence = new_presence
-            self._view_notify_prop_changed(RosterVia.presence, new_presence)
+    @events.handler_for(RosterViaEventType.PRESENCE_CHANGED)
+    def ev_via_presence_changed(self, ev):
+        self._set_presence(ev.new_presence)
+
+    @events.handler_for(RosterViaEventType.LABEL_CHANGED)
+    def ev_via_label_changed(self, ev):
+        self._set_label(ev.new_label)
+
+    @events.handler_for(RosterAccountEventType.AVAILABLE)
+    def ev_account_available(self, ev):
+        if ev.account_jid == self.account_jid:
+            self._set_account_available(True)
+
+    @events.handler_for(RosterAccountEventType.UNAVAILABLE)
+    def ev_account_unavailable(self, ev):
+        if ev.account_jid == self.account_jid:
+            self._set_account_available(False)
+            self._set_presence(asyncio_xmpp.presence.PresenceState())
+
+    @classmethod
+    def create_from_etree(cls, el, **kwargs):
+        account_jid = asyncio_xmpp.jid.JID.fromstr(el.get("account"))
+        peer_jid = asyncio_xmpp.jid.JID.fromstr(el.get("peer"))
+        label = el.get("peer", None)
+        return cls(account_jid, peer_jid, label=label, **kwargs)
+
+    def save_to_etree(self, parent):
+        el = etree.SubElement(parent, VIA_TAG)
+        if self._label:
+            el.set("label", self._label)
+        el.set("account", str(self._account_jid))
+        el.set("peer", str(self._peer_jid))
+
+class Roster(RosterGroup):
+    def __init__(self):
+        # we set root=1 to avoid having a cyclic reference to ourselves
+        # also, we delete the _root attribute later, everything should be using
+        # the property
+        super().__init__(label=None, parent=None, root=1)
+        del self._root
+
+        self._accounts = {}
+
+    def _initial_roster(self, node, roster):
+        logger.debug("unhandled initial roster: %r", roster)
+
+    def _presence_changed(self, node, bare_jid, resources, new_presence):
+        self.dispatch_event(RosterViaPresenceChanged(
+            node.account_jid,
+            bare_jid,
+            new_presence,
+            resources=resources))
+
+    def _session_started(self, node):
+        self.dispatch_event(RosterAccountEvent(
+            RosterAccountEventType.AVAILABLE,
+            node.account_jid))
+
+    def _session_ended(self, node):
+        self.dispatch_event(RosterAccountEvent(
+            RosterAccountEventType.UNAVAILABLE,
+            node.account_jid))
+
+    @abc.abstractmethod
+    def make_view(self, for_object):
+        return None
+
+    def _add_to_parent(self):
+        raise TypeError("cannot attach root to another roster node")
+
+    def _remove_from_parent(self):
+        assert False
+
+    def get_root(self):
+        return self
+
+    def enable_account(self, account):
+        logger.debug("attaching account %s", account.account_jid)
+
+        node_tokens = [
+            account.node.callbacks.add_callback(
+                "session_started",
+                functools.partial(self._session_started, account)
+            ),
+            account.node.callbacks.add_callback(
+                "session_ended",
+                functools.partial(self._session_ended, account)
+            )
+        ]
+
+        # FIXME: inform account_roster about initial roster
+        roster_tokens = [
+            account.roster.callbacks.add_callback(
+                "initial_roster",
+                functools.partial(self._initial_roster, account)
+            )
+        ]
+
+        presence_tokens = [
+            account.presence.callbacks.add_callback(
+                "presence_changed",
+                functools.partial(self._presence_changed, account)
+            )
+        ]
+
+        self._accounts[account] = (node_tokens,
+                                   roster_tokens,
+                                   presence_tokens)
+
+    def disable_account(self, account):
+        logger.debug("detaching account %s", account.account_jid)
+        node_tokens, roster_tokens, presence_tokens = self._accounts.pop(account)
+        for token in roster_tokens:
+            account.roster.callbacks.remove_callback(token)
+        for token in node_tokens:
+            account.node.callbacks.remove_callback(token)
+        for token in presence_tokens:
+            account.presence.callbacks.remove_callback(token)
+        self.dispatch_event(RosterAccountEvent(
+            RosterAccountEventType.UNAVAILABLE,
+            account.account_jid))
+
+roster_node_classes = {
+    CONTACT_TAG: RosterContact,
+    VIA_TAG: RosterVia,
+    GROUP_TAG: RosterGroup
+}
+
+def lookup_class_by_tag(tag):
+    return roster_node_classes[tag]
