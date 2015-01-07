@@ -189,6 +189,17 @@ class Roster(Qt.QMainWindow, Ui_roster_window):
             self.client.accounts)
 
         self.roster_view.setModel(self.client.roster_root.model)
+        self.roster_view.header().setStretchLastSection(False)
+        self.roster_view.header().setSectionResizeMode(
+            0,
+            self.roster_view.header().Stretch)
+        self.roster_view.header().setSectionResizeMode(
+            1,
+            self.roster_view.header().Fixed)
+        self.roster_view.setColumnWidth(
+            1,
+            round(1.5*self.roster_view.fontMetrics().boundingRect("M").width())
+        )
 
         self.presence_state_selector.setModel(
             presence_state_list_model.model)
