@@ -198,6 +198,20 @@ class QtRosterContainerView(QtRosterNodeView,
     def post_remove(self, sl, objs):
         self.model.endRemoveRows()
 
+class QtRosterContactView(QtRosterContainerView):
+    def prop_changed(self, prop, new_value):
+        my_index = self.get_my_index()
+        self.model.dataChanged.emit(
+            my_index,
+            my_index.sibling(my_index.row(), 1)
+        )
+
+    def flags(self):
+        flags = super().flags()
+        if not self._obj.any_account_available:
+            flags &= ~Qt.Qt.ItemIsEnabled
+        return flags
+
 class QtRosterViaView(QtRosterNodeView):
     def prop_changed(self, prop, new_value):
         my_index = self.get_my_index()
@@ -216,6 +230,12 @@ class QtRosterViaView(QtRosterNodeView):
         else:
             return super().data(role, column=column)
 
+    def flags(self):
+        flags = super().flags()
+        if not self._obj.account_available:
+            flags &= ~Qt.Qt.ItemIsEnabled
+        return flags
+
 class QtRoster(mlxc.roster_model.Roster):
     def __init__(self):
         super().__init__()
@@ -224,6 +244,8 @@ class QtRoster(mlxc.roster_model.Roster):
     def make_view(self, for_object):
         if isinstance(for_object, mlxc.roster_model.RosterVia):
             return QtRosterViaView(for_object)
+        elif isinstance(for_object, mlxc.roster_model.RosterContact):
+            return QtRosterContactView(for_object)
         elif isinstance(for_object, mlxc.roster_model.RosterContainer):
             return QtRosterContainerView(for_object)
         elif isinstance(for_object, mlxc.roster_model.RosterNode):
