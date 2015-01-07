@@ -200,12 +200,25 @@ class Roster(Qt.QMainWindow, Ui_roster_window):
             1,
             round(1.5*self.roster_view.fontMetrics().boundingRect("M").width())
         )
+        self.roster_view.setContextMenuPolicy(
+            Qt.Qt.CustomContextMenu)
+        self.roster_view.customContextMenuRequested.connect(
+            self._on_roster_view_context_menu_request)
 
         self.presence_state_selector.setModel(
             presence_state_list_model.model)
         self.presence_state_selector.currentIndexChanged.connect(
             self._on_presence_state_changed)
         self.presence_state_selector.setCurrentIndex(1)
+
+    def _on_roster_view_context_menu_request(self, pos):
+        index = self.roster_view.indexAt(pos)
+        view = self.client.roster_root.model.get_entry_view(index)
+        if view is None:
+            return
+
+        global_pos = self.roster_view.mapToGlobal(pos)
+        view.context_menu(self, global_pos)
 
     @utils.asyncify
     @asyncio.coroutine

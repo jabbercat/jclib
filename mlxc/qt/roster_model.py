@@ -9,19 +9,19 @@ class RosterModel(Qt.QAbstractItemModel):
         super().__init__()
         self._root = root
 
-    def _get_entry(self, index):
+    def get_entry(self, index):
         if index.isValid():
             return index.internalPointer()
         return self._root
 
-    def _get_entry_view(self, index):
-        entry = self._get_entry(index)
+    def get_entry_view(self, index):
+        entry = self.get_entry(index)
         if entry is None:
             return None
         return entry.view
 
     def index(self, row, column, parent):
-        parent = self._get_entry(parent)
+        parent = self.get_entry(parent)
         if not (0 <= row < len(parent)):
             return Qt.QModelIndex()
 
@@ -29,7 +29,7 @@ class RosterModel(Qt.QAbstractItemModel):
         return index
 
     def parent(self, index):
-        entry = self._get_entry(index)
+        entry = self.get_entry(index)
         if entry is None:
             return Qt.QModelIndex()
         return self.index_for_node(entry.get_parent())
@@ -42,19 +42,19 @@ class RosterModel(Qt.QAbstractItemModel):
         return self.createIndex(row, column, node)
 
     def hasChildren(self, index):
-        return self._get_entry_view(index).has_children()
+        return self.get_entry_view(index).has_children()
 
     def flags(self, index):
-        return self._get_entry_view(index).flags()
+        return self.get_entry_view(index).flags()
 
     def columnCount(self, *args):
         return 2
 
     def rowCount(self, index):
-        return self._get_entry_view(index).row_count()
+        return self.get_entry_view(index).row_count()
 
     def data(self, index, role):
-        view = self._get_entry_view(index)
+        view = self.get_entry_view(index)
         if view is None:
             return
         return view.data(role, column=index.column())
@@ -77,7 +77,7 @@ class RosterModel(Qt.QAbstractItemModel):
         if not indexes:
             return
 
-        objects = list(filter(None, map(self._get_entry, indexes)))
+        objects = list(filter(None, map(self.get_entry, indexes)))
 
         data = Qt.QMimeData()
         data.setData(self.DRAG_MIME_TYPE, utils.start_drag(objects))
@@ -114,7 +114,7 @@ class RosterModel(Qt.QAbstractItemModel):
         if not items:
             return True
         node, = items
-        parent_node = self._get_entry(parent)
+        parent_node = self.get_entry(parent)
         if isinstance(parent_node, QtRosterVia):
             return False
 
@@ -171,13 +171,16 @@ class QtRosterNodeView(mlxc.roster_model.RosterNodeView):
     def row_count(self):
         return 0
 
+    def context_menu(self, roster_dlg, pos):
+        pass
+
 class QtRosterContainerView(QtRosterNodeView,
                             mlxc.roster_model.RosterContainerView):
     def flags(self):
         return super().flags() | Qt.Qt.ItemIsDropEnabled
 
     def has_children(self):
-        return True
+        return bool(len(self._obj))
 
     def row_count(self):
         return len(self._obj)
@@ -199,6 +202,40 @@ class QtRosterContainerView(QtRosterNodeView,
         self.model.endRemoveRows()
 
 class QtRosterContactView(QtRosterContainerView):
+    def __init__(self, for_object):
+        super().__init__(for_object)
+        self._expandable = False
+
+    @property
+    def expandable(self):
+        return self._expandable
+
+    @expandable.setter
+    def expandable(self, value):
+        if value == self._expandable:
+            return
+        self._expandable = value
+        if len(self._obj):
+            if value:
+                # fake re-insertion of children
+                self.model.beginInsertRows(
+                    self.get_my_index(),
+                    0, len(self._obj)-1)
+                self.model.endInsertRows()
+            else:
+                self.model.beginRemoveRows(
+                    self.get_my_index(),
+                    0, len(self._obj)-1)
+                self.model.endRemoveRows()
+
+    def has_children(self):
+        return self._expandable and len(self._obj)
+
+    def row_count(self):
+        if not self._expandable:
+            return 0
+        return len(self._obj)
+
     def prop_changed(self, prop, new_value):
         my_index = self.get_my_index()
         self.model.dataChanged.emit(
@@ -211,6 +248,19 @@ class QtRosterContactView(QtRosterContainerView):
         if not self._obj.any_account_available:
             flags &= ~Qt.Qt.ItemIsEnabled
         return flags
+
+    def context_menu(self, roster_dlg, pos):
+        menu = Qt.QMenu()
+        action = menu.addAction("Expandable")
+        action.setCheckable(True)
+        action.setChecked(self.expandable)
+
+        active_action = menu.exec(pos)
+        self.expandable = action.isChecked()
+        if active_action:
+            # FIXME: this is utterly wrong...
+            roster_dlg.roster_view.setExpanded(self.get_my_index(), True)
+
 
 class QtRosterViaView(QtRosterNodeView):
     def prop_changed(self, prop, new_value):
