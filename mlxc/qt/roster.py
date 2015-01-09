@@ -222,10 +222,12 @@ class Roster(Qt.QMainWindow, Ui_roster_window):
         self.account_manager_dlg = account_manager.DlgAccountManager(
             self.client.accounts)
 
-        self.filter_model = SortFilterRosterModel(
-            self.client.roster_root.model)
+        filter_model = SortFilterRosterModel(
+            self.client.roster_root.model,
+            parent=self)
+        filter_model.show_offline_contacts = False
 
-        self.roster_view.setModel(self.filter_model)
+        self.roster_view.setModel(filter_model)
         self.roster_view.setSelectionBehavior(self.roster_view.SelectRows)
         self.roster_view.header().setStretchLastSection(False)
         self.roster_view.header().setSectionResizeMode(
@@ -250,8 +252,7 @@ class Roster(Qt.QMainWindow, Ui_roster_window):
         self.presence_state_selector.setCurrentIndex(1)
 
     def _on_roster_view_context_menu_request(self, pos):
-        index = self.filter_model.mapToSource(
-            self.roster_view.indexAt(pos))
+        index = self.roster_view.indexAt(pos)
         view = self.client.roster_root.model.get_entry_view(index)
         if view is None:
             return
