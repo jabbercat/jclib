@@ -41,11 +41,12 @@ class AccountSettings(_AccountSettings):
                 require_encryption=True):
         return _AccountSettings.__new__(
             cls,
-            jid, resource,
-            override_host,
-            override_port,
-            enabled,
-            require_encryption)
+            jid=jid,
+            resource=resource,
+            override_host=override_host,
+            override_port=override_port,
+            enabled=enabled,
+            require_encryption=require_encryption)
 
     def __str__(self):
         if not self.name:
