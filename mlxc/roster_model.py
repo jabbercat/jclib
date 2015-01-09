@@ -460,6 +460,12 @@ class RosterGroup(RosterContainer):
     def _remove_from_parent(self, parent):
         parent.unregister_subgroup(self)
 
+    def get_subgroup(self, label):
+        return self._group_cache[label]
+
+    def get_via(self, account_jid, peer_jid):
+        return self._via_cache[account_jid][peer_jid]
+
     @property
     def label(self):
         return self._label
@@ -617,36 +623,19 @@ class RosterContact(RosterContainer):
 class RosterVia(RosterNode):
     def __init__(self, account_jid, peer_jid,
                  label=None,
-                 presence=asyncio_xmpp.presence.PresenceState(),
                  account_available=False,
                  **kwargs):
         self._account_jid = account_jid
         self._peer_jid = peer_jid
         super().__init__(**kwargs)
         self._label = label
-        self._presence = presence
         self._account_available = bool(account_available)
-
-    def _set_account_available(self, new_value):
-        new_value = bool(new_value)
-        if new_value == self._account_available:
-            return
-        self._account_available = new_value
-        self._view_notify_prop_changed(RosterVia.account_available,
-                                       new_value)
 
     def _set_label(self, new_value):
         if new_value == self._label:
             return
         self._label = new_value
         self._view_notify_prop_changed(RosterVia.label,
-                                       new_value)
-
-    def _set_presence(self, new_value):
-        if new_value == self._presence:
-            return
-        self._presence = new_value
-        self._view_notify_prop_changed(RosterVia.presence,
                                        new_value)
 
     def _add_to_parent(self, parent):
@@ -677,15 +666,31 @@ class RosterVia(RosterNode):
 
     @property
     def presence(self):
-        return self._presence
+        presence_map = self.get_all_presence()
+        if not presence_map:
+            return asyncio_xmpp.presence.PresenceState()
+        return max(presence_map.values())
+
+    def get_all_presence(self):
+        return self.get_root().get_all_presence(
+            self.account_jid, self.peer_jid)
 
     @property
     def account_available(self):
         return self._account_available
 
+    @account_available.setter
+    def account_available(self, new_value):
+        new_value = bool(new_value)
+        if new_value == self._account_available:
+            return
+        self._account_available = new_value
+        self._view_notify_prop_changed(RosterVia.account_available,
+                                       new_value)
+
     @events.handler_for(RosterViaEventType.PRESENCE_CHANGED)
     def ev_via_presence_changed(self, ev):
-        self._set_presence(ev.new_presence)
+        pass
 
     @events.handler_for(RosterViaEventType.LABEL_CHANGED)
     def ev_via_label_changed(self, ev):
@@ -694,13 +699,12 @@ class RosterVia(RosterNode):
     @events.handler_for(RosterAccountEventType.AVAILABLE)
     def ev_account_available(self, ev):
         if ev.account_jid == self.account_jid:
-            self._set_account_available(True)
+            self.account_available = True
 
     @events.handler_for(RosterAccountEventType.UNAVAILABLE)
     def ev_account_unavailable(self, ev):
         if ev.account_jid == self.account_jid:
-            self._set_account_available(False)
-            self._set_presence(asyncio_xmpp.presence.PresenceState())
+            self.account_available = False
 
     @classmethod
     def create_from_etree(cls, el, **kwargs):
@@ -726,8 +730,53 @@ class Roster(RosterGroup):
 
         self._accounts = {}
 
+    def _update_from_initial_roster_in_group(self, account_jid, group, item):
+        peer_jid = item.jid.bare
+
+        if not group:
+            dest = self
+        else:
+            try:
+                dest = self.get_subgroup(group)
+            except KeyError:
+                dest = RosterGroup(group, root=self)
+                self.append(dest)
+        try:
+            via = dest.get_via(account_jid, peer_jid)
+        except KeyError:
+            via = RosterVia(account_jid,
+                            peer_jid,
+                            label=item.name,
+                            root=self,
+                            account_available=True)
+            contact = RosterContact(root=self)
+            contact.append(via)
+            dest.append(contact)
+        else:
+            via.get_parent().dispatch_event(
+                RosterViaLabelChanged(
+                    account_jid,
+                    peer_jid,
+                    item.name))
+            via.account_available = True
+
     def _initial_roster(self, node, roster):
-        logger.debug("unhandled initial roster: %r", roster)
+        for info in roster.values():
+            if any(info.groups):
+                # item is in any groups
+                for group in info.groups:
+                    self._update_from_initial_roster_in_group(
+                        node.account_jid,
+                        group,
+                        info)
+            else:
+                # otherwise, add to root group
+                self._update_from_initial_roster_in_group(
+                    node.account_jid,
+                    None,
+                    info)
+            # FIXME: remove peer from any obsolete groups
+        node.presence.dump_state()
 
     def _presence_changed(self, node, bare_jid, resources, new_presence):
         self.dispatch_event(RosterViaPresenceChanged(
@@ -759,6 +808,21 @@ class Roster(RosterGroup):
     def get_root(self):
         return self
 
+    def get_all_presence(self, account_jid, peer_jid):
+        try:
+            account, *_ = self._accounts[account_jid]
+        except KeyError:
+            return {}
+
+        return account.presence.get_all_presence(peer_jid)
+
+    def get_roster_item(self, account_jid, peer_jid):
+        try:
+            account, *_ = self._accounts[account_jid]
+            return account.roster.get_roster_item(peer_jid)
+        except KeyError:
+            return None
+
     def enable_account(self, account):
         logger.debug("attaching account %s", account.account_jid)
 
@@ -788,13 +852,16 @@ class Roster(RosterGroup):
             )
         ]
 
-        self._accounts[account] = (node_tokens,
-                                   roster_tokens,
-                                   presence_tokens)
+        self._accounts[account.account_jid] = (
+            account,
+            node_tokens,
+            roster_tokens,
+            presence_tokens)
 
     def disable_account(self, account):
         logger.debug("detaching account %s", account.account_jid)
-        node_tokens, roster_tokens, presence_tokens = self._accounts.pop(account)
+        account, node_tokens, roster_tokens, presence_tokens = self._accounts.pop(
+            account.account_jid)
         for token in roster_tokens:
             account.roster.callbacks.remove_callback(token)
         for token in node_tokens:
