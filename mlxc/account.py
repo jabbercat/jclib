@@ -99,7 +99,7 @@ class AccountSettings(_AccountSettings):
         return cls(
             jid=jid.bare,
             resource=jid.resource,
-            enabled=booltostr(el.get("enabled", "false")),
+            enabled=strtobool(el.get("enabled", "false")),
             override_host=override_host,
             override_port=override_port or 5222,
             require_encryption=bool(require_encryption))
@@ -279,7 +279,9 @@ class AccountManager:
                 logger.warning("failed to load account", exc_info=True)
                 continue
             self._register_account(account)
-            logger.debug("account loaded: %s", account.jid)
+            logger.debug("account loaded: %s, enabled=%s",
+                         account.jid,
+                         account.enabled)
 
         if any_error:
             logger.error("not all accounts loaded successfully. see previous"
