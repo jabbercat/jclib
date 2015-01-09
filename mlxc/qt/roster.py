@@ -423,6 +423,7 @@ class Roster(Qt.QMainWindow, Ui_roster_window):
             self.client.accounts)
 
         self.roster_view.setModel(self.client.roster_root.model)
+        self.roster_view.setSelectionBehavior(self.roster_view.SelectRows)
 
         self.presence_state_selector.setModel(
             presence_state_list_model.model)
