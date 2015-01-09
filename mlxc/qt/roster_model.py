@@ -235,6 +235,12 @@ class QtRosterContactView(QtRosterContainerView):
                 if available:
                     return "A"
                 return "N"
+        elif role == Qt.Qt.ToolTipRole:
+            tooltip = "<hr />".join(
+                child.view.data(
+                    role, tooltip_account_notice=False)
+                for child in self._obj)
+            return tooltip
         else:
             return super().data(role, column=column)
 
@@ -280,13 +286,53 @@ class QtRosterViaView(QtRosterNodeView):
             my_index.sibling(my_index.row(), 1)
         )
 
-    def data(self, role, column=0):
+    def data(self, role, column=0,
+             tooltip_account_notice=True):
         if column == 1:
             if role == Qt.Qt.DisplayRole:
                 available = self._obj.presence.available
                 if available:
                     return "A"
                 return "N"
+        elif role == Qt.Qt.ToolTipRole:
+            root = self._obj.get_root()
+
+            title_str = "<h2>{}</h2>".format(self._obj.peer_jid)
+            account_str = "<b>Account: </b>{}".format(self._obj.account_jid)
+
+            if not self._obj.account_available:
+                # no point in showing additional information here
+                msg = "{}<div>{}</div>".format(
+                    title_str,
+                    account_str)
+                if tooltip_account_notice:
+                    info_str = ("<i>Note: </i>The above account is"
+                                " disconnected. Full information on the contact"
+                                " is not available.")
+                    msg += "<div>{}</div>".format(info_str)
+                return msg
+
+            presence_str = "</div><div>".join(
+                "<b>Status ({}): </b>{}".format(
+                    resource, state)
+                for resource, state in self._obj.get_all_presence()
+            )
+            if not presence_str:
+                presence_str = "<b>Status: </b>Not available"
+            roster_item = root.get_roster_item(self._obj.account_jid,
+                                               self._obj.peer_jid)
+            if not roster_item:
+                subscription = "none"
+            else:
+                subscription = roster_item.subscription
+            subscription_str = "<b>Subscription: </b>{}".format(
+                subscription)
+
+            return "{}<div>{}</div><div>{}</div></ul><div>{}</div>".format(
+                title_str,
+                account_str,
+                presence_str,
+                subscription_str)
         else:
             return super().data(role, column=column)
 
