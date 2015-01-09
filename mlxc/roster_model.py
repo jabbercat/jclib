@@ -99,11 +99,18 @@ class RosterNode(events.EventHandler):
         if value is not None and old is not None:
             raise ValueError("Attempt to set parent while another parent is"
                              " set")
-        self._parent = weakref.ref(value) if value is not None else None
-        if value is not None:
-            self._add_to_parent(value)
-        elif old is not None:
-            self._remove_from_parent(old)
+
+        def unset_parent():
+            self._parent = None
+
+        with contextlib.ExitStack() as stack:
+            self._parent = weakref.ref(value) if value is not None else None
+            stack.callback(unset_parent)
+            if value is not None:
+                self._add_to_parent(value)
+            elif old is not None:
+                self._remove_from_parent(old)
+            stack.pop_all()
 
     def _add_to_parent(self, new_parent):
         """
