@@ -2,6 +2,8 @@ import mlxc.roster_model
 
 from . import Qt, utils
 
+import mlxc.utils
+
 class RosterModel(Qt.QAbstractItemModel):
     DRAG_MIME_TYPE = "application/x-mlxcsigneddragkey"
 
@@ -314,8 +316,8 @@ class QtRosterViaView(QtRosterNodeView):
 
             presence_str = "</div><div>".join(
                 "<b>Status ({}): </b>{}".format(
-                    resource, state)
-                for resource, state in self._obj.get_all_presence()
+                    resource, mlxc.utils.presencetostr(state))
+                for resource, state in self._obj.get_all_presence().items()
             )
             if not presence_str:
                 presence_str = "<b>Status: </b>Not available"

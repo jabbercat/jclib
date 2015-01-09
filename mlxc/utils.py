@@ -39,6 +39,16 @@ def strtobool(s):
 def booltostr(b):
     return str(b)
 
+def presencetostr(p):
+    if p.available:
+        if not p.show:
+            # TRANSLATEME
+            return "Available"
+        # TRANSLATEME
+        return "Available ({})".format(p.show)
+    else:
+        return "Not available"
+
 @asyncio.coroutine
 def save_etree(dest, tree, *, loop=None, **kwargs):
     loop = loop or asyncio.get_event_loop()
