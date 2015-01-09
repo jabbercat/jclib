@@ -1,3 +1,7 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 import mlxc.roster_model
 
 from . import Qt, utils
@@ -81,13 +85,17 @@ class RosterModel(Qt.QAbstractItemModel):
         if not indexes:
             return
 
-        objects = list(filter(None, map(self.get_entry, indexes)))
+        # we have to deduplicate, as columns may be involved :)
+        objects = list(set(filter(None, map(self.get_entry, indexes))))
 
         data = Qt.QMimeData()
         data.setData(self.DRAG_MIME_TYPE, utils.start_drag(objects))
         return data
 
     def canDropMimeData(self, data, action, row, column, parent):
+        print("can drop mime data? FIXME this is short-circuited!")
+        return True
+
         print(data, action, row, column, parent)
         if not data.hasData(self.DRAG_MIME_TYPE):
             print("no mime")
@@ -118,28 +126,36 @@ class RosterModel(Qt.QAbstractItemModel):
         if not items:
             return True
         node, = items
-        parent_node = self.get_entry(parent)
-        if isinstance(parent_node, QtRosterVia):
+        new_parent = self.get_entry(parent)
+        old_parent = node.get_parent()
+
+        if old_parent is None:
+            print("old parent is None")
             return False
 
-        if isinstance(node, QtRosterVia):
-            if parent_node.has_via(node.account_jid, node.peer_jid):
-                Qt.QMessageBox.warning(
-                    None,
-                    "Invalid operation",
-                    "The contact is already in this group").show()
-                return False
-            if isinstance(parent_node, QtRosterContact):
-                target_was_meta = True
-                metacontact = parent_node
-                parent_node = metacontact.parent
-            else:
-                target_was_meta = False
-                metacontact = None
-            raise NotImplementedError()
-        raise NotImplementedError()
+        if not isinstance(new_parent, mlxc.roster_model.RosterContainer):
+            print("new parent is not a container")
+            # not a container, we cannot do anything sensible
+            return False
 
-        return False
+        if not node.can_move_to_parent(new_parent):
+            print("move is predicted to fail")
+            return False
+
+        i = old_parent.index(node)
+        del old_parent[i]
+        try:
+            new_parent.append(node)
+        except:
+            old_parent.insert(i, node)
+            logger.exception("failed to drop node: ")
+            return False
+        else:
+            node.get_root().dispatch_event(
+                mlxc.roster_model.GenericRosterEvent(
+                    mlxc.roster_model.GenericRosterEventType)
+            )
+            return True
 
     def supportedDropActions(self):
         return Qt.Qt.MoveAction
@@ -200,7 +216,7 @@ class QtRosterContainerView(QtRosterNodeView,
     def pre_remove(self, sl, objs):
         self.model.beginRemoveRows(self.get_my_index(),
                                    sl.start,
-                                   sl.end)
+                                   sl.stop)
 
     def post_remove(self, sl, objs):
         self.model.endRemoveRows()

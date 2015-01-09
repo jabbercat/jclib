@@ -34,6 +34,16 @@ class RosterViaEventType(Enum):
     PRESENCE_CHANGED = 0
     LABEL_CHANGED = 1
 
+class GenericRosterEventType(Enum):
+    #: modifications of the tree happened which were triggered by the
+    #: user. these may cause semi-invalid configurations, such as empty
+    #: contacts. these should be cleaned up during the processing of this
+    #: event.
+    CLEANUP = 0
+
+class GenericRosterEvent(events.Event):
+    pass
+
 class RosterAccountEvent(events.Event):
     def __init__(self, type_, account_jid):
         super().__init__(RosterAccountEventType(type_))
@@ -155,6 +165,21 @@ class RosterNode(events.EventHandler):
     def save_to_etree(self, parent):
         pass
 
+    def can_move_to_parent(self, potential_parent):
+        """
+        Check whether this node can be moved to the given
+        *potential_parent*.
+
+        The default implementation always returns :data:`True`.
+
+        .. note::
+
+           Any user of this function must be prepared for false-positives and
+           thus failures when actually adding this node to the new parent.
+
+        """
+        return True
+
 class RosterNodeView:
     def __init__(self, for_object):
         super().__init__()
@@ -229,6 +254,7 @@ class RosterContainer(RosterNode, collections.abc.MutableSequence):
 
     def _pre_insert_single(self, obj):
         obj.set_parent(self)
+        return obj
 
     def _pre_insert_rollback_single(self, obj):
         self._pre_remove_single(obj)
@@ -238,10 +264,15 @@ class RosterContainer(RosterNode, collections.abc.MutableSequence):
         Called before new items are inserted into the backing list. *at* is the
         normalized integer index of the first object to be inserted and *objs*
         is a sequence of objects which are about to be inserted.
+
+        Note that :meth:`_pre_insert` is explicitly allowed to *replace* any
+        object in *objs* with another **valid** object. Changing the length of
+        *objs* is not allowed.
         """
         with contextlib.ExitStack() as stack:
-            for obj in objs:
-                self._pre_insert_single(obj)
+            for i, obj in enumerate(objs):
+                obj = self._pre_insert_single(obj)
+                objs[i] = obj
                 stack.callback(functools.partial(
                     self._pre_insert_rollback_single,
                     obj))
@@ -339,9 +370,10 @@ class RosterContainer(RosterNode, collections.abc.MutableSequence):
 
     def __delitem__(self, index):
         start, stop, step, _ = self._index_to_indices(index, None)
-        objs = self._children[start:stop:step]
+        index = slice(start, stop, step)
+        objs = self._children[index]
         self._pre_remove(index, objs)
-        del self._children[start:stop:step]
+        del self._children[index]
         self._post_remove(index, objs)
 
     def __bool__(self):
@@ -411,6 +443,15 @@ class RosterGroup(RosterContainer):
         super().__init__(**kwargs)
         self._via_cache = {}
         self._group_cache = {}
+
+    def _pre_insert_single(self, obj):
+        if isinstance(obj, RosterVia):
+            # wrap the via in a contact
+            intermediate = RosterContact(root=self.get_root())
+            intermediate.append(obj)
+            return super()._pre_insert_single(intermediate)
+        else:
+            return super()._pre_insert_single(obj)
 
     def register_via(self, obj):
         peer_map = self._via_cache.setdefault(obj._account_jid, {})
@@ -613,6 +654,15 @@ class RosterContact(RosterContainer):
             self._view_notify_prop_changed(
                 RosterContact.any_account_available,
                 new_value)
+
+    @events.handler_for(GenericRosterEventType.CLEANUP)
+    def ev_cleanup(self, ev):
+        if not len(self):
+            parent = self.get_parent()
+            if parent:
+                parent.remove(self)
+            return
+        super().forward_event(ev)
 
     @classmethod
     def create_from_etree(cls, el, **kwargs):
