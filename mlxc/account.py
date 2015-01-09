@@ -217,7 +217,7 @@ class AccountManager:
             return [
                 self._jids[jid]
                 for jid in self._jidlist[index]
-            ]
+            ][index]
         else:
             jid = self._jidlist[index]
             return self._jids[jid]
