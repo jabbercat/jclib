@@ -159,9 +159,20 @@ class DlgAccountManager(Qt.QDialog, Ui_dlg_account_manager):
        self.setupUi(self)
        self.setModal(False)
        self.accounts = accounts
-       self.account_list.setModel(self.accounts.model)
+
+       model_wrapper = Qt.QSortFilterProxyModel(self)
+       model_wrapper.setSourceModel(self.accounts.model)
+       model_wrapper.setSortLocaleAware(True)
+       model_wrapper.setSortCaseSensitivity(False)
+       model_wrapper.setSortRole(Qt.Qt.DisplayRole)
+       model_wrapper.setDynamicSortFilter(True)
+
+       self.account_list.setModel(model_wrapper)
        self.account_list.setSelectionBehavior(Qt.QTableView.SelectRows);
        self.account_list.setSelectionMode(Qt.QTableView.SingleSelection);
+       self.account_list.setSortingEnabled(True)
+       self.account_list.sortByColumn(0, Qt.Qt.AscendingOrder)
+
        self.account_list.doubleClicked.connect(self._modify)
 
        self.btn_manage_accounts.addAction(self.action_new_account)
