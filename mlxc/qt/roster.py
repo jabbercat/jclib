@@ -189,6 +189,7 @@ class Roster(Qt.QMainWindow, Ui_roster_window):
             self.client.accounts)
 
         self.roster_view.setModel(self.client.roster_root.model)
+        self.roster_view.setSelectionBehavior(self.roster_view.SelectRows)
         self.roster_view.header().setStretchLastSection(False)
         self.roster_view.header().setSectionResizeMode(
             0,

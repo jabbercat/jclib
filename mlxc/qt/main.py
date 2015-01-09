@@ -5,6 +5,8 @@ import os
 import signal
 import time
 
+import asyncio_xmpp.presence
+
 import mlxc.client
 import mlxc.singletonify
 
@@ -82,6 +84,10 @@ class MLXCQt:
                 yield from self._future
             except QuitException:
                 pass
+            yield from self._client.set_global_presence(
+                asyncio_xmpp.presence.PresenceState()
+            )
+            yield from self._client.wait_for_all()
         except Exception:
             logger.exception("fatal error")
             if self.returncode is None:

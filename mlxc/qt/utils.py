@@ -41,6 +41,16 @@ def block_widget_for_coro(widget, coro):
         widget.setCursor(prev_cursor)
         widget.setEnabled(True)
 
+@asyncio.coroutine
+def exec_async(dlg):
+    future = asyncio.Future()
+    def done(result):
+        nonlocal future
+        future.set_result(result)
+    dlg.done.connect(done)
+    dlg.show()
+    yield from future
+
 _system_random = random.SystemRandom()
 _dragndrop_state = (None, None)
 
