@@ -49,9 +49,10 @@ class AccountSettings(_AccountSettings):
             require_encryption=require_encryption)
 
     def __str__(self):
-        if not self.name:
-            return str(self.jid)
-        return "{} ({})".format(self.name, self.jid)
+        jid = self.jid
+        if self.resource:
+            jid = self.jid.replace(resource=self.resource)
+        return str(jid)
 
     def replace(self, **kwargs):
         resource = kwargs.pop("resource", self.resource) or None
