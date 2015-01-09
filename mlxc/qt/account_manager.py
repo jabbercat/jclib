@@ -312,6 +312,15 @@ class DlgAccountManager(Qt.QDialog, Ui_dlg_account_manager):
             )
         except mlxc.account.PasswordStoreIsUnsafe:
             pass
+        except keyring.errors.PasswordSetError as err:
+            dlg = Qt.QMessageBox(
+                Qt.QMessageBox.Icon.Warning,
+                "Error",
+                "Failed to store password",
+                Qt.QMessageBox.Ok,
+                parent=self)
+            dlg.setDetailedText(str(err))
+            yield from utils.exec_async(dlg)
 
         self._modified = False
 
