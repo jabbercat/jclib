@@ -20,8 +20,8 @@ provide the following features:
 * A simple API for custom roster entry synchronization
 
 
-Extension API
--------------
+Node API
+--------
 
 The goal of this API is to provide all methods and entry points neccessary for
 plugins to extend the roster with the above functionality.
@@ -29,48 +29,17 @@ plugins to extend the roster with the above functionality.
 This is still drafty. As noted below, the class hierarchy is yet to be
 designed.
 
-.. method:: RosterNode.add_to_parent()
+.. method:: RosterNode._add_to_parent(new_parent)
 
    Prepare insertion into current parent. This needs to do anything which is
    required by a parent object to insert this specific object. In
    particular, it is required to register any vias held by this object.
 
-.. method:: RosterNode.remove_from_parent()
+.. method:: RosterNode._remove_from_parent(old_parent)
 
    Prepare removal from the current parent. This needs to do anything which is
    required by a parent object to remove this specific object. In
    particular, it is required to unregister any vias held by this object.
-
-.. method:: RosterGroup.append(obj)
-
-   Append a given :class:`RosterNode` to the group. Insertion may fail, e.g. if
-   the object contains a via which is already registered with the group (vias
-   must be unique within a groups contacts).
-
-.. method:: RosterGroup.append_child_from_etree(el)
-
-   Create an instance of a RosterNode which represents the object represented by
-   the given etree element *el*.
-
-   If instanciation fails for input data related reasons, log a warning and
-   return :data:`None`.
-
-   Otherwise, the object is returned, which is already fully integrated into the
-   group.
-
-.. classmethod:: RosterGroup.register_child_factory(tag, func)
-
-   Register a factory *func* for a child element, which matches on the given
-   element tag *tag*.
-
-   This registry only applies for this specific *class*, not for child classes
-   as overriden and provided by widget frontends for example, as widget
-   frontends generally have more requirements for nodes than the base classes.
-
-   TODO: rethink whether splitting the frontend-specific tree into an entirely
-   separate class tree would not make more sense! e.g. with a classmethod on
-   RosterNode which allows to register factories for wrappers for each widget
-   frontend.
 
 Synchronization API
 -------------------
