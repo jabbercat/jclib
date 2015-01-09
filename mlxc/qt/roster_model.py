@@ -228,6 +228,16 @@ class QtRosterContactView(QtRosterContainerView):
                     0, len(self._obj)-1)
                 self.model.endRemoveRows()
 
+    def data(self, role, column=0):
+        if column == 1:
+            if role == Qt.Qt.DisplayRole:
+                available = self._obj.presence.available
+                if available:
+                    return "A"
+                return "N"
+        else:
+            return super().data(role, column=column)
+
     def has_children(self):
         return self._expandable and len(self._obj)
 
