@@ -149,6 +149,40 @@ class QtClient(mlxc.client.Client):
             self.on_account_error(jid, exc, title, text)
 
 
+class SortFilterRosterModel(Qt.QSortFilterProxyModel):
+    def __init__(self, backing_model, parent=None):
+        super().__init__(parent=parent)
+        self.setSourceModel(backing_model)
+        self.setDynamicSortFilter(True)
+
+        self._show_offline_contacts = True
+
+    @property
+    def show_offline_contacts(self):
+        return self._show_offline_contacts
+
+    @show_offline_contacts.setter
+    def show_offline_contacts(self, value):
+        if self._show_offline_contacts == value:
+            return
+        self._show_offline_contacts = value
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, source_row, source_parent):
+        if self._show_offline_contacts and self._show_empty_groups:
+            return
+
+        model = self.sourceModel()
+        parent = model.get_entry(source_parent)
+        item = parent[source_row]
+        if not self._show_offline_contacts:
+            if hasattr(item, "presence"):
+                if not item.presence:
+                    return False
+
+        return True
+
+
 class Roster(Qt.QMainWindow, Ui_roster_window):
     def __init__(self, client):
         self.tray_icon = None
@@ -188,7 +222,12 @@ class Roster(Qt.QMainWindow, Ui_roster_window):
         self.account_manager_dlg = account_manager.DlgAccountManager(
             self.client.accounts)
 
-        self.roster_view.setModel(self.client.roster_root.model)
+        filter_model = SortFilterRosterModel(
+            self.client.roster_root.model,
+            parent=self)
+        filter_model.show_offline_contacts = False
+
+        self.roster_view.setModel(filter_model)
         self.roster_view.setSelectionBehavior(self.roster_view.SelectRows)
         self.roster_view.header().setStretchLastSection(False)
         self.roster_view.header().setSectionResizeMode(
