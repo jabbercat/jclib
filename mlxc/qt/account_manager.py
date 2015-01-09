@@ -40,7 +40,7 @@ class AccountListModel(Qt.QAbstractTableModel):
             }.get(index.column())
         elif role == Qt.Qt.ToolTipRole:
             try:
-                return str(self.manager[index.row()].client_jid)
+                return str(self.manager[index.row()].jid)
             except IndexError:
                 return None
         elif role == Qt.Qt.CheckStateRole:
