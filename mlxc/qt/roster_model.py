@@ -37,6 +37,8 @@ class RosterModel(Qt.QAbstractItemModel):
         return self.index_for_node(entry.get_parent())
 
     def index_for_node(self, node, column=0):
+        if node is None:
+            return Qt.QModelIndex()
         parent = node.get_parent()
         if parent is None:
             return Qt.QModelIndex()
