@@ -239,3 +239,10 @@ class Client:
             return
 
         self.roster_root.from_etree_inplace(tree.getroot())
+
+    @asyncio.coroutine
+    def wait_for_all(self):
+        tasks = [state.task for state in self.nodes.values()]
+        for account in list(self.nodes):
+            self._on_account_disabled(account)
+        yield from asyncio.gather(*tasks)
