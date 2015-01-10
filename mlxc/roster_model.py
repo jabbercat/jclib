@@ -11,6 +11,7 @@ from enum import Enum
 
 import asyncio_xmpp.jid
 import asyncio_xmpp.presence
+import asyncio_xmpp.plugins.roster
 
 from . import events
 
@@ -794,97 +795,104 @@ class Roster(RosterGroup):
 
         self._accounts = {}
 
-    def _reconstruct_account_roster(self, within_group, account_jid, dest):
-        peer_map = within_group._via_cache.get(account_jid, {})
-        for peer_jid, via in peer_map.items():
-            entry = dest.setdefault(peer_jid, {})
-            entry.setdefault("label", via.label)
-            # FIXME: use full group path here
-            entry.setdefault("groups", {})[within_group.label] = via
-        for subgroup in within_group._group_cache.values():
-            self._reconstruct_account_roster(subgroup, account_jid, dest)
+    def _reconstruct_account_roster_recurse(self, group, account_jid, dest):
+        for via in group._via_cache.get(account_jid, {}).values():
+            entry = dest.setdefault(
+                via.peer_jid,
+                asyncio_xmpp.plugins.roster.RosterItemInfo())
+            entry.jid = via.peer_jid
+            entry.name = via.label
+            # FIXME: nested group support
+            entry.groups.add(group.label)
 
-    def _update_via_from_initial_roster(self, via, item):
-        via.get_parent().dispatch_event(
-            RosterViaLabelChanged(
-                via.account_jid,
-                item.jid,
-                item.name))
-        via.account_available = True
+        for subgroup in group._group_cache.values():
+            self._reconstruct_account_roster_recurse(
+                subgroup, account_jid, dest)
 
-    def _update_from_initial_roster_in_group(self, account_jid, group, item):
-        peer_jid = item.jid.bare
+    def _reconstruct_account_roster(self, account_jid):
+        roster = {}
+        self._reconstruct_account_roster_recurse(self, account_jid, roster)
+        return roster
 
-        if not group:
-            dest = self
+    def _get_group_by_name(self, group_name, allow_create):
+        if not group_name:
+            return self
         else:
             try:
-                dest = self.get_subgroup(group)
+                return self.get_subgroup(group_name)
             except KeyError:
-                dest = RosterGroup(group, root=self)
-                self.append(dest)
-        try:
-            via = dest.get_via(account_jid, peer_jid)
-        except KeyError:
-            contact = RosterContact(root=self)
-            dest.append(contact)
-            via = RosterVia(account_jid,
-                            peer_jid,
-                            label=item.name,
-                            root=self,
-                            account_available=True)
-            contact.append(via)
-        else:
-            self._update_via_from_initial_roster(via, item)
+                if allow_create:
+                    group = RosterGroup(group_name, root=self)
+                    self.append(group)
+                    return group
+                else:
+                    return None
 
-    def _initial_roster(self, node, remote_roster):
-        logger.info("synchronizing initial roster for account %s: %d entries in"
-                    " roster message",
-                    node.account_jid,
-                    len(remote_roster))
-        local_roster = {}
-        self._reconstruct_account_roster(self, node.account_jid, local_roster)
-        logger.info("local roster for account %s has %d entries",
-                    node.account_jid,
-                    len(local_roster))
-        for jid, info in remote_roster.items():
-            group_via_map = local_roster.get(jid, {}).get("groups", {})
-            local_groups = set(group_via_map)
-            remote_groups = info.groups
-            logger.debug("peer %s: local_groups=%r, remote_groups=%r",
-                         jid, local_groups, remote_groups)
-            if any(remote_groups):
-                # item is in any groups
-                for group in info.groups:
-                    self._update_from_initial_roster_in_group(
-                        node.account_jid,
-                        group,
-                        info)
+    def _add_roster_item_to_groups(self, account_jid, item, groups):
+        logger.debug("adding %s:%s to groups %r",
+                     account_jid, item.jid, groups)
+        for group_name in groups:
+            group = self._get_group_by_name(group_name, True)
+            try:
+                via = group.get_via(account_jid, item.jid)
+            except KeyError:
+                contact = RosterContact(label=None, root=self)
+                group.append(contact)
+                via = RosterVia(account_jid, item.jid,
+                                label=item.name, root=self)
+                contact.append(via)
             else:
-                # otherwise, add to root group
-                self._update_from_initial_roster_in_group(
-                    node.account_jid,
-                    None,
-                    info)
-                # in addition, add the root group to the remote set, so that it
-                # won’t get removed in the next step
-                remote_groups.add(None)
+                via.get_parent().dispatch_event(
+                    RosterViaLabelChanged(
+                        account_jid,
+                        item.jid,
+                        item.name))
+            via.account_available = True
 
-            for group_name, via in group_via_map.items():
-                if group_name in remote_groups:
-                    continue
-                via.get_parent().remove(via)
+    def _remove_roster_item_from_groups(self, account_jid, item, groups):
+        logger.debug("removing %s:%s from groups %r",
+                     account_jid, item.jid, groups)
+        for group_name in groups:
+            group = self._get_group_by_name(group_name, False)
+            if group is None:
+                logger.warning("missing group which is supposed to be here...",
+                               stack_info=True)
+                continue
 
-        obsolete_peers = set(local_roster) - set(remote_roster)
-        for obsolete_peer in obsolete_peers:
-            # FIXME: remove obsolete peers
-            logger.warning("FIXME: remove obsolete peer %s", obsolete_peer)
+            try:
+                via = group.get_via(account_jid, item.jid)
+            except KeyError:
+                logger.warning("missing item which is supposed to be here...",
+                               exc_info=True)
+                continue
 
+            via.get_parent().remove(via)
+
+    def _roster_item_added(self, account, item):
+        groups = item.groups
+        if not groups:
+            groups = groups | {None}
+
+        self._roster_item_added_to_groups(account, item, groups)
+
+    def _roster_item_removed(self, account, item):
+        groups = item.groups
+        if not groups:
+            groups = groups | {None}
+
+        self._roster_item_removed_from_groups(account, item, groups)
+
+    def _roster_item_added_to_groups(self, account, item, new_groups):
+        self._add_roster_item_to_groups(
+            account.account_jid, item, new_groups)
+
+    def _roster_item_removed_from_groups(self, account, item, new_groups):
+        self._remove_roster_item_from_groups(
+            account.account_jid, item, new_groups)
         self.dispatch_event(
             GenericRosterEvent(
                 GenericRosterEventType.CLEANUP)
         )
-        node.presence.dump_state()
 
     def _presence_changed(self, node, bare_jid, resources, new_presence):
         self.dispatch_event(RosterViaPresenceChanged(
@@ -893,15 +901,18 @@ class Roster(RosterGroup):
             new_presence,
             resources=resources))
 
-    def _session_started(self, node):
+    def _session_started(self, account):
+        known_roster = self._reconstruct_account_roster(account.account_jid)
+        logger.debug("%r", known_roster)
+        account.roster.replace_roster(known_roster)
         self.dispatch_event(RosterAccountEvent(
             RosterAccountEventType.AVAILABLE,
-            node.account_jid))
+            account.account_jid))
 
-    def _session_ended(self, node):
+    def _session_ended(self, account):
         self.dispatch_event(RosterAccountEvent(
             RosterAccountEventType.UNAVAILABLE,
-            node.account_jid))
+            account.account_jid))
 
     @abc.abstractmethod
     def make_view(self, for_object):
@@ -945,12 +956,23 @@ class Roster(RosterGroup):
             )
         ]
 
-        # FIXME: inform account_roster about initial roster
         roster_tokens = [
             account.roster.callbacks.add_callback(
-                "initial_roster",
-                functools.partial(self._initial_roster, account)
-            )
+                "roster_item_added",
+                functools.partial(self._roster_item_added, account)
+            ),
+            account.roster.callbacks.add_callback(
+                "roster_item_removed",
+                functools.partial(self._roster_item_removed, account)
+            ),
+            account.roster.callbacks.add_callback(
+                "roster_item_added_to_groups",
+                functools.partial(self._roster_item_added_to_groups, account)
+            ),
+            account.roster.callbacks.add_callback(
+                "roster_item_removed_from_groups",
+                functools.partial(self._roster_item_removed_from_groups, account)
+            ),
         ]
 
         presence_tokens = [
