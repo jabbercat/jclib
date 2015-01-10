@@ -595,8 +595,15 @@ class RosterContact(RosterContainer):
     def _add_to_parent(self, parent):
         if not isinstance(parent, RosterGroup):
             raise TypeError("parent must be a group")
-        for child in self:
-            parent.register_via(child)
+
+        def unregister_child(child):
+            parent.unregister_via(child)
+
+        with contextlib.ExitStack() as stack:
+            for child in self:
+                parent.register_via(child)
+                stack.callback(unregister_child, child)
+            stack.pop_all()
 
     def _remove_from_parent(self, parent):
         for child in self:
