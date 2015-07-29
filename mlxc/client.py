@@ -357,7 +357,6 @@ class Client:
         self._global_presence = structs.PresenceState(False)
 
     def _on_account_enabled(self, account):
-        print("enabled", account)
         node = aioxmpp.node.PresenceManagedClient(
             account.jid.replace(resource=account.resource),
             security_layer.tls_with_password_based_authentication(
@@ -369,7 +368,6 @@ class Client:
         self._states[account] = node
 
     def _on_account_disabled(self, account, reason):
-        print("disabled", account)
         del self._states[account]
 
     def account_state(self, account):
