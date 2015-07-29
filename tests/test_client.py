@@ -1466,6 +1466,11 @@ class TestClient(unittest.TestCase):
             for acc in accs
         ]
 
+        self.c.set_global_presence(structs.PresenceState(True))
+
+        for state in states:
+            state.running = True
+
         self.PresenceManagedClient.reset_mock()
 
         task = asyncio.async(self.c.stop_and_wait_for_all())
@@ -1491,6 +1496,67 @@ class TestClient(unittest.TestCase):
         self.assertFalse(task.done())
 
         states[1].on_failure(ConnectionError())
+
+        run_coroutine(asyncio.sleep(0))
+
+        self.assertFalse(task.done())
+
+        states[2].on_failure(ValueError())
+
+        run_coroutine(asyncio.sleep(0))
+
+        self.assertTrue(task.done())
+        self.assertIsNone(task.result())
+
+    def test_stop_and_wait_for_all_ignores_not_running_clients(self):
+        jids = [
+            TEST_JID.replace(localpart="foo"),
+            TEST_JID.replace(localpart="bar"),
+            TEST_JID.replace(localpart="baz"),
+        ]
+
+        accs = [
+            self.c.accounts.new_account(jid)
+            for jid in jids
+        ]
+
+        for acc in accs:
+            self.c.accounts.set_account_enabled(acc.jid, True)
+            self.PresenceManagedClient.return_value = ConnectedClientMock()
+
+        states = [
+            self.c.account_state(acc)
+            for acc in accs
+        ]
+
+        self.c.set_global_presence(structs.PresenceState(True))
+        states[1].presence = structs.PresenceState(False)
+
+        for i, state in enumerate(states):
+            state.running = (i != 1)
+
+        self.PresenceManagedClient.reset_mock()
+
+        task = asyncio.async(self.c.stop_and_wait_for_all())
+
+        self.assertFalse(task.done())
+
+        run_coroutine(asyncio.sleep(0))
+
+        for i, state in enumerate(states):
+            if i == 1:
+                self.assertSequenceEqual([], state.mock_calls)
+            else:
+                self.assertSequenceEqual(
+                    [
+                        unittest.mock.call.stop(),
+                    ],
+                    state.mock_calls
+                )
+
+        self.assertFalse(task.done())
+
+        states[0].on_stopped()
 
         run_coroutine(asyncio.sleep(0))
 

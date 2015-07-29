@@ -387,7 +387,11 @@ class Client:
 
     @asyncio.coroutine
     def stop_and_wait_for_all(self):
-        nodes = list(self._states.values())
+        nodes = [
+            node
+            for node in self._states.values()
+            if node.running
+        ]
 
         futures = [
             asyncio.Future()
