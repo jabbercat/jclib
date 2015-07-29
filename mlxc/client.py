@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import xml.sax.handler
 
 import keyring
@@ -6,7 +7,12 @@ import keyring
 import aioxmpp.stringprep
 
 import aioxmpp.callbacks as callbacks
+import aioxmpp.node as node
+import aioxmpp.security_layer as security_layer
+import aioxmpp.structs as structs
 import aioxmpp.xso as xso
+
+import mlxc.utils as utils
 
 from mlxc.utils import mlxc_namespaces
 
@@ -55,10 +61,11 @@ class AccountSettings(xso.XSO):
         default=False,
     )
 
-    def __init__(self, jid):
+    def __init__(self, jid, enabled=False):
         super().__init__()
         self._jid = jid.bare()
         self.resource = jid.resource
+        self._enabled = enabled
 
     @property
     def jid(self):
@@ -71,6 +78,10 @@ class AccountSettings(xso.XSO):
 
 class _AccountList(xso.XSO):
     TAG = (mlxc_namespaces.account, "accounts")
+
+    DECLARE_NS = {
+        None: mlxc_namespaces.account
+    }
 
     items = xso.ChildList([AccountSettings])
 
@@ -173,6 +184,9 @@ class AccountManager:
         jid = jid.bare()
         return self._jidlist.index(jid)
 
+    def jid_account(self, jid):
+        return self._accountmap[jid.bare()]
+
     def account_index(self, account):
         for i, jid in enumerate(self._jidlist):
             if self._accountmap[jid] == account:
@@ -192,10 +206,10 @@ class AccountManager:
         acc = self._accountmap[jid]
         if not acc.enabled and enable:
             acc._enabled = enable
-            self.on_account_enabled(jid)
+            self.on_account_enabled(acc)
         elif acc.enabled and not enable:
             acc._enabled = enable
-            self.on_account_disabled(jid, reason=reason)
+            self.on_account_disabled(acc, reason=reason)
 
     def refresh_account(self, jid):
         acc = self._accountmap[jid.bare()]
@@ -212,28 +226,9 @@ class AccountManager:
         del self[self.account_index(account)]
 
     def save(self, dest):
-        writer = aioxmpp.xml.XMPPXMLGenerator(
-            out=dest,
-            short_empty_elements=True
-        )
-
-        writer.startDocument()
-        writer.startElementNS(
-            (mlxc_namespaces.account, "accounts"),
-            None,
-            {}
-        )
-
         accounts = _AccountList()
         accounts.items.extend(self)
-        accounts.unparse_to_sax(writer)
-
-        writer.endElementNS(
-            (mlxc_namespaces.account, "accounts"),
-            None,
-        )
-        writer.endDocument()
-        writer.flush()
+        utils.write_xso(dest, accounts)
 
     def _load_accounts(self, accounts):
         self.clear()
@@ -243,8 +238,194 @@ class AccountManager:
             self._jidlist.append(account.jid)
             self._accountmap[account.jid] = account
 
+        for account in self:
+            if account.enabled:
+                self.on_account_enabled(account)
+
     def load(self, src):
-        xso_parser = xso.XSOParser()
-        xso_parser.add_class(_AccountList, self._load_accounts)
-        driver = xso.SAXDriver(xso_parser)
-        xml.sax.parse(src, driver)
+        utils.read_xso(src, {
+            _AccountList: self._load_accounts
+        })
+
+    @asyncio.coroutine
+    def password_provider(self, jid, nattempt):
+        try:
+            result = yield from self.get_stored_password(jid.bare())
+        except PasswordStoreIsUnsafe:
+            raise KeyError(jid)
+        if result is None:
+            raise KeyError(jid)
+        return result
+
+
+class AccountState:
+    def __init__(self, acc, password_provider):
+        self.account = acc
+        self.node = None
+        self.started = False
+        self._password_provider = password_provider
+
+    def _on_node_stopped(self):
+        self.node = None
+        self.started = False
+
+    def _on_node_failed(self, exc):
+        self.node = None
+        self.started = False
+
+    def start(self):
+        if self.node is not None:
+            return
+
+        self.node = aioxmpp.node.PresenceManagedClient(
+            self.account.jid.replace(resource=self.account.resource),
+            security_layer.tls_with_password_based_authentication(
+                self._password_provider
+            )
+        )
+        self.node.presence = structs.PresenceState(True)
+        self.node.on_stopped.connect(
+            self._on_node_stopped
+        )
+        self.node.on_failure.connect(
+            self._on_node_failed
+        )
+
+        self.started = True
+
+    def stop(self):
+        if not self.started:
+            return
+
+        self.node.presence = structs.PresenceState(False)
+
+
+class Client:
+    """
+    The :class:`Client` keeps track of all the information a client needs. It
+    is a huge composite which glues together the pieces which make an XMPP
+    client an XMPP client (roster, account management, you name it).
+
+    .. attribute:: AccountManager
+
+       This class attribute defines the :class:`AccountManager` class to
+       use. This defaults to :class:`AccountManager`, but can be overriden by
+       subclasses to drop in their own account manager.
+
+    .. attribute:: accounts
+
+       Each instance has an instance of :attr:`AccountManager` bound at this
+       attribute.
+
+    The :class:`Client` tracks all enabled accounts (enabled as in
+    :meth:`AccountManager.set_account_enabled`). For all enabled accounts,
+    there exists a :class:`aioxmpp.node.PresenceManagedClient` instance.
+
+    An *enabled* account can either be active (*started*) or inactive
+    (*stopped*, we all love systemd terminology here; even disabled accounts
+    can still be *started* though, for example if it has been disabled but has
+    not stopped yet).
+
+    Normally, all enabled accounts are started, as long as an ``available``
+    global presence is set. The only exception is if the account fatally fails
+    to connect (even reconnect attempts count as *started*). An example for
+    such a fatal failure could be a TLS negotiation problem or a mundane
+    authentication failure.
+
+    A account which is not *started* can be started by setting its presence to
+    an ``available`` value. This can be done using the global presence setting
+    or by setting the presence on the account specifically. Note that global
+    presence will only affect the account if its current presence is equal to
+    the current global presence.
+
+    """
+
+    AccountManager = AccountManager
+
+    def __init__(self):
+        super().__init__()
+        self.accounts = self.AccountManager()
+        self.accounts.on_account_enabled.connect(
+            self._on_account_enabled
+        )
+        self.accounts.on_account_disabled.connect(
+            self._on_account_disabled
+        )
+
+        self._states = {}
+
+        self._global_presence = structs.PresenceState(False)
+
+    def _on_account_enabled(self, account):
+        print("enabled", account)
+        node = aioxmpp.node.PresenceManagedClient(
+            account.jid.replace(resource=account.resource),
+            security_layer.tls_with_password_based_authentication(
+                self.accounts.password_provider
+            )
+        )
+        node.presence = self.global_presence
+
+        self._states[account] = node
+
+    def _on_account_disabled(self, account, reason):
+        print("disabled", account)
+        del self._states[account]
+
+    def account_state(self, account):
+        return self._states[account]
+
+    @property
+    def global_presence(self):
+        return self._global_presence
+
+    def set_global_presence(self, new_state, *, force=False):
+        for state in self._states.values():
+            if force or state.presence == self._global_presence:
+                state.presence = new_state
+        self._global_presence = new_state
+
+    @asyncio.coroutine
+    def stop_and_wait_for_all(self):
+        nodes = list(self._states.values())
+
+        futures = [
+            asyncio.Future()
+            for node in nodes
+        ]
+
+        for future, node in zip(futures, nodes):
+            node.on_stopped.connect(
+                future,
+                callbacks.AdHocSignal.AUTO_FUTURE
+            )
+            node.on_failure.connect(
+                future,
+                callbacks.AdHocSignal.AUTO_FUTURE
+            )
+            node.stop()
+
+        yield from asyncio.gather(
+            *futures,
+            return_exceptions=True)
+
+    def load_state(self):
+        try:
+            accounts_file = utils.xdgconfigopen(
+                "zombofant.net", "mlxc",
+                "accounts.xml",
+                mode="rb")
+        except OSError:
+            self.accounts.clear()
+        else:
+            with accounts_file:
+                self.accounts.load(accounts_file)
+
+        print(list(self.accounts))
+
+    def save_state(self):
+        with utils.xdgconfigopen(
+                "zombofant.net", "mlxc",
+                "accounts.xml",
+                mode="wb") as f:
+            self.accounts.save(f)

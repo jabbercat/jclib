@@ -16,7 +16,11 @@ import aioxmpp.xso as xso
 
 import mlxc.client as client
 
-from aioxmpp.testutils import run_coroutine
+from aioxmpp.testutils import (
+    run_coroutine,
+    CoroutineMock,
+    ConnectedClientMock
+)
 
 from mlxc.utils import mlxc_namespaces
 
@@ -197,6 +201,21 @@ class TestAccountSettings(unittest.TestCase):
         self.assertIsNone(settings.override_peer)
         self.assertFalse(settings.allow_unencrypted)
 
+        settings = client.AccountSettings(
+            TEST_JID,
+            enabled=True)
+        self.assertEqual(
+            TEST_JID.bare(),
+            settings.jid
+        )
+        self.assertEqual(
+            TEST_JID.resource,
+            settings.resource
+        )
+        self.assertTrue(settings.enabled)
+        self.assertIsNone(settings.override_peer)
+        self.assertFalse(settings.allow_unencrypted)
+
     def test_jid_attr(self):
         settings = client.AccountSettings(TEST_JID)
         self.assertIs(
@@ -218,6 +237,14 @@ class Test_AccountList(unittest.TestCase):
             client._AccountList,
             xso.XSO
         ))
+
+    def test_declare_namespace(self):
+        self.assertDictEqual(
+            client._AccountList.DECLARE_NS,
+            {
+                None: mlxc_namespaces.account
+            }
+        )
 
     def test_tag(self):
         self.assertEqual(
@@ -628,6 +655,24 @@ class TestAccountManager(unittest.TestCase):
                                     r"'foo' not in list"):
             self.manager.account_index(obj)
 
+    def test_jid_account(self):
+        jids = [
+            TEST_JID.replace(localpart="foo"),
+            TEST_JID.replace(localpart="bar"),
+            TEST_JID.replace(localpart="baz"),
+        ]
+
+        accs = [
+            self.manager.new_account(jid)
+            for jid in jids
+        ]
+
+        for acc in accs:
+            self.assertIs(
+                self.manager.jid_account(acc.jid),
+                acc
+            )
+
     def test_set_account_enabled_set_to_enabled(self):
         acc = self.manager.new_account(TEST_JID)
         self.manager.set_account_enabled(TEST_JID, True)
@@ -646,7 +691,7 @@ class TestAccountManager(unittest.TestCase):
         self.assertSequenceEqual(
             mock.mock_calls,
             [
-                unittest.mock.call(TEST_JID.bare())
+                unittest.mock.call(acc)
             ]
         )
 
@@ -672,7 +717,7 @@ class TestAccountManager(unittest.TestCase):
         self.assertSequenceEqual(
             mock.mock_calls,
             [
-                unittest.mock.call(TEST_JID.bare(), reason=None)
+                unittest.mock.call(acc, reason=None)
             ]
         )
 
@@ -693,7 +738,7 @@ class TestAccountManager(unittest.TestCase):
         self.assertSequenceEqual(
             mock.mock_calls,
             [
-                unittest.mock.call(TEST_JID.bare(), reason=reason)
+                unittest.mock.call(acc, reason=reason)
             ]
         )
 
@@ -738,7 +783,7 @@ class TestAccountManager(unittest.TestCase):
 
         self.assertSequenceEqual(
             [
-                unittest.mock.call(jids[1].bare(), reason=None),
+                unittest.mock.call(accs[1], reason=None),
             ],
             mock.mock_calls
         )
@@ -766,8 +811,8 @@ class TestAccountManager(unittest.TestCase):
 
         self.assertSequenceEqual(
             [
-                unittest.mock.call(jids[0].bare(), reason=None),
-                unittest.mock.call(jids[2].bare(), reason=None),
+                unittest.mock.call(accs[0], reason=None),
+                unittest.mock.call(accs[2], reason=None),
             ],
             mock.mock_calls
         )
@@ -823,9 +868,9 @@ class TestAccountManager(unittest.TestCase):
             accs[:1] + accs[2:]
         )
 
-    @unittest.mock.patch("aioxmpp.xml.XMPPXMLGenerator")
+    @unittest.mock.patch("mlxc.utils.write_xso")
     @unittest.mock.patch("mlxc.client._AccountList")
-    def test_save(self, _AccountList, XMPPXMLGenerator):
+    def test_save(self, _AccountList, write_xso):
         jids = [
             TEST_JID.replace(localpart="foo"),
             TEST_JID.replace(localpart="bar"),
@@ -839,12 +884,6 @@ class TestAccountManager(unittest.TestCase):
 
         dest = io.BytesIO()
 
-        def callthrough(writer):
-            writer.__write_object()
-
-        _AccountList().unparse_to_sax = callthrough
-        _AccountList.mock_calls.clear()
-
         self.manager.save(dest)
 
         self.assertSequenceEqual(
@@ -856,23 +895,9 @@ class TestAccountManager(unittest.TestCase):
         )
 
         self.assertSequenceEqual(
-            XMPPXMLGenerator.mock_calls,
+            write_xso.mock_calls,
             [
-                unittest.mock.call(out=dest,
-                                   short_empty_elements=True),
-                unittest.mock.call().startDocument(),
-                unittest.mock.call().startElementNS(
-                    (mlxc_namespaces.account, "accounts"),
-                    None,
-                    {}
-                ),
-                unittest.mock.call().__write_object(),
-                unittest.mock.call().endElementNS(
-                    (mlxc_namespaces.account, "accounts"),
-                    None
-                ),
-                unittest.mock.call().endDocument(),
-                unittest.mock.call().flush()
+                unittest.mock.call(dest, _AccountList()),
             ]
         )
 
@@ -920,39 +945,662 @@ class TestAccountManager(unittest.TestCase):
             "foo"
         )
 
-    @unittest.mock.patch("xml.sax.parse")
-    @unittest.mock.patch("aioxmpp.xso.SAXDriver")
-    @unittest.mock.patch("aioxmpp.xso.XSOParser")
-    def test_load(self, XSOParser, SAXDriver, parse):
+    def test_emit_enabled_events_for_enabled_accounts(self):
+        enabled_account = client.AccountSettings(
+            TEST_JID.replace(localpart="foo"),
+            enabled=True
+        )
+
+        accounts = client._AccountList()
+        accounts.items.extend([
+            client.AccountSettings(TEST_JID.replace(localpart="foo"),
+                                   enabled=True),
+            client.AccountSettings(TEST_JID.replace(localpart="bar")),
+            client.AccountSettings(TEST_JID.replace(localpart="baz")),
+            client.AccountSettings(TEST_JID.replace(localpart="fnord"),
+                                   enabled=True),
+        ])
+
+        mock = unittest.mock.Mock()
+        mock.return_value = False
+        self.manager.on_account_enabled.connect(mock)
+
+        with unittest.mock.patch.object(
+                self.manager,
+                "clear") as clear:
+            self.manager._load_accounts(accounts)
+
+        self.assertSequenceEqual(
+            clear.mock_calls,
+            [
+                unittest.mock.call()
+            ]
+        )
+
+        self.assertSequenceEqual(
+            mock.mock_calls,
+            [
+                unittest.mock.call(self.manager.jid_account(
+                    TEST_JID.replace(localpart="foo").bare())
+                ),
+                unittest.mock.call(self.manager.jid_account(
+                    TEST_JID.replace(localpart="fnord").bare())
+                ),
+            ]
+        )
+
+        self.assertEqual(len(self.manager), 4)
+
+    @unittest.mock.patch("xml.sax.make_parser")
+    @unittest.mock.patch("mlxc.utils.read_xso")
+    def test_load(self, read_xso, make_parser):
         src = io.BytesIO()
 
         self.manager.load(src)
 
         self.assertSequenceEqual(
-            XSOParser.mock_calls,
+            read_xso.mock_calls,
             [
-                unittest.mock.call(),
-                unittest.mock.call().add_class(
-                    client._AccountList,
-                    self.manager._load_accounts
+                unittest.mock.call(src, {
+                    client._AccountList: self.manager._load_accounts
+                }),
+            ]
+        )
+
+    def test_password_provider_uses_stored_password_if_possible(self):
+        password = object()
+
+        self.manager.new_account(TEST_JID)
+
+        with unittest.mock.patch.object(
+                self.manager,
+                "get_stored_password",
+                new=CoroutineMock()) as get_stored_password:
+            get_stored_password.return_value = password
+            result = run_coroutine(
+                self.manager.password_provider(TEST_JID, 0),
+            )
+
+        self.assertSequenceEqual(
+            get_stored_password.mock_calls,
+            [
+                unittest.mock.call(TEST_JID.bare())
+            ]
+        )
+
+        self.assertIs(
+            result,
+            password
+        )
+
+    def test_password_provider_raises_key_error_if_store_is_unsafe(self):
+        self.manager.new_account(TEST_JID)
+
+        with unittest.mock.patch.object(
+                self.manager,
+                "get_stored_password",
+                new=CoroutineMock()) as get_stored_password:
+            get_stored_password.side_effect = client.PasswordStoreIsUnsafe
+
+            with self.assertRaises(KeyError):
+                run_coroutine(
+                    self.manager.password_provider(TEST_JID, 0),
                 )
+
+        self.assertSequenceEqual(
+            get_stored_password.mock_calls,
+            [
+                unittest.mock.call(TEST_JID.bare())
             ]
         )
 
-        self.assertSequenceEqual(
-            SAXDriver.mock_calls,
-            [
-                unittest.mock.call(XSOParser()),
-            ]
-        )
+    def test_password_provider_raises_key_error_if_password_not_stored(self):
+        self.manager.new_account(TEST_JID)
+
+        with unittest.mock.patch.object(
+                self.manager,
+                "get_stored_password",
+                new=CoroutineMock()) as get_stored_password:
+            get_stored_password.return_value = None
+
+            with self.assertRaises(KeyError):
+                run_coroutine(
+                    self.manager.password_provider(TEST_JID, 0),
+                )
 
         self.assertSequenceEqual(
-            parse.mock_calls,
+            get_stored_password.mock_calls,
             [
-                unittest.mock.call(src, SAXDriver())
+                unittest.mock.call(TEST_JID.bare())
             ]
         )
 
     def tearDown(self):
         del self.manager
         del self.loop
+
+
+class TestAccountState(unittest.TestCase):
+    def setUp(self):
+        self.patches = [
+            unittest.mock.patch(
+                "aioxmpp.security_layer.tls_with_password_based_authentication"
+            ),
+            unittest.mock.patch("aioxmpp.node.PresenceManagedClient"),
+        ]
+
+        (self.tls_with_password_based_authentication,
+         self.PresenceManagedClient) = [
+             patch.start()
+             for patch in self.patches
+         ]
+
+        self.PresenceManagedClient.return_value = ConnectedClientMock()
+
+        self.password_provider = CoroutineMock()
+
+        self.acc = client.AccountSettings(TEST_JID)
+        self.st = client.AccountState(
+            self.acc,
+            password_provider=self.password_provider)
+
+    def test_init(self):
+        self.assertIs(self.st.account, self.acc)
+        self.assertIsNone(self.st.node)
+        self.assertFalse(self.st.started)
+
+    def test_start(self):
+        self.st.start()
+
+        self.assertTrue(self.st.started)
+
+        self.assertSequenceEqual(
+            self.tls_with_password_based_authentication.mock_calls,
+            [
+                unittest.mock.call(
+                    self.password_provider
+                )
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.PresenceManagedClient.mock_calls,
+            [
+                unittest.mock.call(
+                    TEST_JID,
+                    self.tls_with_password_based_authentication()
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            self.st.node,
+            self.PresenceManagedClient(),
+        )
+
+    def test_starting_twice_is_a_noop(self):
+        self.st.start()
+
+        self.assertTrue(self.st.started)
+
+        self.st.start()
+
+        self.assertTrue(self.st.started)
+
+        self.assertSequenceEqual(
+            self.tls_with_password_based_authentication.mock_calls,
+            [
+                unittest.mock.call(
+                    self.password_provider
+                )
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.PresenceManagedClient.mock_calls,
+            [
+                unittest.mock.call(
+                    TEST_JID,
+                    self.tls_with_password_based_authentication()
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            self.st.node,
+            self.PresenceManagedClient(),
+        )
+
+        self.assertEqual(
+            self.st.node.presence,
+            structs.PresenceState(True)
+        )
+
+    def test_stop_for_stopped_is_a_noop(self):
+        self.st.stop()
+        self.assertFalse(self.st.started)
+
+    def test_stop_started(self):
+        self.st.start()
+        run_coroutine(asyncio.sleep(0))
+        self.st.node.running = True  # this would be true on a non-mock
+        self.st.stop()
+
+        self.assertEqual(
+            self.st.node.presence,
+            structs.PresenceState(False)
+        )
+
+        # it takes time to shut down ...
+        self.assertTrue(self.st.started)
+
+        run_coroutine(asyncio.sleep(0))
+
+        self.st.node.running = False
+        self.st.node.on_stopped()
+
+        self.assertIsNone(self.st.node)
+        self.assertFalse(self.st.started)
+
+    def test_failure(self):
+        exc = ConnectionError()
+
+        self.st.start()
+        run_coroutine(asyncio.sleep(0))
+        self.st.node.running = True  # this would be true on a non-mock
+
+        self.assertTrue(self.st.started)
+
+        run_coroutine(asyncio.sleep(0))
+
+        self.st.node.running = False
+        self.st.node.on_failure(exc)
+
+        self.assertIsNone(self.st.node)
+        self.assertFalse(self.st.started)
+
+    def tearDown(self):
+        del self.acc
+
+        for patch in self.patches:
+            patch.stop()
+
+
+class TestClient(unittest.TestCase):
+    def setUp(self):
+        self.patches = [
+            unittest.mock.patch(
+                "aioxmpp.security_layer.tls_with_password_based_authentication"
+            ),
+            unittest.mock.patch("aioxmpp.node.PresenceManagedClient"),
+            unittest.mock.patch("mlxc.client.AccountState"),
+        ]
+
+        (self.tls_with_password_based_authentication,
+         self.PresenceManagedClient,
+         self.AccountState) = [
+             patch.start()
+             for patch in self.patches
+         ]
+
+        self.PresenceManagedClient.return_value = ConnectedClientMock()
+
+        self.c = client.Client()
+
+    def test_init(self):
+        with contextlib.ExitStack() as stack:
+            AccountManager = stack.enter_context(
+                unittest.mock.patch.object(
+                    client.Client,
+                    "AccountManager"
+                )
+            )
+
+            c = client.Client()
+
+        self.assertSequenceEqual(
+            AccountManager.mock_calls,
+            [
+                unittest.mock.call(),
+                unittest.mock.call().on_account_enabled.connect(
+                    c._on_account_enabled
+                ),
+                unittest.mock.call().on_account_disabled.connect(
+                    c._on_account_disabled
+                )
+            ]
+        )
+
+        self.assertEqual(
+            c.accounts,
+            AccountManager()
+        )
+
+        self.assertEqual(
+            c.global_presence,
+            structs.PresenceState(False)
+        )
+
+    def test_enable_account_creates_state(self):
+        acc = self.c.accounts.new_account(TEST_JID)
+        self.c.accounts.set_account_enabled(TEST_JID, True)
+
+        self.assertSequenceEqual(
+            self.tls_with_password_based_authentication.mock_calls,
+            [
+                unittest.mock.call(
+                    self.c.accounts.password_provider
+                )
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.PresenceManagedClient.mock_calls,
+            [
+                unittest.mock.call(
+                    TEST_JID,
+                    self.tls_with_password_based_authentication()
+                ),
+            ]
+        )
+
+        state = self.c.account_state(acc)
+        self.assertEqual(
+            state,
+            self.PresenceManagedClient(),
+        )
+
+        self.assertEqual(
+            state.presence,
+            self.c.global_presence
+        )
+
+    def test_account_state_raises_KeyError_for_disabled_account(self):
+        acc = self.c.accounts.new_account(TEST_JID)
+
+        with self.assertRaises(KeyError):
+            self.c.account_state(acc)
+
+    def test_account_state_raises_KeyError_for_re_disabled_account(self):
+        acc = self.c.accounts.new_account(TEST_JID)
+        self.c.accounts.set_account_enabled(TEST_JID, True)
+        self.c.accounts.set_account_enabled(TEST_JID, False)
+
+        with self.assertRaises(KeyError):
+            self.c.account_state(acc)
+
+    def test_setting_global_presence_updates_nodes(self):
+        jids = [
+            TEST_JID.replace(localpart="foo"),
+            TEST_JID.replace(localpart="bar"),
+            TEST_JID.replace(localpart="baz"),
+        ]
+
+        accs = [
+            self.c.accounts.new_account(jid)
+            for jid in jids
+        ]
+
+        for acc in accs:
+            self.c.accounts.set_account_enabled(acc.jid, True)
+            self.PresenceManagedClient.return_value = ConnectedClientMock()
+
+        states = [
+            self.c.account_state(acc)
+            for acc in accs
+        ]
+
+        pres = structs.PresenceState(True)
+        self.c.set_global_presence(pres)
+
+        for state in states:
+            self.assertEqual(
+                state.presence,
+                pres
+            )
+
+        pres = structs.PresenceState(False)
+        self.c.set_global_presence(pres)
+
+        for state in states:
+            self.assertEqual(
+                state.presence,
+                pres
+            )
+
+    def test_setting_global_presence_updates_only_nodes_with_equal_presence(self):
+        jids = [
+            TEST_JID.replace(localpart="foo"),
+            TEST_JID.replace(localpart="bar"),
+            TEST_JID.replace(localpart="baz"),
+        ]
+
+        accs = [
+            self.c.accounts.new_account(jid)
+            for jid in jids
+        ]
+
+        for acc in accs:
+            self.c.accounts.set_account_enabled(acc.jid, True)
+            self.PresenceManagedClient.return_value = ConnectedClientMock()
+
+        states = [
+            self.c.account_state(acc)
+            for acc in accs
+        ]
+
+        pres = structs.PresenceState(True)
+        other_pres = structs.PresenceState(True, "dnd")
+
+        states[1].presence = other_pres
+
+        self.c.set_global_presence(pres)
+
+        for state in states[::2]:
+            self.assertEqual(
+                state.presence,
+                pres
+            )
+
+        self.assertEqual(
+            states[1].presence,
+            other_pres
+        )
+
+    def test_set_global_presence_force_updates_all_nodes(self):
+        jids = [
+            TEST_JID.replace(localpart="foo"),
+            TEST_JID.replace(localpart="bar"),
+            TEST_JID.replace(localpart="baz"),
+        ]
+
+        accs = [
+            self.c.accounts.new_account(jid)
+            for jid in jids
+        ]
+
+        for acc in accs:
+            self.c.accounts.set_account_enabled(acc.jid, True)
+            self.PresenceManagedClient.return_value = ConnectedClientMock()
+
+        states = [
+            self.c.account_state(acc)
+            for acc in accs
+        ]
+
+        pres = structs.PresenceState(True)
+        other_pres = structs.PresenceState(True, "dnd")
+
+        states[1].presence = other_pres
+
+        self.c.set_global_presence(pres, force=True)
+
+        for state in states:
+            self.assertEqual(
+                state.presence,
+                pres
+            )
+
+    def test_global_presence_cannot_be_set_directly(self):
+        with self.assertRaises(AttributeError):
+            self.c.global_presence = structs.PresenceState(False)
+
+    def test_stop_and_wait_for_all(self):
+        jids = [
+            TEST_JID.replace(localpart="foo"),
+            TEST_JID.replace(localpart="bar"),
+            TEST_JID.replace(localpart="baz"),
+        ]
+
+        accs = [
+            self.c.accounts.new_account(jid)
+            for jid in jids
+        ]
+
+        for acc in accs:
+            self.c.accounts.set_account_enabled(acc.jid, True)
+            self.PresenceManagedClient.return_value = ConnectedClientMock()
+
+        states = [
+            self.c.account_state(acc)
+            for acc in accs
+        ]
+
+        self.PresenceManagedClient.reset_mock()
+
+        task = asyncio.async(self.c.stop_and_wait_for_all())
+
+        self.assertFalse(task.done())
+
+        run_coroutine(asyncio.sleep(0))
+
+        for state in states:
+            self.assertSequenceEqual(
+                [
+                    unittest.mock.call.stop(),
+                ],
+                state.mock_calls
+            )
+
+        self.assertFalse(task.done())
+
+        states[0].on_stopped()
+
+        run_coroutine(asyncio.sleep(0))
+
+        self.assertFalse(task.done())
+
+        states[1].on_failure(ConnectionError())
+
+        run_coroutine(asyncio.sleep(0))
+
+        self.assertFalse(task.done())
+
+        states[2].on_failure(ValueError())
+
+        run_coroutine(asyncio.sleep(0))
+
+        self.assertTrue(task.done())
+        self.assertIsNone(task.result())
+
+    def test_load_state(self):
+        with contextlib.ExitStack() as stack:
+            xdgconfigopen = stack.enter_context(unittest.mock.patch(
+                "mlxc.utils.xdgconfigopen"
+            ))
+            load = stack.enter_context(unittest.mock.patch.object(
+                self.c.accounts,
+                "load"
+            ))
+
+            self.c.load_state()
+
+        self.assertSequenceEqual(
+            xdgconfigopen.mock_calls,
+            [
+                unittest.mock.call(
+                    "zombofant.net", "mlxc",
+                    "accounts.xml",
+                    mode="rb"),
+                unittest.mock.call().__enter__(),
+                unittest.mock.call().__exit__(None, None, None),
+            ]
+        )
+
+        self.assertSequenceEqual(
+            load.mock_calls,
+            [
+                unittest.mock.call(
+                    xdgconfigopen()
+                )
+            ]
+        )
+
+    def test_load_state_clears_accounts_on_open_error(self):
+        with contextlib.ExitStack() as stack:
+            xdgconfigopen = stack.enter_context(unittest.mock.patch(
+                "mlxc.utils.xdgconfigopen"
+            ))
+            xdgconfigopen.side_effect = OSError()
+            clear = stack.enter_context(unittest.mock.patch.object(
+                self.c.accounts,
+                "clear"
+            ))
+
+            self.c.load_state()
+
+        self.assertSequenceEqual(
+            xdgconfigopen.mock_calls,
+            [
+                unittest.mock.call(
+                    "zombofant.net", "mlxc",
+                    "accounts.xml",
+                    mode="rb"),
+            ]
+        )
+
+        self.assertSequenceEqual(
+            clear.mock_calls,
+            [
+                unittest.mock.call()
+            ]
+        )
+
+    def test_save_state(self):
+        with contextlib.ExitStack() as stack:
+            xdgconfigopen = stack.enter_context(unittest.mock.patch(
+                "mlxc.utils.xdgconfigopen"
+            ))
+            save = stack.enter_context(unittest.mock.patch.object(
+                self.c.accounts,
+                "save"
+            ))
+
+            self.c.save_state()
+
+        self.assertSequenceEqual(
+            xdgconfigopen.mock_calls,
+            [
+                unittest.mock.call(
+                    "zombofant.net", "mlxc",
+                    "accounts.xml",
+                    mode="wb"),
+                unittest.mock.call().__enter__(),
+                unittest.mock.call().__exit__(None, None, None),
+            ]
+        )
+
+        self.assertSequenceEqual(
+            save.mock_calls,
+            [
+                unittest.mock.call(
+                    xdgconfigopen().__enter__()
+                )
+            ]
+        )
+
+    def tearDown(self):
+        del self.c
+
+        for patch in self.patches:
+            patch.stop()
