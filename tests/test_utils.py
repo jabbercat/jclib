@@ -2,6 +2,7 @@ import contextlib
 import os.path
 import unittest
 import unittest.mock
+import xml.sax.handler
 
 import xdg.BaseDirectory
 
@@ -310,3 +311,88 @@ class Testxdgdataopen(unittest.TestCase):
                 )
             ]
         )
+
+
+class Testwrite_xso(unittest.TestCase):
+    def test_write_to_io(self):
+        base = unittest.mock.Mock()
+
+        instance = base.XMPPXMLGenerator()
+        base.mock_calls.clear()
+
+        dest = base.dest
+        xso = base.xso
+
+        with unittest.mock.patch(
+                "aioxmpp.xml.XMPPXMLGenerator",
+                new=base.XMPPXMLGenerator
+        ) as XMPPXMLGenerator:
+            utils.write_xso(dest, xso)
+
+        self.assertSequenceEqual(
+            base.mock_calls,
+            [
+                unittest.mock.call.XMPPXMLGenerator(
+                    out=dest,
+                    short_empty_elements=True),
+                unittest.mock.call.XMPPXMLGenerator().startDocument(),
+                unittest.mock.call.XMPPXMLGenerator().characters("\n"),
+                unittest.mock.call.xso.unparse_to_sax(
+                    instance
+                ),
+                unittest.mock.call.XMPPXMLGenerator().characters("\n"),
+                unittest.mock.call.XMPPXMLGenerator().endDocument()
+            ]
+        )
+
+
+class Testread_xso(unittest.TestCase):
+    def test_read_from_io(self):
+        base = unittest.mock.Mock()
+
+        xso_parser = base.XSOParser()
+        sax_driver = base.SAXDriver()
+
+        base.mock_calls.clear()
+
+        with contextlib.ExitStack() as stack:
+            XSOParser = stack.enter_context(unittest.mock.patch(
+                "aioxmpp.xso.XSOParser",
+                base.XSOParser
+            ))
+            SAXDriver = stack.enter_context(unittest.mock.patch(
+                "aioxmpp.xso.SAXDriver",
+                base.SAXDriver
+            ))
+            make_parser = stack.enter_context(unittest.mock.patch(
+                "xml.sax.make_parser",
+                base.make_parser
+            ))
+
+            utils.read_xso(base.src, {
+                base.A: base.cb,
+            })
+
+        self.assertSequenceEqual(
+            base.mock_calls,
+            [
+                unittest.mock.call.XSOParser(),
+                unittest.mock.call.XSOParser().add_class(
+                    base.A,
+                    base.cb
+                ),
+                unittest.mock.call.SAXDriver(xso_parser),
+                unittest.mock.call.make_parser(),
+                unittest.mock.call.make_parser().setFeature(
+                    xml.sax.handler.feature_namespaces,
+                    True),
+                unittest.mock.call.make_parser().setFeature(
+                    xml.sax.handler.feature_external_ges,
+                    False),
+                unittest.mock.call.make_parser().setContentHandler(
+                    sax_driver),
+                unittest.mock.call.make_parser().parse(base.src)
+            ]
+        )
+
+# foo

@@ -1,8 +1,12 @@
 import os.path
 import types
+import xml.sax.handler
+
 import xdg.BaseDirectory
 
 import aioxmpp.errors
+import aioxmpp.xml
+import aioxmpp.xso
 
 from aioxmpp.utils import namespaces
 
@@ -120,3 +124,51 @@ def xdgdataopen(*args, mode="rb", **kwargs):
         xdg.BaseDirectory.load_data_paths,
         xdg.BaseDirectory.save_data_path,
         **kwargs)
+
+
+def write_xso(dest, xso):
+    """
+    Write a single XSO `xso` to a binary file-like output `dest`. By default,
+    it adds whitespace before and after the top level element to make the
+    document at least a bit more readable.
+    """
+    generator = aioxmpp.xml.XMPPXMLGenerator(
+        out=dest,
+        short_empty_elements=True)
+
+    generator.startDocument()
+    generator.characters("\n")
+    xso.unparse_to_sax(generator)
+    generator.characters("\n")
+    generator.endDocument()
+
+
+def read_xso(src, xsomap):
+    """
+    Read a single XSO from a binary file-like input `src`.
+
+    `xsomap` must be a mapping which maps :class:`aioxmpp.xso.XSO` subclasses
+    to callables. These will be registered at a newly created
+    :class:`aioxmpp.xso.XSOParser` instance which will be used to parse the
+    document in `src`.
+
+    This can be used to support multiple versions.
+    """
+
+    xso_parser = aioxmpp.xso.XSOParser()
+
+    for class_, cb in xsomap.items():
+        xso_parser.add_class(class_, cb)
+
+    driver = aioxmpp.xso.SAXDriver(xso_parser)
+
+    parser = xml.sax.make_parser()
+    parser.setFeature(
+        xml.sax.handler.feature_namespaces,
+        True)
+    parser.setFeature(
+        xml.sax.handler.feature_external_ges,
+        False)
+    parser.setContentHandler(driver)
+
+    parser.parse(src)
