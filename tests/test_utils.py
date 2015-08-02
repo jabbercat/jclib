@@ -263,11 +263,12 @@ class Testxdgconfigopen(unittest.TestCase):
     def test_delegate_to_xdgopen_generic(self):
         mode = "fnord"
         encoding = object()
+        resource = object()
 
         with unittest.mock.patch(
                 "mlxc.utils.xdgopen_generic"
         ) as xdgopen_generic:
-            utils.xdgconfigopen("foo", "bar", "baz.xml",
+            utils.xdgconfigopen(resource, "baz.xml",
                                 mode=mode,
                                 encoding=encoding)
 
@@ -275,7 +276,7 @@ class Testxdgconfigopen(unittest.TestCase):
             xdgopen_generic.mock_calls,
             [
                 unittest.mock.call(
-                    ["foo", "bar"],
+                    resource,
                     "baz.xml",
                     mode,
                     xdg.BaseDirectory.load_config_paths,
@@ -290,11 +291,12 @@ class Testxdgdataopen(unittest.TestCase):
     def test_delegate_to_xdgopen_generic(self):
         mode = "fnord"
         encoding = object()
+        resource = object()
 
         with unittest.mock.patch(
                 "mlxc.utils.xdgopen_generic"
         ) as xdgopen_generic:
-            utils.xdgdataopen("foo", "bar", "baz.xml",
+            utils.xdgdataopen(resource, "baz.xml",
                               mode=mode,
                               encoding=encoding)
 
@@ -302,7 +304,7 @@ class Testxdgdataopen(unittest.TestCase):
             xdgopen_generic.mock_calls,
             [
                 unittest.mock.call(
-                    ["foo", "bar"],
+                    resource,
                     "baz.xml",
                     mode,
                     xdg.BaseDirectory.load_data_paths,

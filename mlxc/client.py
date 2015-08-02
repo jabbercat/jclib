@@ -15,6 +15,7 @@ import aioxmpp.structs as structs
 import aioxmpp.xso as xso
 
 import mlxc.utils as utils
+import mlxc.xdginfo
 
 from mlxc.utils import mlxc_namespaces
 
@@ -392,7 +393,7 @@ class Client:
     def _load_accounts(self):
         try:
             accounts_file = utils.xdgconfigopen(
-                "zombofant.net", "mlxc",
+                mlxc.xdginfo.RESOURCE,
                 "accounts.xml",
                 mode="rb")
         except OSError:
@@ -404,7 +405,7 @@ class Client:
     def _load_pin_store(self):
         try:
             with utils.xdgconfigopen(
-                    "zombofant.net", "mlxc",
+                    mlxc.xdginfo.RESOURCE,
                     "pinstore.json",
                     mode="r",
                     encoding="utf-8") as f:
@@ -431,14 +432,14 @@ class Client:
 
     def save_state(self):
         with utils.xdgconfigopen(
-                "zombofant.net", "mlxc",
+                mlxc.xdginfo.RESOURCE,
                 "accounts.xml",
                 mode="wb") as f:
             self.accounts.save(f)
 
         data = self.pin_store.export_to_json()
         with utils.xdgconfigopen(
-                "zombofant.net", "mlxc",
+                mlxc.xdginfo.RESOURCE,
                 "pinstore.json",
                 mode="w",
                 encoding="utf-8") as f:

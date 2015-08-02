@@ -61,11 +61,10 @@ def xdgopen_generic(resource, name, mode, load_paths, save_path, **kwargs):
     return multiopen(paths, name, mode=mode, **kwargs)
 
 
-def xdgconfigopen(*args, mode="rb", **kwargs):
+def xdgconfigopen(resource, name, mode="rb", **kwargs):
     """
-    Open a configuration file. The last of the positional arguments is used as
-    a file name, the others are taken as resource (see
-    :mod:`xdg.BaseDirectory`).
+    Open a configuration file. The `name` is the file name, the `resource` (see
+    :func:`xdg.BaseDirectory.load_config_paths`) defines the XDG resource.
 
     This function calls :func:`xdgopen_generic` and returns its result. The
     :func:`xdg.BaseDirectory.load_config_paths` and
@@ -79,12 +78,11 @@ def xdgconfigopen(*args, mode="rb", **kwargs):
     resource of ``zombofant.net/mlxc``, one would call::
 
         import mlxc.utils
-        f = mlxc.utils.xdgconfigopen("zombofant.net", "mlxc", "fnord.xml")
+        f = mlxc.utils.xdgconfigopen(?"zombofant.net", "mlxc"), "fnord.xml")
 
     For writing, we would pass a different `mode`.
     """
 
-    *resource, name = args
     return xdgopen_generic(
         resource,
         name,
@@ -94,10 +92,10 @@ def xdgconfigopen(*args, mode="rb", **kwargs):
         **kwargs)
 
 
-def xdgdataopen(*args, mode="rb", **kwargs):
+def xdgdataopen(resource, name, mode="rb", **kwargs):
     """
-    Open a data file. The last of the positional arguments is used as a file
-    name, the others are taken as resource (see :mod:`xdg.BaseDirectory`).
+    Open a data file. The `name` is the file name, the `resource` (see
+    :func:`xdg.BaseDirectory.load_data_paths`) defines the XDG resource.
 
     This function calls :func:`xdgopen_generic` and returns its result. The
     :func:`xdg.BaseDirectory.load_data_paths` and
@@ -111,12 +109,11 @@ def xdgdataopen(*args, mode="rb", **kwargs):
     resource of ``zombofant.net/mlxc``, one would call::
 
         import mlxc.utils
-        f = mlxc.utils.xdgdataopen("zombofant.net", "mlxc", "foo.xml")
+        f = mlxc.utils.xdgdataopen(("zombofant.net", "mlxc"), "foo.xml")
 
     For writing, we would pass a different `mode`.
     """
 
-    *resource, name = args
     return xdgopen_generic(
         resource,
         name,

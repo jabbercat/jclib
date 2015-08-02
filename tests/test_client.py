@@ -15,6 +15,7 @@ import aioxmpp.structs as structs
 import aioxmpp.xso as xso
 
 import mlxc.client as client
+import mlxc.xdginfo
 
 from aioxmpp.testutils import (
     run_coroutine,
@@ -1445,7 +1446,7 @@ class TestClient(unittest.TestCase):
             calls,
             [
                 unittest.mock.call.xdgconfigopen(
-                    "zombofant.net", "mlxc",
+                    mlxc.xdginfo.RESOURCE,
                     "accounts.xml",
                     mode="rb"),
                 unittest.mock.call.xdgconfigopen().__enter__(),
@@ -1482,7 +1483,7 @@ class TestClient(unittest.TestCase):
             calls,
             [
                 unittest.mock.call.xdgconfigopen(
-                    "zombofant.net", "mlxc",
+                    mlxc.xdginfo.RESOURCE,
                     "accounts.xml",
                     mode="rb"),
                 unittest.mock.call.clear()
@@ -1517,7 +1518,7 @@ class TestClient(unittest.TestCase):
             calls,
             [
                 unittest.mock.call.xdgconfigopen(
-                    "zombofant.net", "mlxc",
+                    mlxc.xdginfo.RESOURCE,
                     "pinstore.json",
                     mode="r",
                     encoding="utf-8"),
@@ -1560,7 +1561,7 @@ class TestClient(unittest.TestCase):
             calls,
             [
                 unittest.mock.call.xdgconfigopen(
-                    "zombofant.net", "mlxc",
+                    mlxc.xdginfo.RESOURCE,
                     "pinstore.json",
                     mode="r",
                     encoding="utf-8"),
@@ -1607,7 +1608,7 @@ class TestClient(unittest.TestCase):
             calls,
             [
                 unittest.mock.call.xdgconfigopen(
-                    "zombofant.net", "mlxc",
+                    mlxc.xdginfo.RESOURCE,
                     "pinstore.json",
                     mode="r",
                     encoding="utf-8"),
@@ -1708,7 +1709,7 @@ class TestClient(unittest.TestCase):
             calls,
             [
                 unittest.mock.call.xdgconfigopen(
-                    "zombofant.net", "mlxc",
+                    mlxc.xdginfo.RESOURCE,
                     "accounts.xml",
                     mode="wb"),
                 unittest.mock.call.xdgconfigopen().__enter__(),
@@ -1718,7 +1719,7 @@ class TestClient(unittest.TestCase):
                 unittest.mock.call.xdgconfigopen().__exit__(None, None, None),
                 unittest.mock.call.export_to_json(),
                 unittest.mock.call.xdgconfigopen(
-                    "zombofant.net", "mlxc",
+                    mlxc.xdginfo.RESOURCE,
                     "pinstore.json",
                     mode="w",
                     encoding="utf-8"),
