@@ -258,48 +258,6 @@ class AccountManager:
         return result
 
 
-class AccountState:
-    def __init__(self, acc, password_provider):
-        self.account = acc
-        self.node = None
-        self.started = False
-        self._password_provider = password_provider
-
-    def _on_node_stopped(self):
-        self.node = None
-        self.started = False
-
-    def _on_node_failed(self, exc):
-        self.node = None
-        self.started = False
-
-    def start(self):
-        if self.node is not None:
-            return
-
-        self.node = aioxmpp.node.PresenceManagedClient(
-            self.account.jid.replace(resource=self.account.resource),
-            security_layer.tls_with_password_based_authentication(
-                self._password_provider
-            )
-        )
-        self.node.presence = structs.PresenceState(True)
-        self.node.on_stopped.connect(
-            self._on_node_stopped
-        )
-        self.node.on_failure.connect(
-            self._on_node_failed
-        )
-
-        self.started = True
-
-    def stop(self):
-        if not self.started:
-            return
-
-        self.node.presence = structs.PresenceState(False)
-
-
 class Client:
     """
     The :class:`Client` keeps track of all the information a client needs. It
