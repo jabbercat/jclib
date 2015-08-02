@@ -1141,7 +1141,9 @@ class TestClient(unittest.TestCase):
             self.tls_with_password_based_authentication.mock_calls,
             [
                 unittest.mock.call(
-                    self.c.accounts.password_provider
+                    self.c.accounts.password_provider,
+                    certificate_verifier_factory=\
+                        self.c._make_certificate_verifier
                 )
             ]
         )
@@ -1514,6 +1516,38 @@ class TestClient(unittest.TestCase):
                 unittest.mock.call(
                     xdgconfigopen().__enter__()
                 )
+            ]
+        )
+
+    def test_pin_store(self):
+        self.assertIsInstance(
+            self.c.pin_store,
+            aioxmpp.security_layer.PublicKeyPinStore
+        )
+
+    def test__decide_on_certificate_returns_None(self):
+        self.assertIs(
+            run_coroutine(self.c._decide_on_certificate(None)),
+            False
+        )
+
+        verifier = self.c._make_certificate_verifier()
+        self.assertIs(
+            run_coroutine(self.c._decide_on_certificate(verifier)),
+            False
+        )
+
+    def test__make_certificate_verifier_creates_pinning_pkix_verifier(self):
+        with unittest.mock.patch(
+                "aioxmpp.security_layer.PinningPKIXCertificateVerifier"
+        ) as PinningPKIXCertificateVerifier:
+            verifier = self.c._make_certificate_verifier()
+
+        self.assertSequenceEqual(
+            PinningPKIXCertificateVerifier.mock_calls,
+            [
+                unittest.mock.call(self.c.pin_store.query,
+                                   self.c._decide_on_certificate),
             ]
         )
 

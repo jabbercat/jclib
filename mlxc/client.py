@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import logging
 import xml.sax.handler
 
 import keyring
@@ -15,6 +16,9 @@ import aioxmpp.xso as xso
 import mlxc.utils as utils
 
 from mlxc.utils import mlxc_namespaces
+
+
+logger = logging.getLogger(__name__)
 
 
 class PasswordStoreIsUnsafe(RuntimeError):
@@ -310,6 +314,8 @@ class Client:
             self._on_account_disabled
         )
 
+        self.pin_store = aioxmpp.security_layer.PublicKeyPinStore()
+
         self._states = {}
 
         self._global_presence = structs.PresenceState(False)
@@ -318,7 +324,8 @@ class Client:
         node = aioxmpp.node.PresenceManagedClient(
             account.jid.replace(resource=account.resource),
             security_layer.tls_with_password_based_authentication(
-                self.accounts.password_provider
+                self.accounts.password_provider,
+                certificate_verifier_factory=self._make_certificate_verifier
             )
         )
         node.presence = self.global_presence
@@ -327,6 +334,18 @@ class Client:
 
     def _on_account_disabled(self, account, reason):
         del self._states[account]
+
+    def _make_certificate_verifier(self):
+        return aioxmpp.security_layer.PinningPKIXCertificateVerifier(
+            self.pin_store.query,
+            self._decide_on_certificate
+        )
+
+    @asyncio.coroutine
+    def _decide_on_certificate(self, verifier):
+        logger.warning("no implementation to decide on certificate, "
+                       "returning False")
+        return False
 
     def account_state(self, account):
         return self._states[account]
