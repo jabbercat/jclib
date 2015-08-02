@@ -1,3 +1,6 @@
+import asyncio
+import functools
+import logging
 import os.path
 import types
 import xml.sax.handler
@@ -14,6 +17,9 @@ from aioxmpp.utils import namespaces
 mlxc_namespaces = types.SimpleNamespace()
 mlxc_namespaces.roster = "https://xmlns.zombofant.net/mlxc/core/roster/1.0"
 mlxc_namespaces.account = "https://xmlns.zombofant.net/mlxc/core/account/1.0"
+
+
+logger = logging.getLogger(__name__)
 
 
 def multiopen(paths, name, mode, *args, **kwargs):
@@ -169,3 +175,43 @@ def read_xso(src, xsomap):
     parser.setContentHandler(driver)
 
     parser.parse(src)
+
+
+def _logged_task_done(task, name):
+    try:
+        value = task.result()
+    except asyncio.CancelledError:
+        logger.debug("task %s cancelled", name)
+    except Exception:
+        logger.exception("task %s failed", name)
+    else:
+        logger.info("task %s returned a value: %r",
+                    name, task.result())
+
+
+def logged_async(coro, *, loop=None, name=None):
+    """
+    This is a wrapper around :func:`asyncio.async` which automatically installs
+    a callback on the task created using that function. `coro` and `loop` are
+    passed to :func:`asyncio.async` and the result is returned.
+
+    The callback will log a message after the task finishes:
+
+    * if the task got cancelled, it logs a debug level message
+    * if the task returned successfully with a value, it logs an info level
+      message including the :func:`repr` of the value which was returned by the
+      task
+    * if the task exits with an exception other than
+      :class:`asyncio.CancelledError`, an exception level message is logged,
+      including the traceback
+
+    In all cases, the `name` argument is included in the message. If `name` is
+    :data:`None`, the :func:`str` representation of the return value of this
+    function, that is, the task which was created, is used.
+    """
+    loop = asyncio.get_event_loop() if loop is None else loop
+    task = asyncio.async(coro, loop=loop)
+    task.add_done_callback(functools.partial(
+        _logged_task_done,
+        name=name or task))
+    return task

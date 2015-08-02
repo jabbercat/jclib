@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import os.path
 import unittest
@@ -396,5 +397,139 @@ class Testread_xso(unittest.TestCase):
                 unittest.mock.call.make_parser().parse(base.src)
             ]
         )
+
+
+class Testlogged_async(unittest.TestCase):
+    def test_attaches_log_function(self):
+        base = unittest.mock.Mock()
+
+        loop = object()
+        coro = object()
+        name = object()
+        with contextlib.ExitStack() as stack:
+            async = stack.enter_context(unittest.mock.patch(
+                "asyncio.async",
+                new=base.async
+            ))
+
+            partial = stack.enter_context(unittest.mock.patch(
+                "functools.partial",
+                new=base.partial
+            ))
+
+            task = utils.logged_async(coro, loop=loop, name=name)
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.async(coro, loop=loop),
+                unittest.mock.call.partial(
+                    utils._logged_task_done,
+                    name=name),
+                unittest.mock.call.async().add_done_callback(
+                    partial()
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            task,
+            async()
+        )
+
+    def test_uses_current_event_loop_as_default(self):
+        base = unittest.mock.Mock()
+
+        coro = object()
+        with contextlib.ExitStack() as stack:
+            async = stack.enter_context(unittest.mock.patch(
+                "asyncio.async",
+                new=base.async
+            ))
+
+            partial = stack.enter_context(unittest.mock.patch(
+                "functools.partial",
+                new=base.partial
+            ))
+
+            get_event_loop = stack.enter_context(unittest.mock.patch(
+                "asyncio.get_event_loop",
+                new=base.get_event_loop
+            ))
+
+            task = utils.logged_async(coro)
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.get_event_loop(),
+                unittest.mock.call.async(coro, loop=get_event_loop()),
+                unittest.mock.call.partial(
+                    utils._logged_task_done,
+                    name=async(),
+                ),
+                unittest.mock.call.async().add_done_callback(
+                    partial()
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            task,
+            async()
+        )
+
+    def test_logged_task_done_no_exception(self):
+        name = object()
+
+        task = unittest.mock.Mock()
+
+        with unittest.mock.patch("mlxc.utils.logger") as logger:
+            utils._logged_task_done(task, name=name)
+
+        self.assertSequenceEqual(
+            logger.mock_calls,
+            [
+                unittest.mock.call.info("task %s returned a value: %r",
+                                        name, task.result())
+            ]
+        )
+
+    def test_logged_task_done_cancelled(self):
+        name = object()
+
+        task = unittest.mock.Mock()
+        task.result.side_effect = asyncio.CancelledError()
+
+        with unittest.mock.patch("mlxc.utils.logger") as logger:
+            utils._logged_task_done(task, name=name)
+
+        self.assertSequenceEqual(
+            logger.mock_calls,
+            [
+                unittest.mock.call.debug("task %s cancelled",
+                                         name)
+            ]
+        )
+
+    def test_logged_task_done_exception(self):
+        name = object()
+
+        task = unittest.mock.Mock()
+        task.result.side_effect = Exception()
+
+        with unittest.mock.patch("mlxc.utils.logger") as logger:
+            utils._logged_task_done(task, name=name)
+
+        self.assertSequenceEqual(
+            logger.mock_calls,
+            [
+                unittest.mock.call.exception("task %s failed",
+                                             name)
+            ]
+        )
+
 
 # foo
