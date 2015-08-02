@@ -1423,99 +1423,311 @@ class TestClient(unittest.TestCase):
         self.assertTrue(task.done())
         self.assertIsNone(task.result())
 
-    def test_load_state(self):
+    def test__load_accounts(self):
+        base = unittest.mock.MagicMock()
+
         with contextlib.ExitStack() as stack:
             xdgconfigopen = stack.enter_context(unittest.mock.patch(
-                "mlxc.utils.xdgconfigopen"
+                "mlxc.utils.xdgconfigopen",
+                new=base.xdgconfigopen
             ))
             load = stack.enter_context(unittest.mock.patch.object(
                 self.c.accounts,
-                "load"
+                "load",
+                new=base.load
             ))
 
-            self.c.load_state()
+            self.c._load_accounts()
+
+        calls = list(base.mock_calls)
 
         self.assertSequenceEqual(
-            xdgconfigopen.mock_calls,
+            calls,
             [
-                unittest.mock.call(
+                unittest.mock.call.xdgconfigopen(
                     "zombofant.net", "mlxc",
                     "accounts.xml",
                     mode="rb"),
-                unittest.mock.call().__enter__(),
-                unittest.mock.call().__exit__(None, None, None),
+                unittest.mock.call.xdgconfigopen().__enter__(),
+                unittest.mock.call.load(xdgconfigopen()),
+                unittest.mock.call.xdgconfigopen().__exit__(None, None, None),
             ]
         )
 
-        self.assertSequenceEqual(
-            load.mock_calls,
-            [
-                unittest.mock.call(
-                    xdgconfigopen()
-                )
-            ]
-        )
+    def test__load_accounts_clears_accounts_on_open_errors(self):
+        base = unittest.mock.MagicMock()
 
-    def test_load_state_clears_accounts_on_open_error(self):
         with contextlib.ExitStack() as stack:
             xdgconfigopen = stack.enter_context(unittest.mock.patch(
-                "mlxc.utils.xdgconfigopen"
+                "mlxc.utils.xdgconfigopen",
+                new=base.xdgconfigopen
             ))
-            xdgconfigopen.side_effect = OSError()
+            load = stack.enter_context(unittest.mock.patch.object(
+                self.c.accounts,
+                "load",
+                new=base.load
+            ))
             clear = stack.enter_context(unittest.mock.patch.object(
                 self.c.accounts,
-                "clear"
+                "clear",
+                new=base.clear
             ))
 
-            self.c.load_state()
+            xdgconfigopen.side_effect = OSError()
 
+            self.c._load_accounts()
+
+        calls = list(base.mock_calls)
         self.assertSequenceEqual(
-            xdgconfigopen.mock_calls,
+            calls,
             [
-                unittest.mock.call(
+                unittest.mock.call.xdgconfigopen(
                     "zombofant.net", "mlxc",
                     "accounts.xml",
                     mode="rb"),
+                unittest.mock.call.clear()
             ]
         )
 
-        self.assertSequenceEqual(
-            clear.mock_calls,
-            [
-                unittest.mock.call()
-            ]
-        )
+    def test__load_pin_store(self):
+        base = unittest.mock.MagicMock()
 
-    def test_save_state(self):
         with contextlib.ExitStack() as stack:
             xdgconfigopen = stack.enter_context(unittest.mock.patch(
-                "mlxc.utils.xdgconfigopen"
+                "mlxc.utils.xdgconfigopen",
+                new=base.xdgconfigopen
+            ))
+            load = stack.enter_context(unittest.mock.patch(
+                "json.load",
+                new=base.json.load
+            ))
+            import_from_json = stack.enter_context(
+                unittest.mock.patch.object(
+                    self.c.pin_store,
+                    "import_from_json",
+                    new=base.import_from_json
+                )
+            )
+
+            self.c._load_pin_store()
+
+        calls = list(base.mock_calls)
+
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.xdgconfigopen(
+                    "zombofant.net", "mlxc",
+                    "pinstore.json",
+                    mode="r",
+                    encoding="utf-8"),
+                unittest.mock.call.xdgconfigopen().__enter__(),
+                unittest.mock.call.json.load(xdgconfigopen().__enter__()),
+                unittest.mock.call.xdgconfigopen().__exit__(None, None, None),
+                unittest.mock.call.import_from_json(
+                    load(),
+                    override=True),
+            ]
+        )
+
+    def test__load_pin_store_loads_empty_dict_on_OSError(self):
+        base = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            xdgconfigopen = stack.enter_context(unittest.mock.patch(
+                "mlxc.utils.xdgconfigopen",
+                new=base.xdgconfigopen
+            ))
+            load = stack.enter_context(unittest.mock.patch(
+                "json.load",
+                new=base.json.load
+            ))
+            import_from_json = stack.enter_context(
+                unittest.mock.patch.object(
+                    self.c.pin_store,
+                    "import_from_json",
+                    new=base.import_from_json
+                )
+            )
+
+            xdgconfigopen.side_effect = OSError()
+
+            self.c._load_pin_store()
+
+        calls = list(base.mock_calls)
+
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.xdgconfigopen(
+                    "zombofant.net", "mlxc",
+                    "pinstore.json",
+                    mode="r",
+                    encoding="utf-8"),
+                unittest.mock.call.import_from_json(
+                    {},
+                    override=True),
+            ]
+        )
+
+    def test__load_pin_store_loads_empty_dict_on_other_Exception_reraise(self):
+        base = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            xdgconfigopen = stack.enter_context(unittest.mock.patch(
+                "mlxc.utils.xdgconfigopen",
+                new=base.xdgconfigopen
+            ))
+            load = stack.enter_context(unittest.mock.patch(
+                "json.load",
+                new=base.json.load
+            ))
+            import_from_json = stack.enter_context(
+                unittest.mock.patch.object(
+                    self.c.pin_store,
+                    "import_from_json",
+                    new=base.import_from_json
+                )
+            )
+
+            exc = Exception()
+            load.side_effect = exc
+
+            with self.assertRaises(Exception) as ctx:
+                self.c._load_pin_store()
+
+        self.assertIs(
+            ctx.exception,
+            exc
+        )
+
+        calls = list(base.mock_calls)
+
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.xdgconfigopen(
+                    "zombofant.net", "mlxc",
+                    "pinstore.json",
+                    mode="r",
+                    encoding="utf-8"),
+                unittest.mock.call.xdgconfigopen().__enter__(),
+                unittest.mock.call.json.load(
+                    xdgconfigopen().__enter__(),
+                ),
+                unittest.mock.call.xdgconfigopen().__exit__(
+                    unittest.mock.ANY,
+                    unittest.mock.ANY,
+                    unittest.mock.ANY),
+                unittest.mock.call.import_from_json(
+                    {},
+                    override=True),
+            ]
+        )
+
+    def test_load_state_ignores_exceptions(self):
+        funcs = [
+            "_load_accounts",
+            "_load_pin_store",
+        ]
+
+        for func_to_fail_name in funcs:
+            with contextlib.ExitStack() as stack:
+                funcs_to_pass = []
+                for func_to_pass_name in funcs:
+                    if func_to_pass_name == func_to_fail_name:
+                        continue
+                    funcs_to_pass.append((
+                        func_to_pass_name,
+                        stack.enter_context(unittest.mock.patch.object(
+                            self.c,
+                            func_to_pass_name
+                        ))
+                    ))
+
+                func_to_fail = stack.enter_context(
+                    unittest.mock.patch.object(
+                        self.c,
+                        func_to_fail_name
+                    )
+                )
+
+                func_to_fail.side_effect = Exception()
+
+                self.c.load_state()
+
+                for name, func in funcs_to_pass:
+                    self.assertSequenceEqual(
+                        func.mock_calls,
+                        [
+                            unittest.mock.call(),
+                        ],
+                        "function {} when {} fails".format(
+                            name,
+                            func_to_fail_name)
+                    )
+
+                self.assertSequenceEqual(
+                    func_to_fail.mock_calls,
+                    [
+                        unittest.mock.call()
+                    ],
+                    "function {} when it is supposed to fail".format(
+                        func_to_fail_name
+                    )
+                )
+
+    def test_save_state(self):
+        base = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            xdgconfigopen = stack.enter_context(unittest.mock.patch(
+                "mlxc.utils.xdgconfigopen",
+                new=base.xdgconfigopen
             ))
             save = stack.enter_context(unittest.mock.patch.object(
                 self.c.accounts,
-                "save"
+                "save",
+                new=base.save
+            ))
+            json_dump = stack.enter_context(unittest.mock.patch(
+                "json.dump",
+                new=base.json.dump
+            ))
+            export_to_json = stack.enter_context(unittest.mock.patch.object(
+                self.c.pin_store,
+                "export_to_json",
+                new=base.export_to_json
             ))
 
             self.c.save_state()
 
+        calls = list(base.mock_calls)
+
         self.assertSequenceEqual(
-            xdgconfigopen.mock_calls,
+            calls,
             [
-                unittest.mock.call(
+                unittest.mock.call.xdgconfigopen(
                     "zombofant.net", "mlxc",
                     "accounts.xml",
                     mode="wb"),
-                unittest.mock.call().__enter__(),
-                unittest.mock.call().__exit__(None, None, None),
-            ]
-        )
-
-        self.assertSequenceEqual(
-            save.mock_calls,
-            [
-                unittest.mock.call(
+                unittest.mock.call.xdgconfigopen().__enter__(),
+                unittest.mock.call.save(
                     xdgconfigopen().__enter__()
-                )
+                ),
+                unittest.mock.call.xdgconfigopen().__exit__(None, None, None),
+                unittest.mock.call.export_to_json(),
+                unittest.mock.call.xdgconfigopen(
+                    "zombofant.net", "mlxc",
+                    "pinstore.json",
+                    mode="w",
+                    encoding="utf-8"),
+                unittest.mock.call.xdgconfigopen().__enter__(),
+                unittest.mock.call.json.dump(
+                    export_to_json(),
+                    xdgconfigopen().__enter__()
+                ),
+                unittest.mock.call.xdgconfigopen().__exit__(None, None, None),
             ]
         )
 

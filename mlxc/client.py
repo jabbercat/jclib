@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import json
 import logging
 import xml.sax.handler
 
@@ -388,7 +389,7 @@ class Client:
             *futures,
             return_exceptions=True)
 
-    def load_state(self):
+    def _load_accounts(self):
         try:
             accounts_file = utils.xdgconfigopen(
                 "zombofant.net", "mlxc",
@@ -400,7 +401,33 @@ class Client:
             with accounts_file:
                 self.accounts.load(accounts_file)
 
-        print(list(self.accounts))
+    def _load_pin_store(self):
+        try:
+            with utils.xdgconfigopen(
+                    "zombofant.net", "mlxc",
+                    "pinstore.json",
+                    mode="r",
+                    encoding="utf-8") as f:
+                data = json.load(f)
+        except OSError:
+            self.pin_store.import_from_json({}, override=True)
+        except Exception:
+            self.pin_store.import_from_json({}, override=True)
+            raise
+        else:
+            self.pin_store.import_from_json(data, override=True)
+
+    def load_state(self):
+        try:
+            self._load_accounts()
+        except Exception as exc:
+            logger.error("failed to load accounts", exc_info=True)
+
+        try:
+            self._load_pin_store()
+        except Exception as exc:
+            logger.error("failed to load certificate pin store",
+                         exc_info=True)
 
     def save_state(self):
         with utils.xdgconfigopen(
@@ -408,3 +435,11 @@ class Client:
                 "accounts.xml",
                 mode="wb") as f:
             self.accounts.save(f)
+
+        data = self.pin_store.export_to_json()
+        with utils.xdgconfigopen(
+                "zombofant.net", "mlxc",
+                "pinstore.json",
+                mode="w",
+                encoding="utf-8") as f:
+            json.dump(data, f)
