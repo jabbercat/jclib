@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import signal
 import socket
 import stat
 import unittest
@@ -452,3 +453,492 @@ class Testget_singleton_impl(unittest.TestCase):
             result,
             Singleton()
         )
+
+
+class TestMain(unittest.TestCase):
+    def setUp(self):
+        self.loop = asyncio.get_event_loop()
+        self.main = main.Main(self.loop)
+
+    def test_init(self):
+        base = unittest.mock.Mock()
+
+        instance = main.Main(base.loop)
+
+        self.assertIs(instance.loop, base.loop)
+
+    def test_setup(self):
+        base = unittest.mock.Mock()
+
+        instance = main.Main(base.loop)
+
+        with contextlib.ExitStack() as stack:
+            Future = stack.enter_context(unittest.mock.patch(
+                "asyncio.Future",
+                new=base.Future
+            ))
+
+            instance.setup()
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.loop.add_signal_handler(
+                    signal.SIGINT,
+                    instance.handle_sigint_sigterm
+                ),
+                unittest.mock.call.loop.add_signal_handler(
+                    signal.SIGTERM,
+                    instance.handle_sigint_sigterm
+                ),
+                unittest.mock.call.Future(loop=base.loop)
+            ]
+        )
+
+    def test_teardown(self):
+        base = unittest.mock.Mock()
+
+        instance = main.Main(base.loop)
+        instance.setup()
+
+        base.mock_calls.clear()
+
+        with contextlib.ExitStack() as stack:
+            instance.teardown()
+
+        self.assertFalse(hasattr(instance, "main_future"))
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.loop.remove_signal_handler(signal.SIGTERM),
+                unittest.mock.call.loop.remove_signal_handler(signal.SIGINT),
+            ]
+        )
+
+    def test_acquire_singleton_starts_get_singleton_impl(self):
+        base = unittest.mock.Mock()
+
+        base.get_singleton_impl().start = CoroutineMock()
+        base.get_singleton_impl().start.return_value = True
+
+        base.mock_calls.clear()
+
+        with contextlib.ExitStack() as stack:
+            get_singleton_impl = stack.enter_context(unittest.mock.patch(
+                "mlxc.main.get_singleton_impl",
+                new=base.get_singleton_impl
+            ))
+
+            result = run_coroutine(self.main.acquire_singleton())
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.get_singleton_impl(),
+                unittest.mock.call.get_singleton_impl().start(),
+            ]
+        )
+
+        self.assertEqual(
+            get_singleton_impl(),
+            result
+        )
+
+    def test_acquire_singleton_sets_singleton_to_None_on_no_impl(self):
+        base = unittest.mock.Mock()
+
+        base.get_singleton_impl.side_effect = RuntimeError()
+
+        base.mock_calls.clear()
+
+        with contextlib.ExitStack() as stack:
+            get_singleton_impl = stack.enter_context(unittest.mock.patch(
+                "mlxc.main.get_singleton_impl",
+                new=base.get_singleton_impl
+            ))
+
+            result = run_coroutine(self.main.acquire_singleton())
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.get_singleton_impl(),
+            ]
+        )
+
+        self.assertIs(
+            None,
+            result
+        )
+
+    def test_acquire_singleton_raises_on_start_failure(self):
+        base = unittest.mock.Mock()
+
+        base.get_singleton_impl().start = CoroutineMock()
+        base.get_singleton_impl().start.return_value = False
+
+        base.mock_calls.clear()
+
+        with contextlib.ExitStack() as stack:
+            get_singleton_impl = stack.enter_context(unittest.mock.patch(
+                "mlxc.main.get_singleton_impl",
+                new=base.get_singleton_impl
+            ))
+
+            result = run_coroutine(self.main.acquire_singleton())
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.get_singleton_impl(),
+                unittest.mock.call.get_singleton_impl().start(),
+            ]
+        )
+
+        self.assertIs(
+            False,
+            result
+        )
+
+    def test_acquire_singleton_re_raises_start_exceptions(self):
+        base = unittest.mock.Mock()
+
+        exc = Exception()
+
+        base.get_singleton_impl().start = CoroutineMock()
+        base.get_singleton_impl().start.side_effect = exc
+
+        base.mock_calls.clear()
+
+        with contextlib.ExitStack() as stack:
+            get_singleton_impl = stack.enter_context(unittest.mock.patch(
+                "mlxc.main.get_singleton_impl",
+                new=base.get_singleton_impl
+            ))
+
+            result = run_coroutine(self.main.acquire_singleton())
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.get_singleton_impl(),
+                unittest.mock.call.get_singleton_impl().start(),
+            ]
+        )
+
+        self.assertIs(
+            False,
+            result
+        )
+
+    def test_run_call_sequence(self):
+        base = unittest.mock.Mock()
+
+        obj = object()
+
+        base.acquire_singleton = CoroutineMock()
+        run_coroutine(base.acquire_singleton()).stop = CoroutineMock()
+        base.run_core = CoroutineMock()
+        base.run_core.return_value = obj
+
+        base.mock_calls.clear()
+
+        with contextlib.ExitStack() as stack:
+            acquire_singleton = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "acquire_singleton",
+                new=base.acquire_singleton
+            ))
+
+            run_core = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "run_core",
+                new=base.run_core
+            ))
+
+            setup = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "setup",
+                new=base.setup
+            ))
+
+            teardown = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "teardown",
+                new=base.teardown
+            ))
+
+            result = run_coroutine(self.main.run())
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.setup(),
+                unittest.mock.call.acquire_singleton(),
+                unittest.mock.call.run_core(),
+                unittest.mock.call.acquire_singleton().stop(),
+                unittest.mock.call.teardown(),
+            ]
+        )
+
+        self.assertEqual(
+            result,
+            obj
+        )
+
+    def test_run_handle_None_singleton(self):
+        base = unittest.mock.Mock()
+
+        obj = object()
+
+        base.acquire_singleton = CoroutineMock()
+        base.acquire_singleton.return_value = None
+        base.run_core = CoroutineMock()
+        base.run_core.return_value = obj
+
+        base.mock_calls.clear()
+
+        with contextlib.ExitStack() as stack:
+            acquire_singleton = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "acquire_singleton",
+                new=base.acquire_singleton
+            ))
+
+            run_core = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "run_core",
+                new=base.run_core
+            ))
+
+            setup = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "setup",
+                new=base.setup
+            ))
+
+            teardown = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "teardown",
+                new=base.teardown
+            ))
+
+            result = run_coroutine(self.main.run())
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.setup(),
+                unittest.mock.call.acquire_singleton(),
+                unittest.mock.call.run_core(),
+                unittest.mock.call.teardown(),
+            ]
+        )
+
+        self.assertEqual(
+            result,
+            obj
+        )
+
+    def test_run_handle_False_singleton(self):
+        base = unittest.mock.Mock()
+
+        obj = object()
+
+        base.acquire_singleton = CoroutineMock()
+        base.acquire_singleton.return_value = False
+        base.run_core = CoroutineMock()
+        base.run_core.return_value = obj
+
+        base.mock_calls.clear()
+
+        with contextlib.ExitStack() as stack:
+            acquire_singleton = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "acquire_singleton",
+                new=base.acquire_singleton
+            ))
+
+            run_core = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "run_core",
+                new=base.run_core
+            ))
+
+            setup = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "setup",
+                new=base.setup
+            ))
+
+            teardown = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "teardown",
+                new=base.teardown
+            ))
+
+            result = run_coroutine(self.main.run())
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.setup(),
+                unittest.mock.call.acquire_singleton(),
+                unittest.mock.call.teardown(),
+            ]
+        )
+
+        self.assertEqual(
+            result,
+            1
+        )
+
+    def test_run_handle_core_exception(self):
+        base = unittest.mock.Mock()
+
+        exc = Exception()
+
+        base.acquire_singleton = CoroutineMock()
+        base.run_core = CoroutineMock()
+        base.run_core.side_effect = exc
+
+        base.mock_calls.clear()
+
+        with contextlib.ExitStack() as stack:
+            acquire_singleton = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "acquire_singleton",
+                new=base.acquire_singleton
+            ))
+
+            run_core = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "run_core",
+                new=base.run_core
+            ))
+
+            setup = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "setup",
+                new=base.setup
+            ))
+
+            teardown = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "teardown",
+                new=base.teardown
+            ))
+
+            result = run_coroutine(self.main.run())
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.setup(),
+                unittest.mock.call.acquire_singleton(),
+                unittest.mock.call.run_core(),
+                unittest.mock.call.acquire_singleton().stop(),
+                unittest.mock.call.teardown()
+            ]
+        )
+
+        self.assertEqual(
+            result,
+            1
+        )
+
+    def test_quit_sets_main_future_result(self):
+        self.main.setup()
+
+        self.assertFalse(self.main.main_future.done())
+        self.main.quit()
+        self.assertEqual(
+            self.main.main_future.result(),
+            0
+        )
+
+    def test_quit_is_noop_if_main_future_is_done(self):
+        self.main.setup()
+
+        self.main.main_future.set_result(1)
+        self.assertTrue(self.main.main_future.done())
+        self.main.quit()
+        self.assertEqual(
+            self.main.main_future.result(),
+            1
+        )
+
+    def test_handle_sigint_sigterm_calls_quit(self):
+        with contextlib.ExitStack() as stack:
+            quit_ = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "quit"
+            ))
+
+            self.main.handle_sigint_sigterm()
+
+        calls = list(quit_.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call(),
+            ]
+        )
+
+    def test_handle_sigint_sigterm_stops_the_loop_after_3_seconds(self):
+        base = unittest.mock.Mock()
+
+        base.mock_calls.clear()
+
+        with contextlib.ExitStack() as stack:
+            monotonic = stack.enter_context(unittest.mock.patch(
+                "time.monotonic",
+            ))
+            monotonic.return_value = 0
+
+            quit_ = stack.enter_context(unittest.mock.patch.object(
+                self.main,
+                "quit",
+                new=base.quit
+            ))
+
+            stop = stack.enter_context(unittest.mock.patch.object(
+                self.main.loop,
+                "stop",
+                new=base.stop
+            ))
+
+            self.main.handle_sigint_sigterm()
+
+            monotonic.return_value = 2.99
+
+            self.main.handle_sigint_sigterm()
+
+            monotonic.return_value = 3.01
+
+            self.main.handle_sigint_sigterm()
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.quit(),
+                unittest.mock.call.quit(),
+                unittest.mock.call.stop()
+            ]
+        )
+
+    def tearDown(self):
+        del self.main
+        del self.loop

@@ -1,12 +1,18 @@
 import asyncio
+import logging
 import os
 import os.path
+import signal
 import socket
 import stat
+import time
 
 import xdg.BaseDirectory
 
 import mlxc.xdginfo
+
+
+logger = logging.getLogger(__spec__.name)
 
 
 class _UnixGlobalSingleton:
@@ -80,3 +86,96 @@ class _UnixGlobalSingleton:
 def get_singleton_impl(loop):
     if hasattr(loop, "create_unix_server"):
         return _UnixGlobalSingleton(loop)
+
+
+class Main:
+    def __init__(self, loop):
+        super().__init__()
+        self.loop = loop
+
+        self._terminated_at = None
+
+    def setup(self):
+        self.loop.add_signal_handler(
+            signal.SIGINT,
+            self.handle_sigint_sigterm
+        )
+        self.loop.add_signal_handler(
+            signal.SIGTERM,
+            self.handle_sigint_sigterm
+        )
+        self.main_future = asyncio.Future(loop=self.loop)
+
+    def teardown(self):
+        self.loop.remove_signal_handler(signal.SIGTERM)
+        self.loop.remove_signal_handler(signal.SIGINT)
+        del self.main_future
+
+    def quit(self):
+        if self.main_future.done():
+            return
+
+        self.main_future.set_result(0)
+
+    def handle_sigint_sigterm(self):
+        if     (self._terminated_at is not None and
+                (time.monotonic() - self._terminated_at >= 3)):
+            self.loop.stop()
+            return
+
+        self.quit()
+
+        if self._terminated_at is None:
+            self._terminated_at = time.monotonic()
+
+    @asyncio.coroutine
+    def acquire_singleton(self):
+        try:
+            singleton = get_singleton_impl()
+        except RuntimeError:
+            logger.warning(
+                "failed to acquire singleton implementation for this platform",
+                exc_info=True)
+            return None
+
+        try:
+            success = yield from singleton.start()
+        except Exception:
+            logger.exception(
+                "singleton acquiration failed for unexpected reason"
+            )
+            return False
+
+        if not success:
+            logger.error("failed to acquire singleton "
+                         "(another instance is running)")
+            return False
+
+        return singleton
+
+    @asyncio.coroutine
+    def run_core(self):
+        pass
+
+    @asyncio.coroutine
+    def run(self):
+        returncode = None
+        self.setup()
+        try:
+            singleton = yield from self.acquire_singleton()
+            if singleton is False:
+                returncode = 1
+                return returncode
+
+            try:
+                returncode = yield from self.run_core()
+            finally:
+                if singleton is not None:
+                    yield from singleton.stop()
+        except Exception as exc:
+            if returncode is None:
+                returncode = 1
+            logger.exception("failure in Main.run()")
+        finally:
+            self.teardown()
+            return returncode
