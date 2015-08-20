@@ -32,11 +32,15 @@ class _UnixGlobalSingleton:
     def get_socket_path(cls):
         return os.path.join(
             xdg.BaseDirectory.get_runtime_dir(),
-            mlxc.xdginfo.RESOURCE
+            *mlxc.xdginfo.RESOURCE
         )
 
     @classmethod
     def bind_socket(cls, path):
+        try:
+            os.makedirs(os.path.dirname(path), mode=0o700)
+        except FileExistsError:
+            pass
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             os.chmod(sock.fileno(), stat.S_ISVTX | stat.S_IRWXU)
@@ -53,6 +57,7 @@ class _UnixGlobalSingleton:
         try:
             sock = self.bind_socket(path)
         except OSError:
+            logger.warning("failed to acquire singleton", exc_info=True)
             return False
 
         try:
@@ -131,7 +136,7 @@ class Main:
     @asyncio.coroutine
     def acquire_singleton(self):
         try:
-            singleton = get_singleton_impl()
+            singleton = get_singleton_impl(self.loop)
         except RuntimeError:
             logger.warning(
                 "failed to acquire singleton implementation for this platform",
@@ -155,7 +160,7 @@ class Main:
 
     @asyncio.coroutine
     def run_core(self):
-        pass
+        yield from self.main_future
 
     @asyncio.coroutine
     def run(self):

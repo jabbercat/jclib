@@ -62,7 +62,7 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
         self.assertSequenceEqual(
             join.mock_calls,
             [
-                unittest.mock.call(get_runtime_dir(), xdginfo.RESOURCE)
+                unittest.mock.call(get_runtime_dir(), *xdginfo.RESOURCE)
             ]
         )
 
@@ -84,6 +84,14 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
                 "os.chmod",
                 new=base.chmod
             ))
+            makedirs = stack.enter_context(unittest.mock.patch(
+                "os.makedirs",
+                new=base.makedirs
+            ))
+            dirname = stack.enter_context(unittest.mock.patch(
+                "os.path.dirname",
+                new=base.dirname
+            ))
 
             sock = main._UnixGlobalSingleton.bind_socket(path)
 
@@ -91,6 +99,10 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
+                unittest.mock.call.dirname(path),
+                unittest.mock.call.makedirs(
+                    dirname(),
+                    mode=0o700),
                 unittest.mock.call.socket(socket.AF_UNIX,
                                           socket.SOCK_STREAM),
                 unittest.mock.call.socket().fileno(),
@@ -118,6 +130,14 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
                 "os.chmod",
                 new=base.chmod
             ))
+            makedirs = stack.enter_context(unittest.mock.patch(
+                "os.makedirs",
+                new=base.makedirs
+            ))
+            dirname = stack.enter_context(unittest.mock.patch(
+                "os.path.dirname",
+                new=base.dirname
+            ))
 
             exc = OSError()
 
@@ -135,6 +155,10 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
+                unittest.mock.call.dirname(path),
+                unittest.mock.call.makedirs(
+                    dirname(),
+                    mode=0o700),
                 unittest.mock.call.socket(socket.AF_UNIX,
                                           socket.SOCK_STREAM),
                 unittest.mock.call.socket().fileno(),
@@ -157,6 +181,14 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
                 "os.chmod",
                 new=base.chmod
             ))
+            makedirs = stack.enter_context(unittest.mock.patch(
+                "os.makedirs",
+                new=base.makedirs
+            ))
+            dirname = stack.enter_context(unittest.mock.patch(
+                "os.path.dirname",
+                new=base.dirname
+            ))
 
             exc = OSError()
 
@@ -176,6 +208,10 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
+                unittest.mock.call.dirname(path),
+                unittest.mock.call.makedirs(
+                    dirname(),
+                    mode=0o700),
                 unittest.mock.call.socket(socket.AF_UNIX,
                                           socket.SOCK_STREAM),
                 unittest.mock.call.socket().fileno(),
@@ -538,7 +574,7 @@ class TestMain(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
-                unittest.mock.call.get_singleton_impl(),
+                unittest.mock.call.get_singleton_impl(self.main.loop),
                 unittest.mock.call.get_singleton_impl().start(),
             ]
         )
@@ -567,7 +603,7 @@ class TestMain(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
-                unittest.mock.call.get_singleton_impl(),
+                unittest.mock.call.get_singleton_impl(self.main.loop),
             ]
         )
 
@@ -596,7 +632,7 @@ class TestMain(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
-                unittest.mock.call.get_singleton_impl(),
+                unittest.mock.call.get_singleton_impl(self.main.loop),
                 unittest.mock.call.get_singleton_impl().start(),
             ]
         )
@@ -628,7 +664,7 @@ class TestMain(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
-                unittest.mock.call.get_singleton_impl(),
+                unittest.mock.call.get_singleton_impl(self.main.loop),
                 unittest.mock.call.get_singleton_impl().start(),
             ]
         )
