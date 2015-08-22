@@ -16,6 +16,7 @@ import aioxmpp.xso as xso
 
 import mlxc.utils as utils
 import mlxc.xdginfo
+import mlxc.instrumentable_list as instrumentable_list
 
 from mlxc.utils import mlxc_namespaces
 
@@ -105,12 +106,13 @@ class AccountManager:
         self.keyring = (use_keyring
                         if use_keyring is not None
                         else keyring.get_keyring())
+        self.keyring_is_safe = self.keyring.priority >= 1
         self.loop = (loop
                      if loop is not None
                      else asyncio.get_event_loop())
 
         self._accountmap = {}
-        self._jidlist = []
+        self._jidlist = instrumentable_list.ModelList()
 
     def _require_unique_jid(self, bare_jid):
         assert bare_jid.resource is None
@@ -239,10 +241,14 @@ class AccountManager:
     def _load_accounts(self, accounts):
         self.clear()
         for account in accounts.items:
+            if not account.jid.is_bare:
+                account.resource = account.jid.resource
+                account._jid = account.jid.bare()
+
             if account.jid in self._accountmap:
                 continue
-            self._jidlist.append(account.jid)
             self._accountmap[account.jid] = account
+            self._jidlist.append(account.jid)
 
         for account in self:
             if account.enabled:

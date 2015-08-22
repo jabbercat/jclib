@@ -16,6 +16,7 @@ import aioxmpp.xso as xso
 
 import mlxc.client as client
 import mlxc.xdginfo
+import mlxc.instrumentable_list as instrumentable_list
 
 from aioxmpp.testutils import (
     run_coroutine,
@@ -276,6 +277,12 @@ class TestAccountManager(unittest.TestCase):
             use_keyring=self.keyring
         )
 
+    def test_jidlist_is_model_list(self):
+        self.assertIsInstance(
+            self.manager._jidlist,
+            instrumentable_list.ModelList
+        )
+
     def test_keyring_info(self):
         self.assertEqual(
             client.AccountManager.KEYRING_SERVICE_NAME,
@@ -287,11 +294,22 @@ class TestAccountManager(unittest.TestCase):
             "jid:{bare!s}",
         )
 
+    def test_keyring_with_priority_1_is_safe(self):
+        self.assertTrue(self.manager.keyring_is_safe)
+
     def test_default_init_keyring(self):
         manager = client.AccountManager(use_keyring=None)
         self.assertEqual(
             manager.keyring,
             keyring.get_keyring()
+        )
+
+    def test_keyring_with_priority_less_than_one_is_unsafe(self):
+        keyring = unittest.mock.Mock()
+        keyring.priority = 0.9
+        manager = client.AccountManager(use_keyring=keyring)
+        self.assertFalse(
+            manager.keyring_is_safe,
         )
 
     def test_default_init_loop(self):
@@ -940,6 +958,40 @@ class TestAccountManager(unittest.TestCase):
         )
 
         self.assertEqual(len(self.manager), 2)
+
+        self.assertEqual(
+            self.manager[self.manager.jid_index(TEST_JID)].resource,
+            "foo"
+        )
+
+    def test__load_accounts_splits_jid(self):
+        accounts = client._AccountList()
+
+        acc1 = client.AccountSettings(TEST_JID)
+        acc1._jid = TEST_JID.replace(resource="foo")
+        del acc1.resource
+
+        acc2 = client.AccountSettings(TEST_JID)
+        acc2._jid = TEST_JID.replace(resource="bar")
+        del acc2.resource
+
+        accounts.items.extend([
+            acc1, acc2
+        ])
+
+        with unittest.mock.patch.object(
+                self.manager,
+                "clear") as clear:
+            self.manager._load_accounts(accounts)
+
+        self.assertSequenceEqual(
+            clear.mock_calls,
+            [
+                unittest.mock.call()
+            ]
+        )
+
+        self.assertEqual(len(self.manager), 1)
 
         self.assertEqual(
             self.manager[self.manager.jid_index(TEST_JID)].resource,
