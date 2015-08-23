@@ -371,6 +371,10 @@ class Client:
                 state.presence = new_state
         self._global_presence = new_state
 
+    def stop_all(self):
+        for node in self._states.values():
+            node.stop()
+
     @asyncio.coroutine
     def stop_and_wait_for_all(self):
         nodes = [

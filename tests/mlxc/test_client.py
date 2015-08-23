@@ -1361,6 +1361,37 @@ class TestClient(unittest.TestCase):
         with self.assertRaises(AttributeError):
             self.c.global_presence = structs.PresenceState(False)
 
+    def test_stop_all(self):
+        jids = [
+            TEST_JID.replace(localpart="foo"),
+            TEST_JID.replace(localpart="bar"),
+            TEST_JID.replace(localpart="baz"),
+        ]
+
+        accs = [
+            self.c.accounts.new_account(jid)
+            for jid in jids
+        ]
+
+        clients = []
+
+        for acc in accs:
+            self.c.accounts.set_account_enabled(acc.jid, True)
+            clients.append(self.PresenceManagedClient.return_value)
+            self.PresenceManagedClient.return_value = ConnectedClientMock()
+
+        self.c.set_global_presence(structs.PresenceState(True))
+
+        self.c.stop_all()
+
+        for client in clients:
+            self.assertSequenceEqual(
+                client.mock_calls,
+                [
+                    unittest.mock.call.stop()
+                ]
+            )
+
     def test_stop_and_wait_for_all(self):
         jids = [
             TEST_JID.replace(localpart="foo"),
