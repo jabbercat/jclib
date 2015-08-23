@@ -333,7 +333,10 @@ class Client:
             account.jid.replace(resource=account.resource),
             security_layer.tls_with_password_based_authentication(
                 self.accounts.password_provider,
-                certificate_verifier_factory=self._make_certificate_verifier
+                certificate_verifier_factory=functools.partial(
+                    self._make_certificate_verifier,
+                    account
+                )
             )
         )
         node.presence = self.global_presence
@@ -343,14 +346,14 @@ class Client:
     def _on_account_disabled(self, account, reason):
         del self._states[account]
 
-    def _make_certificate_verifier(self):
+    def _make_certificate_verifier(self, account):
         return aioxmpp.security_layer.PinningPKIXCertificateVerifier(
             self.pin_store.query,
-            self._decide_on_certificate
+            functools.partial(self._decide_on_certificate, account)
         )
 
     @asyncio.coroutine
-    def _decide_on_certificate(self, verifier):
+    def _decide_on_certificate(self, account, verifier):
         logger.warning("no implementation to decide on certificate, "
                        "returning False")
         return False

@@ -1188,15 +1188,24 @@ class TestClient(unittest.TestCase):
 
     def test_enable_account_creates_state(self):
         acc = self.c.accounts.new_account(TEST_JID)
-        self.c.accounts.set_account_enabled(TEST_JID, True)
+
+        with unittest.mock.patch("functools.partial") as partial:
+            self.c.accounts.set_account_enabled(TEST_JID, True)
+
+        self.assertSequenceEqual(
+            partial.mock_calls,
+            [
+                unittest.mock.call(self.c._make_certificate_verifier,
+                                   acc)
+            ]
+        )
 
         self.assertSequenceEqual(
             self.tls_with_password_based_authentication.mock_calls,
             [
                 unittest.mock.call(
                     self.c.accounts.password_provider,
-                    certificate_verifier_factory=\
-                        self.c._make_certificate_verifier
+                    certificate_verifier_factory=partial()
                 )
             ]
         )
@@ -1791,28 +1800,46 @@ class TestClient(unittest.TestCase):
         )
 
     def test__decide_on_certificate_returns_None(self):
+        account = object()
+
         self.assertIs(
-            run_coroutine(self.c._decide_on_certificate(None)),
+            run_coroutine(self.c._decide_on_certificate(account, None)),
             False
         )
 
-        verifier = self.c._make_certificate_verifier()
+        verifier = self.c._make_certificate_verifier(account)
         self.assertIs(
-            run_coroutine(self.c._decide_on_certificate(verifier)),
+            run_coroutine(self.c._decide_on_certificate(account, verifier)),
             False
         )
 
     def test__make_certificate_verifier_creates_pinning_pkix_verifier(self):
-        with unittest.mock.patch(
-                "aioxmpp.security_layer.PinningPKIXCertificateVerifier"
-        ) as PinningPKIXCertificateVerifier:
-            verifier = self.c._make_certificate_verifier()
+        base = unittest.mock.Mock()
+        account = object()
 
+        with contextlib.ExitStack() as stack:
+            PinningPKIXCertificateVerifier = stack.enter_context(
+                unittest.mock.patch(
+                    "aioxmpp.security_layer.PinningPKIXCertificateVerifier",
+                    new=base.PinningPKIXCertificateVerifier
+                )
+            )
+            partial = stack.enter_context(unittest.mock.patch(
+                "functools.partial",
+                new=base.partial
+            ))
+
+            verifier = self.c._make_certificate_verifier(account)
+
+        calls = list(base.mock_calls)
         self.assertSequenceEqual(
-            PinningPKIXCertificateVerifier.mock_calls,
+            calls,
             [
-                unittest.mock.call(self.c.pin_store.query,
-                                   self.c._decide_on_certificate),
+                unittest.mock.call.partial(self.c._decide_on_certificate,
+                                           account),
+                unittest.mock.call.PinningPKIXCertificateVerifier(
+                    self.c.pin_store.query,
+                    partial()),
             ]
         )
 
