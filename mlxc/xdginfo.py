@@ -1,1 +1,1 @@
-RESOURCE = ("zombofant.net", "mlxc")
+RESOURCE = ("mlxc.zombofant.net",)
