@@ -148,14 +148,16 @@ def write_xso(dest, xso):
 
 def read_xso(src, xsomap):
     """
-    Read a single XSO from a binary file-like input `src`.
+    Read a single XSO from a binary file-like input `src` containing an XML
+    document.
 
     `xsomap` must be a mapping which maps :class:`aioxmpp.xso.XSO` subclasses
     to callables. These will be registered at a newly created
     :class:`aioxmpp.xso.XSOParser` instance which will be used to parse the
     document in `src`.
 
-    This can be used to support multiple versions.
+    The `xsomap` is thus used to determine the class parsing the root element
+    of the XML document. This can be used to support multiple versions.
     """
 
     xso_parser = aioxmpp.xso.XSOParser()
