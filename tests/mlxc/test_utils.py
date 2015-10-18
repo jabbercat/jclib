@@ -113,20 +113,73 @@ class Testmultiopen(unittest.TestCase):
         )
 
 
-class Testxdgopen_generic(unittest.TestCase):
+class Testis_write_mode(unittest.TestCase):
     def test_open_r(self):
+        self.assertFalse(utils.is_write_mode("r"))
+        self.assertFalse(utils.is_write_mode("rb"))
+        self.assertFalse(utils.is_write_mode("rt"))
+
+    def test_open_rplus(self):
+        self.assertTrue(utils.is_write_mode("r+"))
+        self.assertTrue(utils.is_write_mode("r+b"))
+        self.assertTrue(utils.is_write_mode("r+t"))
+
+    def test_open_w(self):
+        self.assertTrue(utils.is_write_mode("w"))
+        self.assertTrue(utils.is_write_mode("wb"))
+        self.assertTrue(utils.is_write_mode("wt"))
+
+    def test_open_wplus(self):
+        self.assertTrue(utils.is_write_mode("w+"))
+        self.assertTrue(utils.is_write_mode("w+b"))
+        self.assertTrue(utils.is_write_mode("w+t"))
+
+    def test_open_a(self):
+        self.assertTrue(utils.is_write_mode("a"))
+        self.assertTrue(utils.is_write_mode("ab"))
+        self.assertTrue(utils.is_write_mode("at"))
+
+    def test_open_aplus(self):
+        self.assertTrue(utils.is_write_mode("a+"))
+        self.assertTrue(utils.is_write_mode("a+b"))
+        self.assertTrue(utils.is_write_mode("a+t"))
+
+    def test_open_x(self):
+        self.assertTrue(utils.is_write_mode("x"))
+        self.assertTrue(utils.is_write_mode("xb"))
+        self.assertTrue(utils.is_write_mode("xt"))
+
+    def test_open_xplus(self):
+        self.assertTrue(utils.is_write_mode("x+"))
+        self.assertTrue(utils.is_write_mode("x+b"))
+        self.assertTrue(utils.is_write_mode("x+t"))
+
+
+class Testxdgopen_generic(unittest.TestCase):
+    def test_open_readable(self):
         paths = ["/foo/bar", "/fnord", "/baz"]
 
         base = unittest.mock.Mock()
         base.load_paths.return_value = iter(paths)
         resource = ["foo", "bar"]
         encoding = object()
+        mode = object()
 
-        with unittest.mock.patch("mlxc.utils.multiopen") as multiopen:
+        with contextlib.ExitStack() as stack:
+            multiopen = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.multiopen",
+                                    new=base.multiopen)
+            )
+            is_write_mode = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.is_write_mode",
+                                    new=base.is_write_mode)
+            )
+            is_write_mode.return_value = False
+
             utils.xdgopen_generic(
                 resource,
                 "foo.xml",
-                "rb",
+                mode,
                 load_paths=base.load_paths,
                 save_path=base.save_path,
                 encoding=encoding
@@ -135,35 +188,41 @@ class Testxdgopen_generic(unittest.TestCase):
         self.assertSequenceEqual(
             base.mock_calls,
             [
+                unittest.mock.call.is_write_mode(mode),
                 unittest.mock.call.load_paths(*resource),
-            ]
-        )
-
-        self.assertSequenceEqual(
-            multiopen.mock_calls,
-            [
-                unittest.mock.call(
+                unittest.mock.call.multiopen(
                     list(reversed(paths)),
                     "foo.xml",
-                    mode="rb",
+                    mode=mode,
                     encoding=encoding
                 )
             ]
         )
 
-    def test_open_w(self):
+    def test_open_writable(self):
         path = "/foo/bar"
 
         base = unittest.mock.Mock()
         base.save_path.return_value = path
         resource = ["foo", "bar"]
         encoding = object()
+        mode = object()
 
-        with unittest.mock.patch("builtins.open") as open_:
+        with contextlib.ExitStack() as stack:
+            open_ = stack.enter_context(
+                unittest.mock.patch("builtins.open",
+                                    new=base.open_)
+            )
+            is_write_mode = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.is_write_mode",
+                                    new=base.is_write_mode)
+            )
+            is_write_mode.return_value = True
+
             utils.xdgopen_generic(
                 resource,
                 "foo.xml",
-                "wb",
+                mode,
                 load_paths=base.load_paths,
                 save_path=base.save_path,
                 encoding=encoding
@@ -172,88 +231,11 @@ class Testxdgopen_generic(unittest.TestCase):
         self.assertSequenceEqual(
             base.mock_calls,
             [
+                unittest.mock.call.is_write_mode(mode),
                 unittest.mock.call.save_path(*resource),
-            ]
-        )
-
-        self.assertSequenceEqual(
-            open_.mock_calls,
-            [
-                unittest.mock.call(
+                unittest.mock.call.open_(
                     os.path.join(path, "foo.xml"),
-                    mode="wb",
-                    encoding=encoding
-                )
-            ]
-        )
-
-    def test_open_a(self):
-        path = "/foo/bar"
-
-        base = unittest.mock.Mock()
-        base.save_path.return_value = path
-        resource = ["foo", "bar"]
-        encoding = object()
-
-        with unittest.mock.patch("builtins.open") as open_:
-            utils.xdgopen_generic(
-                resource,
-                "foo.xml",
-                "ab",
-                load_paths=base.load_paths,
-                save_path=base.save_path,
-                encoding=encoding
-            )
-
-        self.assertSequenceEqual(
-            base.mock_calls,
-            [
-                unittest.mock.call.save_path(*resource),
-            ]
-        )
-
-        self.assertSequenceEqual(
-            open_.mock_calls,
-            [
-                unittest.mock.call(
-                    os.path.join(path, "foo.xml"),
-                    mode="ab",
-                    encoding=encoding
-                )
-            ]
-        )
-
-    def test_open_rplus(self):
-        path = "/foo/bar"
-
-        base = unittest.mock.Mock()
-        base.save_path.return_value = path
-        resource = ["foo", "bar"]
-        encoding = object()
-
-        with unittest.mock.patch("builtins.open") as open_:
-            utils.xdgopen_generic(
-                resource,
-                "foo.xml",
-                "r+b",
-                load_paths=base.load_paths,
-                save_path=base.save_path,
-                encoding=encoding
-            )
-
-        self.assertSequenceEqual(
-            base.mock_calls,
-            [
-                unittest.mock.call.save_path(*resource),
-            ]
-        )
-
-        self.assertSequenceEqual(
-            open_.mock_calls,
-            [
-                unittest.mock.call(
-                    os.path.join(path, "foo.xml"),
-                    mode="r+b",
+                    mode=mode,
                     encoding=encoding
                 )
             ]

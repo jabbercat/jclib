@@ -22,6 +22,12 @@ mlxc_namespaces.account = "https://xmlns.zombofant.net/mlxc/core/account/1.0"
 logger = logging.getLogger(__name__)
 
 
+def is_write_mode(mode):
+    if not mode.startswith("r") or "+" in mode:
+        return True
+    return False
+
+
 def multiopen(paths, name, mode, *args, **kwargs):
     """
     Attempt to open a file called `name`, using multiple base paths given as
@@ -58,7 +64,7 @@ def xdgopen_generic(resource, name, mode, load_paths, save_path, **kwargs):
 
     The result of the respective function is returned.
     """
-    if not mode.startswith("r") or "+" in mode:
+    if is_write_mode(mode):
         return open(os.path.join(save_path(*resource), name),
                     mode=mode,
                     **kwargs)
