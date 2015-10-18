@@ -11,6 +11,7 @@ import keyring
 import aioxmpp.stringprep
 
 import aioxmpp.callbacks as callbacks
+import aioxmpp.stanza as stanza
 import aioxmpp.structs as structs
 import aioxmpp.xso as xso
 
@@ -231,6 +232,242 @@ class TestAccountSettings(unittest.TestCase):
             settings.enabled,
             settings._enabled
         )
+
+
+class TestSinglePresenceStateStatus(unittest.TestCase):
+    def test_is_text_child(self):
+        self.assertTrue(issubclass(
+            client.SinglePresenceStateStatus,
+            xso.AbstractTextChild
+        ))
+
+    def test_tag(self):
+        self.assertEqual(
+            client.SinglePresenceStateStatus.TAG,
+            (mlxc_namespaces.presence, "status")
+        )
+
+
+class TestSinglePresenceState(unittest.TestCase):
+    def test_is_xso(self):
+        self.assertTrue(issubclass(
+            client.SinglePresenceState,
+            xso.XSO
+        ))
+
+    def test_tag(self):
+        self.assertEqual(
+            client.SinglePresenceState.TAG,
+            (mlxc_namespaces.presence, "single-presence")
+        )
+
+    def test__available(self):
+        self.assertIsInstance(
+            client.SinglePresenceState._available,
+            xso.Attr
+        )
+        self.assertEqual(
+            client.SinglePresenceState._available.tag,
+            (None, "available")
+        )
+        self.assertIsInstance(
+            client.SinglePresenceState._available.type_,
+            xso.Bool
+        )
+        self.assertIs(
+            client.SinglePresenceState._available.default,
+            None
+        )
+
+    def test__show_prop(self):
+        self.assertIsInstance(
+            client.SinglePresenceState._show,
+            xso.Attr
+        )
+        self.assertEqual(
+            client.SinglePresenceState._show.tag,
+            (None, "show")
+        )
+        self.assertIs(
+            client.SinglePresenceState._show.type_,
+            stanza.Presence.show.type_
+        )
+
+    def test_status(self):
+        self.assertIsInstance(
+            client.SinglePresenceState.status,
+            xso.ChildLangMap
+        )
+        self.assertSetEqual(
+            client.SinglePresenceState.status._classes,
+            {client.SinglePresenceStateStatus}
+        )
+
+    def test_jid(self):
+        self.assertIsInstance(
+            client.SinglePresenceState.jid,
+            xso.Attr
+        )
+        self.assertEqual(
+            client.SinglePresenceState.jid.tag,
+            (None, "jid")
+        )
+        self.assertIsInstance(
+            client.SinglePresenceState.jid.type_,
+            xso.JID
+        )
+        self.assertIs(
+            client.SinglePresenceState.jid.default,
+            None
+        )
+
+    def test_init_default(self):
+        aps = client.SinglePresenceState()
+        self.assertFalse(aps.status)
+        self.assertIsNone(aps.presence)
+
+    def test_init_args(self):
+        aps = client.SinglePresenceState(
+            structs.PresenceState(available=True),
+            "foobar")
+        self.assertEqual(
+            aps.presence,
+            structs.PresenceState(available=True)
+        )
+        self.assertEqual(
+            aps.status,
+            {None: [client.SinglePresenceStateStatus("foobar")]}
+        )
+
+        aps = client.SinglePresenceState(
+            structs.PresenceState(available=True),
+            [client.SinglePresenceStateStatus("foobar"),
+             client.SinglePresenceStateStatus(
+                 "baz",
+                 lang=structs.LanguageTag.fromstr("de-DE"))]
+        )
+        self.assertEqual(
+            aps.presence,
+            structs.PresenceState(available=True)
+        )
+        self.assertEqual(
+            aps.status,
+            {
+                None: [client.SinglePresenceStateStatus("foobar")],
+                structs.LanguageTag.fromstr("de-DE"): [client.SinglePresenceStateStatus(
+                    "baz",
+                    lang=structs.LanguageTag.fromstr("de-DE")
+                )]
+            }
+        )
+
+    def test_presence_attr(self):
+        aps = client.SinglePresenceState()
+        aps.presence = structs.PresenceState(available=True, show="dnd")
+        self.assertEqual(
+            aps.presence,
+            structs.PresenceState(available=True, show="dnd")
+        )
+
+        self.assertEqual(
+            aps._available,
+            True
+        )
+        self.assertEqual(
+            aps._show,
+            "dnd"
+        )
+
+
+class TestCustomPresenceState(unittest.TestCase):
+    def test_is_xso(self):
+        self.assertTrue(issubclass(
+            client.ComplexPresenceState,
+            xso.XSO
+        ))
+
+    def test_tag(self):
+        self.assertEqual(
+            client.ComplexPresenceState.TAG,
+            (mlxc_namespaces.presence, "complex-presence")
+        )
+
+    def test_name(self):
+        self.assertIsInstance(
+            client.ComplexPresenceState.name,
+            xso.Attr
+        )
+        self.assertEqual(
+            client.ComplexPresenceState.name.tag,
+            (None, "name")
+        )
+        self.assertTrue(
+            client.ComplexPresenceState.name.required
+        )
+
+    def test_states(self):
+        self.assertIsInstance(
+            client.ComplexPresenceState.states,
+            xso.ChildMap
+        )
+        self.assertEqual(
+            client.ComplexPresenceState.states.key,
+            client._state_jid_key
+        )
+        self.assertSetEqual(
+            client.ComplexPresenceState.states._classes,
+            {client.SinglePresenceState}
+        )
+
+    def test__state_jid_key(self):
+        obj = unittest.mock.Mock(["jid"])
+        self.assertEqual(
+            obj.jid,
+            client._state_jid_key(obj)
+        )
+
+
+class Test_ComplexPresenceList(unittest.TestCase):
+    def test_is_xso(self):
+        self.assertTrue(issubclass(
+            client._ComplexPresenceList,
+            xso.XSO
+        ))
+
+
+    def test_declare_namespace(self):
+        self.assertDictEqual(
+            client._ComplexPresenceList.DECLARE_NS,
+            {
+                None: mlxc_namespaces.presence
+            }
+        )
+
+    def test_tag(self):
+        self.assertEqual(
+            client._ComplexPresenceList.TAG,
+            (mlxc_namespaces.presence, "presences"),
+        )
+
+    def test_items_attr(self):
+        self.assertIsInstance(
+            client._ComplexPresenceList.items,
+            xso.ChildList
+        )
+        self.assertSetEqual(
+            client._ComplexPresenceList.items._classes,
+            {
+                client.ComplexPresenceState
+            }
+        )
+
+    def test_init_with_list(self):
+        items = [
+            client.ComplexPresenceState(),
+            client.ComplexPresenceState(),
+        ]
+        cpl = client._ComplexPresenceList(items)
+        self.assertSequenceEqual(cpl.items, items)
 
 
 class Test_AccountList(unittest.TestCase):
@@ -1728,6 +1965,114 @@ class TestClient(unittest.TestCase):
             ]
         )
 
+    def test_presence_states(self):
+        self.assertIsInstance(
+            self.c.presence_states,
+            instrumentable_list.ModelList
+        )
+
+    def test__import_presence_states(self):
+        base = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            self.config_manager.open_single = base.open_single
+            open_single = base.open_single
+
+            presence_states = stack.enter_context(unittest.mock.patch.object(
+                self.c,
+                "presence_states",
+                new=base.presence_states
+            ))
+
+            self.c._import_presence_states(base.list_xso)
+
+        calls = list(base.mock_calls)
+
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.presence_states.__setitem__(
+                    slice(None), base.list_xso.items
+                )
+            ]
+        )
+
+    def test__load_presence_states(self):
+        base = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            self.config_manager.open_single = base.open_single
+            open_single = base.open_single
+
+            import_ = stack.enter_context(unittest.mock.patch.object(
+                self.c,
+                "_import_presence_states",
+                new=base._import_presence_states
+            ))
+
+            read_xso = stack.enter_context(unittest.mock.patch(
+                "mlxc.utils.read_xso",
+                new=base.read_xso
+            ))
+
+            self.c._load_presence_states()
+
+        calls = list(base.mock_calls)
+
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
+                    "presence.xml"),
+                unittest.mock.call.open_single().__enter__(),
+                unittest.mock.call.read_xso(open_single(), {
+                    client._ComplexPresenceList: import_
+                }),
+                unittest.mock.call.open_single().__exit__(None, None, None),
+            ]
+        )
+
+    def test__load_presence_states_clears_on_open_error(self):
+        base = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            self.config_manager.open_single = base.open_single
+            open_single = base.open_single
+
+            import_ = stack.enter_context(unittest.mock.patch.object(
+                self.c,
+                "_import_presence_states",
+                new=base._import_presence_states
+            ))
+
+            presence_states = stack.enter_context(unittest.mock.patch.object(
+                self.c,
+                "presence_states",
+                new=base.presence_states
+            ))
+
+            read_xso = stack.enter_context(unittest.mock.patch(
+                "mlxc.utils.read_xso",
+                new=base.read_xso
+            ))
+
+            open_single.side_effect = OSError()
+
+            self.c._load_presence_states()
+
+        calls = list(base.mock_calls)
+
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
+                    "presence.xml"),
+                unittest.mock.call.presence_states.clear()
+            ]
+        )
+
     def test_load_state_ignores_exceptions(self):
         funcs = [
             "_load_accounts",
@@ -1793,6 +2138,16 @@ class TestClient(unittest.TestCase):
                 new=base.save
             ))
 
+            write_xso = stack.enter_context(unittest.mock.patch(
+                "mlxc.utils.write_xso",
+                new=base.write_xso
+            ))
+
+            _ComplexPresenceList = stack.enter_context(unittest.mock.patch(
+                "mlxc.client._ComplexPresenceList",
+                new=base._ComplexPresenceList
+            ))
+
             json_dump = stack.enter_context(unittest.mock.patch(
                 "json.dump",
                 new=base.json.dump
@@ -1830,6 +2185,17 @@ class TestClient(unittest.TestCase):
                 unittest.mock.call.json.dump(
                     export_to_json(),
                     open_single().__enter__()
+                ),
+                unittest.mock.call.open_single().__exit__(None, None, None),
+                unittest.mock.call._ComplexPresenceList(self.c.presence_states),
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
+                    "presence.xml",
+                    mode="wb"),
+                unittest.mock.call.open_single().__enter__(),
+                unittest.mock.call.write_xso(
+                    open_single().__enter__(),
+                    _ComplexPresenceList(),
                 ),
                 unittest.mock.call.open_single().__exit__(None, None, None),
             ]
@@ -1890,3 +2256,5 @@ class TestClient(unittest.TestCase):
 
         for patch in self.patches:
             patch.stop()
+
+# foo

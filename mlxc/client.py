@@ -1,4 +1,5 @@
 import asyncio
+import collections.abc
 import functools
 import json
 import logging
@@ -11,6 +12,7 @@ import aioxmpp.stringprep
 import aioxmpp.callbacks as callbacks
 import aioxmpp.node as node
 import aioxmpp.security_layer as security_layer
+import aioxmpp.stanza as stanza
 import aioxmpp.structs as structs
 import aioxmpp.xso as xso
 
@@ -80,6 +82,87 @@ class AccountSettings(xso.XSO):
     @property
     def enabled(self):
         return self._enabled
+
+
+class SinglePresenceStateStatus(xso.AbstractTextChild):
+    TAG = (mlxc_namespaces.presence, "status")
+
+
+class SinglePresenceState(xso.XSO):
+    TAG = (mlxc_namespaces.presence, "single-presence")
+
+    _available = xso.Attr(
+        "available",
+        type_=xso.Bool(),
+        default=None
+    )
+    _show = xso.Attr(
+        "show",
+        type_=stanza.Presence.show.type_
+    )
+    status = xso.ChildLangMap(
+        [SinglePresenceStateStatus]
+    )
+    jid = xso.Attr(
+        "jid",
+        type_=xso.JID(),
+        default=None
+    )
+
+    def __init__(self, presence=None, status=None):
+        super().__init__()
+        self.presence = presence
+        if isinstance(status, str):
+            self.status[None] = [SinglePresenceStateStatus(status)]
+        elif isinstance(status, collections.abc.Iterable):
+            type(self).status.fill_into_dict(status, self.status)
+
+    @property
+    def presence(self):
+        if self._available is None:
+            return None
+        return structs.PresenceState(self._available, self._show)
+
+    @presence.setter
+    def presence(self, value):
+        if value is not None:
+            self._available = value.available
+            self._show = value.show
+        else:
+            self._available = None
+            self._show = None
+
+
+def _state_jid_key(state):
+    return state.jid
+
+
+class ComplexPresenceState(xso.XSO):
+    TAG = (mlxc_namespaces.presence, "complex-presence")
+
+    name = xso.Attr(
+        "name",
+        required=True
+    )
+
+    states = xso.ChildMap(
+        [SinglePresenceState],
+        key=_state_jid_key
+    )
+
+
+class _ComplexPresenceList(xso.XSO):
+    TAG = (mlxc_namespaces.presence, "presences")
+
+    DECLARE_NS = {
+        None: mlxc_namespaces.presence
+    }
+
+    items = xso.ChildList([ComplexPresenceState])
+
+    def __init__(self, items=[]):
+        super().__init__()
+        self.items = items
 
 
 class _AccountList(xso.XSO):
@@ -335,6 +418,8 @@ class Client:
 
         self.pin_store = aioxmpp.security_layer.PublicKeyPinStore()
 
+        self.presence_states = instrumentable_list.ModelList()
+
         self._states = {}
 
         self._global_presence = structs.PresenceState(False)
@@ -425,6 +510,22 @@ class Client:
             with accounts_file:
                 self.accounts.load(accounts_file)
 
+    def _import_presence_states(self, presences_xso):
+        self.presence_states[:] = presences_xso.items
+
+    def _load_presence_states(self):
+        try:
+            f = self.config_manager.open_single(
+                utils.mlxc_uid,
+                "presence.xml")
+        except OSError:
+            self.presence_states.clear()
+        else:
+            with f:
+                utils.read_xso(f, {
+                    _ComplexPresenceList: self._import_presence_states
+                })
+
     def _load_pin_store(self):
         try:
             with self.config_manager.open_single(
@@ -467,3 +568,10 @@ class Client:
                 mode="w",
                 encoding="utf-8") as f:
             json.dump(data, f)
+
+        xso = _ComplexPresenceList(self.presence_states)
+        with self.config_manager.open_single(
+                utils.mlxc_uid,
+                "presence.xml",
+                mode="wb") as f:
+            utils.write_xso(f, xso)
