@@ -84,7 +84,7 @@ def xdgconfigopen(resource, name, mode="rb", **kwargs):
     resource of ``zombofant.net/mlxc``, one would call::
 
         import mlxc.utils
-        f = mlxc.utils.xdgconfigopen(?"zombofant.net", "mlxc"), "fnord.xml")
+        f = mlxc.utils.xdgconfigopen(("zombofant.net", "mlxc"), "fnord.xml")
 
     For writing, we would pass a different `mode`.
     """
