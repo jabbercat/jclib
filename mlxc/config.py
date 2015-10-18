@@ -18,6 +18,14 @@ def unescape_dirname(path):
     return urllib.parse.unquote(path)
 
 
+def mkdir_exist_ok(path):
+    try:
+        path.mkdir(parents=True)
+    except FileExistsError:
+        if not path.is_dir():
+            raise
+
+
 class ConfigManager:
     on_writeback = aioxmpp.callbacks.Signal()
 
@@ -39,7 +47,7 @@ class ConfigManager:
     def open_single(self, uid, filename, *, mode="rb", **kwargs):
         user_path, site_paths = self.get_config_paths(uid, filename)
         if utils.is_write_mode(mode):
-            user_path.parent.mkdir(parents=True, exist_ok=True)
+            mkdir_exist_ok(user_path.parent)
             return user_path.open(mode, **kwargs)
 
         excs = []

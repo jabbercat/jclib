@@ -72,6 +72,49 @@ class Testunescape_dirname(unittest.TestCase):
             )
 
 
+class Testmkdir_exist_ok(unittest.TestCase):
+    def test_successful_mkdir(self):
+        p = unittest.mock.Mock()
+        config.mkdir_exist_ok(p)
+        self.assertSequenceEqual(
+            p.mock_calls,
+            [
+                unittest.mock.call.mkdir(parents=True),
+            ]
+        )
+
+    def test_mkdir_exists_but_is_directory(self):
+        p = unittest.mock.Mock()
+        p.is_dir.return_value = True
+        p.mkdir.side_effect = FileExistsError()
+        config.mkdir_exist_ok(p)
+        self.assertSequenceEqual(
+            p.mock_calls,
+            [
+                unittest.mock.call.mkdir(parents=True),
+                unittest.mock.call.is_dir()
+            ]
+        )
+
+    def test_mkdir_exists_but_is_not_directory(self):
+        p = unittest.mock.Mock()
+        p.is_dir.return_value = False
+        exc = FileExistsError()
+        p.mkdir.side_effect = exc
+        with self.assertRaises(FileExistsError) as ctx:
+            config.mkdir_exist_ok(p)
+
+        self.assertIs(ctx.exception, exc)
+
+        self.assertSequenceEqual(
+            p.mock_calls,
+            [
+                unittest.mock.call.mkdir(parents=True),
+                unittest.mock.call.is_dir()
+            ]
+        )
+
+
 class TestConfigManager(unittest.TestCase):
     def setUp(self):
         self.uid = "urn:example:plugin"
@@ -222,12 +265,22 @@ class TestConfigManager(unittest.TestCase):
         self.assertIs(result, f)
 
     def test_open_single_with_writable_mode_creates_parent_directory(self):
+        base = unittest.mock.Mock()
+
         f = object()
         uid, name, mode, encoding = object(), object(), object(), object()
 
         with contextlib.ExitStack() as stack:
             get_config_paths = stack.enter_context(
-                unittest.mock.patch.object(self.cm, "get_config_paths")
+                unittest.mock.patch.object(
+                    self.cm,
+                    "get_config_paths",
+                    new=base.get_config_paths)
+            )
+            mkdir_exist_ok = stack.enter_context(
+                unittest.mock.patch(
+                    "mlxc.config.mkdir_exist_ok",
+                    new=base.mkdir_exist_ok)
             )
             is_write_mode = stack.enter_context(
                 unittest.mock.patch("mlxc.utils.is_write_mode")
@@ -235,25 +288,24 @@ class TestConfigManager(unittest.TestCase):
             is_write_mode.return_value = True
 
             get_config_paths.return_value = (
-                get_config_paths.p1,
+                base.p1,
                 [
-                    get_config_paths.p2,
-                    get_config_paths.p3,
+                    base.p2,
+                    base.p3,
                 ]
             )
 
-            get_config_paths.p1.open.return_value = f
+            base.p1.open.return_value = f
 
             result = self.cm.open_single(uid, name,
                                          mode=mode,
                                          encoding=encoding)
 
         self.assertSequenceEqual(
-            get_config_paths.mock_calls,
+            base.mock_calls,
             [
-                unittest.mock.call(uid, name),
-                unittest.mock._Call(("p1.parent.mkdir", (),
-                                     {"parents": True, "exist_ok": True})),
+                unittest.mock.call.get_config_paths(uid, name),
+                unittest.mock.call.mkdir_exist_ok(base.p1.parent),
                 unittest.mock.call.p1.open(mode, encoding=encoding),
             ]
         )
@@ -261,12 +313,22 @@ class TestConfigManager(unittest.TestCase):
         self.assertIs(result, f)
 
     def test_open_single_with_writable_mode_omits_site(self):
+        base = unittest.mock.Mock()
+
         f = object()
         uid, name, mode, encoding = object(), object(), object(), object()
 
         with contextlib.ExitStack() as stack:
             get_config_paths = stack.enter_context(
-                unittest.mock.patch.object(self.cm, "get_config_paths")
+                unittest.mock.patch.object(
+                    self.cm,
+                    "get_config_paths",
+                    new=base.get_config_paths)
+            )
+            mkdir_exist_ok = stack.enter_context(
+                unittest.mock.patch(
+                    "mlxc.config.mkdir_exist_ok",
+                    new=base.mkdir_exist_ok)
             )
             is_write_mode = stack.enter_context(
                 unittest.mock.patch("mlxc.utils.is_write_mode")
@@ -274,15 +336,15 @@ class TestConfigManager(unittest.TestCase):
             is_write_mode.return_value = True
 
             get_config_paths.return_value = (
-                get_config_paths.p1,
+                base.p1,
                 [
-                    get_config_paths.p2,
-                    get_config_paths.p3,
+                    base.p2,
+                    base.p3,
                 ]
             )
 
             exc = OSError()
-            get_config_paths.p1.open.side_effect = exc
+            base.p1.open.side_effect = exc
 
             with self.assertRaises(OSError) as ctx:
                 self.cm.open_single(uid, name,
@@ -291,11 +353,10 @@ class TestConfigManager(unittest.TestCase):
             self.assertIs(ctx.exception, exc)
 
         self.assertSequenceEqual(
-            get_config_paths.mock_calls,
+            base.mock_calls,
             [
-                unittest.mock.call(uid, name),
-                unittest.mock._Call(("p1.parent.mkdir", (),
-                                     {"parents": True, "exist_ok": True})),
+                unittest.mock.call.get_config_paths(uid, name),
+                unittest.mock.call.mkdir_exist_ok(base.p1.parent),
                 unittest.mock.call.p1.open(mode, encoding=encoding),
             ]
         )
