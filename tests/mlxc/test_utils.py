@@ -250,34 +250,6 @@ class Testxdgopen_generic(unittest.TestCase):
         )
 
 
-class Testxdgconfigopen(unittest.TestCase):
-    def test_delegate_to_xdgopen_generic(self):
-        mode = "fnord"
-        encoding = object()
-        resource = object()
-
-        with unittest.mock.patch(
-                "mlxc.utils.xdgopen_generic"
-        ) as xdgopen_generic:
-            utils.xdgconfigopen(resource, "baz.xml",
-                                mode=mode,
-                                encoding=encoding)
-
-        self.assertSequenceEqual(
-            xdgopen_generic.mock_calls,
-            [
-                unittest.mock.call(
-                    resource,
-                    "baz.xml",
-                    mode,
-                    xdg.BaseDirectory.load_config_paths,
-                    xdg.BaseDirectory.save_config_path,
-                    encoding=encoding
-                )
-            ]
-        )
-
-
 class Testxdgdataopen(unittest.TestCase):
     def test_delegate_to_xdgopen_generic(self):
         mode = "fnord"

@@ -75,37 +75,6 @@ def xdgopen_generic(resource, name, mode, load_paths, save_path, **kwargs):
     return multiopen(paths, name, mode=mode, **kwargs)
 
 
-def xdgconfigopen(resource, name, mode="rb", **kwargs):
-    """
-    Open a configuration file. The `name` is the file name, the `resource` (see
-    :func:`xdg.BaseDirectory.load_config_paths`) defines the XDG resource.
-
-    This function calls :func:`xdgopen_generic` and returns its result. The
-    :func:`xdg.BaseDirectory.load_config_paths` and
-    :func:`xdg.BaseDirectory.save_config_path` functions are used as values for
-    the `load_paths` and `save_path` arguments, respectively, to
-    :func:`xdgopen_generic`. The `mode` and the `kwargs` are passed along, as
-    well as the resource and the file name (as extracted from the positional
-    arguments).
-
-    To open the first matching config file ``fnord.xml`` for reading with a
-    resource of ``zombofant.net/mlxc``, one would call::
-
-        import mlxc.utils
-        f = mlxc.utils.xdgconfigopen(("zombofant.net", "mlxc"), "fnord.xml")
-
-    For writing, we would pass a different `mode`.
-    """
-
-    return xdgopen_generic(
-        resource,
-        name,
-        mode,
-        xdg.BaseDirectory.load_config_paths,
-        xdg.BaseDirectory.save_config_path,
-        **kwargs)
-
-
 def xdgdataopen(resource, name, mode="rb", **kwargs):
     """
     Open a data file. The `name` is the file name, the `resource` (see
