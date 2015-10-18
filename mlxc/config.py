@@ -7,6 +7,9 @@ import aioxmpp.callbacks
 import mlxc.utils as utils
 
 
+UNIX_APPNAME = "mlxc.zombofant.net"
+
+
 def escape_dirname(path):
     return urllib.parse.quote(path, safe=" ")
 
@@ -92,3 +95,11 @@ class XDGProvider:
     def site_data_dirs(self):
         for path in self._impl.xdg_data_dirs[1:]:
             yield pathlib.Path(path) / self.appname
+
+
+def make_config_manager():
+    try:
+        provider = XDGProvider(UNIX_APPNAME)
+    except ImportError:
+        raise RuntimeError("no path provider for platform") from None
+    return ConfigManager(provider)

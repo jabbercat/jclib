@@ -12,7 +12,7 @@ from aioxmpp.testutils import (
 )
 
 import mlxc.main as main
-import mlxc.xdginfo as xdginfo
+import mlxc.config as config
 
 
 skip_without_unix = unittest.skipUnless(
@@ -62,7 +62,7 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
         self.assertSequenceEqual(
             join.mock_calls,
             [
-                unittest.mock.call(get_runtime_dir(), *xdginfo.RESOURCE)
+                unittest.mock.call(get_runtime_dir(), config.UNIX_APPNAME)
             ]
         )
 

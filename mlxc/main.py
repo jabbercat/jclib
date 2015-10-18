@@ -9,7 +9,7 @@ import time
 
 import xdg.BaseDirectory
 
-import mlxc.xdginfo
+import mlxc.config
 
 
 logger = logging.getLogger(__spec__.name)
@@ -32,7 +32,7 @@ class _UnixGlobalSingleton:
     def get_socket_path(cls):
         return os.path.join(
             xdg.BaseDirectory.get_runtime_dir(),
-            *mlxc.xdginfo.RESOURCE
+            mlxc.config.UNIX_APPNAME
         )
 
     @classmethod

@@ -15,7 +15,6 @@ import aioxmpp.structs as structs
 import aioxmpp.xso as xso
 
 import mlxc.utils as utils
-import mlxc.xdginfo
 import mlxc.instrumentable_list as instrumentable_list
 
 from mlxc.utils import mlxc_namespaces
@@ -276,6 +275,10 @@ class Client:
     is a huge composite which glues together the pieces which make an XMPP
     client an XMPP client (roster, account management, you name it).
 
+    `config_manager` must be a :class:`~mlxc.config.ConfigManager` compatible
+    class. It is used to load the state (accounts, roster, …) and offered at
+    :attr:`config_manager` to plug-ins.
+
     .. attribute:: AccountManager
 
        This class attribute defines the :class:`AccountManager` class to
@@ -286,6 +289,11 @@ class Client:
 
        Each instance has an instance of :attr:`AccountManager` bound at this
        attribute.
+
+    .. attribute:: config_manager
+
+       The :class:`~mlxc.config.ConfigManager` instance passed as
+       `config_manager`.
 
     The :class:`Client` tracks all enabled accounts (enabled as in
     :meth:`AccountManager.set_account_enabled`). For all enabled accounts,
@@ -312,8 +320,11 @@ class Client:
 
     AccountManager = AccountManager
 
-    def __init__(self):
+    def __init__(self, config_manager):
         super().__init__()
+        self.config_manager = config_manager
+        self.config_manager.on_writeback.connect(self.save_state)
+
         self.accounts = self.AccountManager()
         self.accounts.on_account_enabled.connect(
             self._on_account_enabled
@@ -405,10 +416,9 @@ class Client:
 
     def _load_accounts(self):
         try:
-            accounts_file = utils.xdgconfigopen(
-                mlxc.xdginfo.RESOURCE,
-                "accounts.xml",
-                mode="rb")
+            accounts_file = self.config_manager.open_single(
+                utils.mlxc_uid,
+                "accounts.xml")
         except OSError:
             self.accounts.clear()
         else:
@@ -417,8 +427,8 @@ class Client:
 
     def _load_pin_store(self):
         try:
-            with utils.xdgconfigopen(
-                    mlxc.xdginfo.RESOURCE,
+            with self.config_manager.open_single(
+                    utils.mlxc_uid,
                     "pinstore.json",
                     mode="r",
                     encoding="utf-8") as f:
@@ -444,15 +454,15 @@ class Client:
                          exc_info=True)
 
     def save_state(self):
-        with utils.xdgconfigopen(
-                mlxc.xdginfo.RESOURCE,
+        with self.config_manager.open_single(
+                utils.mlxc_uid,
                 "accounts.xml",
                 mode="wb") as f:
             self.accounts.save(f)
 
         data = self.pin_store.export_to_json()
-        with utils.xdgconfigopen(
-                mlxc.xdginfo.RESOURCE,
+        with self.config_manager.open_single(
+                utils.mlxc_uid,
                 "pinstore.json",
                 mode="w",
                 encoding="utf-8") as f:

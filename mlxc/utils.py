@@ -18,6 +18,8 @@ mlxc_namespaces = types.SimpleNamespace()
 mlxc_namespaces.roster = "https://xmlns.zombofant.net/mlxc/core/roster/1.0"
 mlxc_namespaces.account = "https://xmlns.zombofant.net/mlxc/core/account/1.0"
 
+mlxc_uid = "dns:mlxc.zombofant.net"
+
 
 logger = logging.getLogger(__name__)
 

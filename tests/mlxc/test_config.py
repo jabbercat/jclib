@@ -619,3 +619,43 @@ class TestXDGProvider_NonFunctional(unittest.TestCase):
     def test_raises_on_init(self):
         with self.assertRaises(ImportError):
             config.XDGProvider("appname")
+
+
+class Testglobals(unittest.TestCase):
+    def test_UNIX_APPNAME(self):
+        self.assertEqual(
+            config.UNIX_APPNAME,
+            "mlxc.zombofant.net"
+        )
+
+
+class Testmake_config_manager(unittest.TestCase):
+    def test_uses_XDGProvider_if_available(self):
+        with contextlib.ExitStack() as stack:
+            XDGProvider = stack.enter_context(
+                unittest.mock.patch("mlxc.config.XDGProvider")
+            )
+            ConfigManager = stack.enter_context(
+                unittest.mock.patch("mlxc.config.ConfigManager")
+            )
+
+            result = config.make_config_manager()
+
+        XDGProvider.assert_called_with(config.UNIX_APPNAME)
+        ConfigManager.assert_called_with(XDGProvider())
+
+        self.assertEqual(
+            result,
+            ConfigManager()
+        )
+
+    def test_raises_RuntimeError_if_all_providers_fail(self):
+        with contextlib.ExitStack() as stack:
+            XDGProvider = stack.enter_context(
+                unittest.mock.patch("mlxc.config.XDGProvider")
+            )
+            XDGProvider.side_effect = ImportError()
+
+            with self.assertRaisesRegexp(RuntimeError,
+                                         "no path provider for platform"):
+                config.make_config_manager()

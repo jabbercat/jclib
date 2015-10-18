@@ -35,6 +35,14 @@ class Testmlxc_namespaces(unittest.TestCase):
         )
 
 
+class Testmlxc_uid(unittest.TestCase):
+    def test_uid(self):
+        self.assertEqual(
+            utils.mlxc_uid,
+            "dns:mlxc.zombofant.net"
+        )
+
+
 class Testmultiopen(unittest.TestCase):
     def setUp(self):
         self.paths = [

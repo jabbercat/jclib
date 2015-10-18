@@ -1,1 +1,0 @@
-RESOURCE = ("mlxc.zombofant.net",)

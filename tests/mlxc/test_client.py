@@ -15,7 +15,7 @@ import aioxmpp.structs as structs
 import aioxmpp.xso as xso
 
 import mlxc.client as client
-import mlxc.xdginfo
+import mlxc.utils
 import mlxc.instrumentable_list as instrumentable_list
 
 from aioxmpp.testutils import (
@@ -1149,8 +1149,15 @@ class TestClient(unittest.TestCase):
          ]
 
         self.PresenceManagedClient.return_value = ConnectedClientMock()
+        self.config_manager = unittest.mock.Mock([
+            "open_single",
+            "open_multiple",
+            "on_writeback",
+        ])
 
-        self.c = client.Client()
+        self.c = client.Client(self.config_manager)
+
+        self.config_manager.mock_calls.clear()
 
     def test_init(self):
         with contextlib.ExitStack() as stack:
@@ -1161,7 +1168,7 @@ class TestClient(unittest.TestCase):
                 )
             )
 
-            c = client.Client()
+            c = client.Client(self.config_manager)
 
         self.assertSequenceEqual(
             AccountManager.mock_calls,
@@ -1173,6 +1180,13 @@ class TestClient(unittest.TestCase):
                 unittest.mock.call().on_account_disabled.connect(
                     c._on_account_disabled
                 )
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.config_manager.mock_calls,
+            [
+                unittest.mock.call.on_writeback.connect(c.save_state),
             ]
         )
 
@@ -1520,10 +1534,8 @@ class TestClient(unittest.TestCase):
         base = unittest.mock.MagicMock()
 
         with contextlib.ExitStack() as stack:
-            xdgconfigopen = stack.enter_context(unittest.mock.patch(
-                "mlxc.utils.xdgconfigopen",
-                new=base.xdgconfigopen
-            ))
+            self.config_manager.open_single = base.open_single
+            open_single = base.open_single
             load = stack.enter_context(unittest.mock.patch.object(
                 self.c.accounts,
                 "load",
@@ -1537,13 +1549,12 @@ class TestClient(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
-                unittest.mock.call.xdgconfigopen(
-                    mlxc.xdginfo.RESOURCE,
-                    "accounts.xml",
-                    mode="rb"),
-                unittest.mock.call.xdgconfigopen().__enter__(),
-                unittest.mock.call.load(xdgconfigopen()),
-                unittest.mock.call.xdgconfigopen().__exit__(None, None, None),
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
+                    "accounts.xml"),
+                unittest.mock.call.open_single().__enter__(),
+                unittest.mock.call.load(open_single()),
+                unittest.mock.call.open_single().__exit__(None, None, None),
             ]
         )
 
@@ -1551,22 +1562,22 @@ class TestClient(unittest.TestCase):
         base = unittest.mock.MagicMock()
 
         with contextlib.ExitStack() as stack:
-            xdgconfigopen = stack.enter_context(unittest.mock.patch(
-                "mlxc.utils.xdgconfigopen",
-                new=base.xdgconfigopen
-            ))
+            self.config_manager.open_single = base.open_single
+            open_single = base.open_single
+
             load = stack.enter_context(unittest.mock.patch.object(
                 self.c.accounts,
                 "load",
                 new=base.load
             ))
+
             clear = stack.enter_context(unittest.mock.patch.object(
                 self.c.accounts,
                 "clear",
                 new=base.clear
             ))
 
-            xdgconfigopen.side_effect = OSError()
+            open_single.side_effect = OSError()
 
             self.c._load_accounts()
 
@@ -1574,10 +1585,9 @@ class TestClient(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
-                unittest.mock.call.xdgconfigopen(
-                    mlxc.xdginfo.RESOURCE,
-                    "accounts.xml",
-                    mode="rb"),
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
+                    "accounts.xml"),
                 unittest.mock.call.clear()
             ]
         )
@@ -1586,14 +1596,14 @@ class TestClient(unittest.TestCase):
         base = unittest.mock.MagicMock()
 
         with contextlib.ExitStack() as stack:
-            xdgconfigopen = stack.enter_context(unittest.mock.patch(
-                "mlxc.utils.xdgconfigopen",
-                new=base.xdgconfigopen
-            ))
+            self.config_manager.open_single = base.open_single
+            open_single = base.open_single
+
             load = stack.enter_context(unittest.mock.patch(
                 "json.load",
                 new=base.json.load
             ))
+
             import_from_json = stack.enter_context(
                 unittest.mock.patch.object(
                     self.c.pin_store,
@@ -1609,14 +1619,14 @@ class TestClient(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
-                unittest.mock.call.xdgconfigopen(
-                    mlxc.xdginfo.RESOURCE,
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
                     "pinstore.json",
                     mode="r",
                     encoding="utf-8"),
-                unittest.mock.call.xdgconfigopen().__enter__(),
-                unittest.mock.call.json.load(xdgconfigopen().__enter__()),
-                unittest.mock.call.xdgconfigopen().__exit__(None, None, None),
+                unittest.mock.call.open_single().__enter__(),
+                unittest.mock.call.json.load(open_single().__enter__()),
+                unittest.mock.call.open_single().__exit__(None, None, None),
                 unittest.mock.call.import_from_json(
                     load(),
                     override=True),
@@ -1627,14 +1637,14 @@ class TestClient(unittest.TestCase):
         base = unittest.mock.MagicMock()
 
         with contextlib.ExitStack() as stack:
-            xdgconfigopen = stack.enter_context(unittest.mock.patch(
-                "mlxc.utils.xdgconfigopen",
-                new=base.xdgconfigopen
-            ))
+            self.config_manager.open_single = base.open_single
+            open_single = base.open_single
+
             load = stack.enter_context(unittest.mock.patch(
                 "json.load",
                 new=base.json.load
             ))
+
             import_from_json = stack.enter_context(
                 unittest.mock.patch.object(
                     self.c.pin_store,
@@ -1643,7 +1653,7 @@ class TestClient(unittest.TestCase):
                 )
             )
 
-            xdgconfigopen.side_effect = OSError()
+            open_single.side_effect = OSError()
 
             self.c._load_pin_store()
 
@@ -1652,8 +1662,8 @@ class TestClient(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
-                unittest.mock.call.xdgconfigopen(
-                    mlxc.xdginfo.RESOURCE,
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
                     "pinstore.json",
                     mode="r",
                     encoding="utf-8"),
@@ -1667,14 +1677,14 @@ class TestClient(unittest.TestCase):
         base = unittest.mock.MagicMock()
 
         with contextlib.ExitStack() as stack:
-            xdgconfigopen = stack.enter_context(unittest.mock.patch(
-                "mlxc.utils.xdgconfigopen",
-                new=base.xdgconfigopen
-            ))
+            self.config_manager.open_single = base.open_single
+            open_single = base.open_single
+
             load = stack.enter_context(unittest.mock.patch(
                 "json.load",
                 new=base.json.load
             ))
+
             import_from_json = stack.enter_context(
                 unittest.mock.patch.object(
                     self.c.pin_store,
@@ -1699,16 +1709,16 @@ class TestClient(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
-                unittest.mock.call.xdgconfigopen(
-                    mlxc.xdginfo.RESOURCE,
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
                     "pinstore.json",
                     mode="r",
                     encoding="utf-8"),
-                unittest.mock.call.xdgconfigopen().__enter__(),
+                unittest.mock.call.open_single().__enter__(),
                 unittest.mock.call.json.load(
-                    xdgconfigopen().__enter__(),
+                    open_single().__enter__(),
                 ),
-                unittest.mock.call.xdgconfigopen().__exit__(
+                unittest.mock.call.open_single().__exit__(
                     unittest.mock.ANY,
                     unittest.mock.ANY,
                     unittest.mock.ANY),
@@ -1774,19 +1784,20 @@ class TestClient(unittest.TestCase):
         base = unittest.mock.MagicMock()
 
         with contextlib.ExitStack() as stack:
-            xdgconfigopen = stack.enter_context(unittest.mock.patch(
-                "mlxc.utils.xdgconfigopen",
-                new=base.xdgconfigopen
-            ))
+            self.config_manager.open_single = base.open_single
+            open_single = base.open_single
+
             save = stack.enter_context(unittest.mock.patch.object(
                 self.c.accounts,
                 "save",
                 new=base.save
             ))
+
             json_dump = stack.enter_context(unittest.mock.patch(
                 "json.dump",
                 new=base.json.dump
             ))
+
             export_to_json = stack.enter_context(unittest.mock.patch.object(
                 self.c.pin_store,
                 "export_to_json",
@@ -1800,27 +1811,27 @@ class TestClient(unittest.TestCase):
         self.assertSequenceEqual(
             calls,
             [
-                unittest.mock.call.xdgconfigopen(
-                    mlxc.xdginfo.RESOURCE,
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
                     "accounts.xml",
                     mode="wb"),
-                unittest.mock.call.xdgconfigopen().__enter__(),
+                unittest.mock.call.open_single().__enter__(),
                 unittest.mock.call.save(
-                    xdgconfigopen().__enter__()
+                    open_single().__enter__()
                 ),
-                unittest.mock.call.xdgconfigopen().__exit__(None, None, None),
+                unittest.mock.call.open_single().__exit__(None, None, None),
                 unittest.mock.call.export_to_json(),
-                unittest.mock.call.xdgconfigopen(
-                    mlxc.xdginfo.RESOURCE,
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
                     "pinstore.json",
                     mode="w",
                     encoding="utf-8"),
-                unittest.mock.call.xdgconfigopen().__enter__(),
+                unittest.mock.call.open_single().__enter__(),
                 unittest.mock.call.json.dump(
                     export_to_json(),
-                    xdgconfigopen().__enter__()
+                    open_single().__enter__()
                 ),
-                unittest.mock.call.xdgconfigopen().__exit__(None, None, None),
+                unittest.mock.call.open_single().__exit__(None, None, None),
             ]
         )
 
