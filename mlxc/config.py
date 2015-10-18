@@ -4,6 +4,8 @@ import urllib.parse
 
 import aioxmpp.callbacks
 
+import mlxc.utils as utils
+
 
 def escape_dirname(path):
     return urllib.parse.quote(path, safe=" ")
@@ -31,30 +33,39 @@ class ConfigManager:
             ]
         )
 
-    def get_non_incremental_config_file(self, uid, filename):
+    def open_single(self, uid, filename, *, mode="rb", **kwargs):
         user_path, site_paths = self.get_config_paths(uid, filename)
+        if utils.is_write_mode(mode):
+            user_path.parent.mkdir(parents=True, exist_ok=True)
+            return user_path.open(mode, **kwargs)
+
+        excs = []
         for path in [user_path] + site_paths:
             try:
-                return path.open("rb")
-            except OSError:
+                return path.open(mode, **kwargs)
+            except OSError as exc:
+                excs.append(exc)
                 continue
-        raise FileNotFoundError()
+        raise aioxmpp.errors.MultiOSError(
+            "could not open {!r} for uid {}".format(filename, uid),
+            excs)
 
-    def get_incremental_config_files(self, uid, filename):
+    def open_incremental(self, uid, filename, *, mode="rb", **kwargs):
         user_path, site_paths = self.get_config_paths(uid, filename)
-        for path in reversed(site_paths):
-            try:
-                yield path.open("rb"), True
-            except OSError:
-                continue
+        if not utils.is_write_mode(mode):
+            for path in reversed(site_paths):
+                try:
+                    yield path.open(mode, **kwargs), True
+                except OSError:
+                    continue
 
         try:
-            yield user_path.open("rb"), False
+            yield user_path.open(mode, **kwargs), False
         except OSError:
             pass
 
     def load_incremental(self, uid, filename, callback):
-        for f, sitewide in self.get_incremental_config_files(uid, filename):
+        for f, sitewide in self.open_incremental(uid, filename):
             with f:
                 callback(f, sitewide)
 

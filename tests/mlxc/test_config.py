@@ -4,6 +4,7 @@ import unittest
 import unittest.mock
 
 import aioxmpp.callbacks
+import aioxmpp.errors
 
 import mlxc.config as config
 
@@ -111,7 +112,7 @@ class TestConfigManager(unittest.TestCase):
             )
         )
 
-    def test_get_non_incremental_config_file_last_succeeds(self):
+    def test_open_single_last_succeeds(self):
         f = object()
         uid, name = object(), object()
 
@@ -132,7 +133,7 @@ class TestConfigManager(unittest.TestCase):
             get_config_paths.p2.open.side_effect = PermissionError()
             get_config_paths.p3.open.return_value = f
 
-            result = self.cm.get_non_incremental_config_file(uid, name)
+            result = self.cm.open_single(uid, name)
 
         self.assertSequenceEqual(
             get_config_paths.mock_calls,
@@ -146,7 +147,7 @@ class TestConfigManager(unittest.TestCase):
 
         self.assertIs(result, f)
 
-    def test_get_non_incremental_config_file_first_succeeds(self):
+    def test_open_single_first_succeeds(self):
         f = object()
         uid, name = object(), object()
 
@@ -167,7 +168,7 @@ class TestConfigManager(unittest.TestCase):
             get_config_paths.p2.open.side_effect = Exception()
             get_config_paths.p3.open.side_effect = Exception()
 
-            result = self.cm.get_non_incremental_config_file(uid, name)
+            result = self.cm.open_single(uid, name)
 
         self.assertSequenceEqual(
             get_config_paths.mock_calls,
@@ -179,7 +180,127 @@ class TestConfigManager(unittest.TestCase):
 
         self.assertIs(result, f)
 
-    def test_get_non_incremental_config_file_none_succeeds(self):
+    def test_open_single_kwargs(self):
+        f = object()
+        uid, name, mode, encoding = object(), object(), object(), object()
+
+        with contextlib.ExitStack() as stack:
+            get_config_paths = stack.enter_context(
+                unittest.mock.patch.object(self.cm, "get_config_paths")
+            )
+            is_write_mode = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.is_write_mode")
+            )
+            is_write_mode.return_value = False
+
+            get_config_paths.return_value = (
+                get_config_paths.p1,
+                [
+                    get_config_paths.p2,
+                    get_config_paths.p3,
+                ]
+            )
+
+            get_config_paths.p1.open.side_effect = FileNotFoundError()
+            get_config_paths.p2.open.side_effect = PermissionError()
+            get_config_paths.p3.open.return_value = f
+
+            result = self.cm.open_single(uid, name,
+                                         mode=mode,
+                                         encoding=encoding)
+
+        self.assertSequenceEqual(
+            get_config_paths.mock_calls,
+            [
+                unittest.mock.call(uid, name),
+                unittest.mock.call.p1.open(mode, encoding=encoding),
+                unittest.mock.call.p2.open(mode, encoding=encoding),
+                unittest.mock.call.p3.open(mode, encoding=encoding)
+            ]
+        )
+
+        self.assertIs(result, f)
+
+    def test_open_single_with_writable_mode_creates_parent_directory(self):
+        f = object()
+        uid, name, mode, encoding = object(), object(), object(), object()
+
+        with contextlib.ExitStack() as stack:
+            get_config_paths = stack.enter_context(
+                unittest.mock.patch.object(self.cm, "get_config_paths")
+            )
+            is_write_mode = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.is_write_mode")
+            )
+            is_write_mode.return_value = True
+
+            get_config_paths.return_value = (
+                get_config_paths.p1,
+                [
+                    get_config_paths.p2,
+                    get_config_paths.p3,
+                ]
+            )
+
+            get_config_paths.p1.open.return_value = f
+
+            result = self.cm.open_single(uid, name,
+                                         mode=mode,
+                                         encoding=encoding)
+
+        self.assertSequenceEqual(
+            get_config_paths.mock_calls,
+            [
+                unittest.mock.call(uid, name),
+                unittest.mock._Call(("p1.parent.mkdir", (),
+                                     {"parents": True, "exist_ok": True})),
+                unittest.mock.call.p1.open(mode, encoding=encoding),
+            ]
+        )
+
+        self.assertIs(result, f)
+
+    def test_open_single_with_writable_mode_omits_site(self):
+        f = object()
+        uid, name, mode, encoding = object(), object(), object(), object()
+
+        with contextlib.ExitStack() as stack:
+            get_config_paths = stack.enter_context(
+                unittest.mock.patch.object(self.cm, "get_config_paths")
+            )
+            is_write_mode = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.is_write_mode")
+            )
+            is_write_mode.return_value = True
+
+            get_config_paths.return_value = (
+                get_config_paths.p1,
+                [
+                    get_config_paths.p2,
+                    get_config_paths.p3,
+                ]
+            )
+
+            exc = OSError()
+            get_config_paths.p1.open.side_effect = exc
+
+            with self.assertRaises(OSError) as ctx:
+                self.cm.open_single(uid, name,
+                                    mode=mode,
+                                    encoding=encoding)
+            self.assertIs(ctx.exception, exc)
+
+        self.assertSequenceEqual(
+            get_config_paths.mock_calls,
+            [
+                unittest.mock.call(uid, name),
+                unittest.mock._Call(("p1.parent.mkdir", (),
+                                     {"parents": True, "exist_ok": True})),
+                unittest.mock.call.p1.open(mode, encoding=encoding),
+            ]
+        )
+
+    def test_open_single_none_succeeds(self):
         f = object()
         uid, name = object(), object()
 
@@ -196,12 +317,18 @@ class TestConfigManager(unittest.TestCase):
                 ]
             )
 
-            get_config_paths.p1.open.side_effect = OSError()
-            get_config_paths.p2.open.side_effect = OSError()
-            get_config_paths.p3.open.side_effect = OSError()
+            excs = [OSError() for i in range(3)]
+            get_config_paths.p1.open.side_effect = excs[0]
+            get_config_paths.p2.open.side_effect = excs[1]
+            get_config_paths.p3.open.side_effect = excs[2]
 
-            with self.assertRaises(FileNotFoundError):
-                self.cm.get_non_incremental_config_file(uid, name)
+            with self.assertRaises(aioxmpp.errors.MultiOSError) as ctx:
+                self.cm.open_single(uid, name)
+
+            self.assertSequenceEqual(
+                ctx.exception.exceptions,
+                excs
+            )
 
         self.assertSequenceEqual(
             get_config_paths.mock_calls,
@@ -213,7 +340,7 @@ class TestConfigManager(unittest.TestCase):
             ]
         )
 
-    def test_get_incremental_config_files_some_succeed(self):
+    def test_open_incremental_some_succeed(self):
         f1, f2 = object(), object()
         uid, name = object(), object()
 
@@ -234,7 +361,7 @@ class TestConfigManager(unittest.TestCase):
             get_config_paths.p2.open.side_effect = OSError()
             get_config_paths.p3.open.return_value = f2
 
-            result = list(self.cm.get_incremental_config_files(uid, name))
+            result = list(self.cm.open_incremental(uid, name))
 
         self.assertSequenceEqual(
             get_config_paths.mock_calls,
@@ -254,7 +381,96 @@ class TestConfigManager(unittest.TestCase):
             ]
         )
 
-    def test_get_incremental_config_files_none_succeed(self):
+    def test_open_incremental_kwargs(self):
+        f1, f2 = object(), object()
+        uid, name, mode, encoding = object(), object(), object(), object()
+
+        with contextlib.ExitStack() as stack:
+            get_config_paths = stack.enter_context(
+                unittest.mock.patch.object(self.cm, "get_config_paths")
+            )
+            is_write_mode = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.is_write_mode")
+            )
+            is_write_mode.return_value = False
+
+            get_config_paths.return_value = (
+                get_config_paths.p1,
+                [
+                    get_config_paths.p2,
+                    get_config_paths.p3,
+                ]
+            )
+
+            get_config_paths.p1.open.return_value = f1
+            get_config_paths.p2.open.side_effect = OSError()
+            get_config_paths.p3.open.return_value = f2
+
+            result = list(self.cm.open_incremental(uid, name,
+                                                   mode=mode,
+                                                   encoding=encoding))
+
+        self.assertSequenceEqual(
+            get_config_paths.mock_calls,
+            [
+                unittest.mock.call(uid, name),
+                unittest.mock.call.p3.open(mode, encoding=encoding),
+                unittest.mock.call.p2.open(mode, encoding=encoding),
+                unittest.mock.call.p1.open(mode, encoding=encoding),
+            ]
+        )
+
+        self.assertSequenceEqual(
+            result,
+            [
+                (f2, True),
+                (f1, False)
+            ]
+        )
+
+    def test_open_incremental_omits_site_dirs_on_write_mode(self):
+        f1, f2 = object(), object()
+        uid, name, mode, encoding = object(), object(), object(), object()
+
+        with contextlib.ExitStack() as stack:
+            get_config_paths = stack.enter_context(
+                unittest.mock.patch.object(self.cm, "get_config_paths")
+            )
+            is_write_mode = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.is_write_mode")
+            )
+            is_write_mode.return_value = True
+
+            get_config_paths.return_value = (
+                get_config_paths.p1,
+                [
+                    get_config_paths.p2,
+                    get_config_paths.p3,
+                ]
+            )
+
+            get_config_paths.p1.open.return_value = f1
+
+            result = list(self.cm.open_incremental(uid, name,
+                                                   mode=mode,
+                                                   encoding=encoding))
+
+        self.assertSequenceEqual(
+            get_config_paths.mock_calls,
+            [
+                unittest.mock.call(uid, name),
+                unittest.mock.call.p1.open(mode, encoding=encoding),
+            ]
+        )
+
+        self.assertSequenceEqual(
+            result,
+            [
+                (f1, False)
+            ]
+        )
+
+    def test_open_incremental_none_succeed(self):
         f1, f2 = object(), object()
         uid, name = object(), object()
 
@@ -275,7 +491,7 @@ class TestConfigManager(unittest.TestCase):
             get_config_paths.p2.open.side_effect = OSError()
             get_config_paths.p3.open.side_effect = OSError()
 
-            result = list(self.cm.get_incremental_config_files(uid, name))
+            result = list(self.cm.open_incremental(uid, name))
 
         self.assertSequenceEqual(
             get_config_paths.mock_calls,
@@ -298,18 +514,18 @@ class TestConfigManager(unittest.TestCase):
         self.base.f2 = unittest.mock.MagicMock()
         uid, filename = object(), object()
         with contextlib.ExitStack() as stack:
-            get_incremental_config_files = stack.enter_context(
+            open_incremental = stack.enter_context(
                 unittest.mock.patch.object(self.cm,
-                                           "get_incremental_config_files")
+                                           "open_incremental")
             )
-            get_incremental_config_files.return_value = [
+            open_incremental.return_value = [
                 (self.base.f1, True),
                 (self.base.f2, False),
             ]
 
             self.cm.load_incremental(uid, filename, self.base.callback)
 
-        get_incremental_config_files.assert_called_with(uid, filename)
+        open_incremental.assert_called_with(uid, filename)
 
         calls = list(self.base.mock_calls)
         self.assertSequenceEqual(
