@@ -95,7 +95,7 @@ class _AccountList(xso.XSO):
 
 class AccountManager:
     KEYRING_SERVICE_NAME = "net.zombofant.mlxc"
-    KEYRING_JID_FORMAT = "jid:{bare!s}"
+    KEYRING_JID_FORMAT = "xmpp:{bare!s}"
 
     on_account_enabled = callbacks.Signal()
     on_account_disabled = callbacks.Signal()

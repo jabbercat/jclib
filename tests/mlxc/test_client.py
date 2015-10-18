@@ -291,7 +291,7 @@ class TestAccountManager(unittest.TestCase):
 
         self.assertEqual(
             client.AccountManager.KEYRING_JID_FORMAT,
-            "jid:{bare!s}",
+            "xmpp:{bare!s}",
         )
 
     def test_keyring_with_priority_1_is_safe(self):
@@ -339,7 +339,7 @@ class TestAccountManager(unittest.TestCase):
                     None,
                     keyring.get_password,
                     client.AccountManager.KEYRING_SERVICE_NAME,
-                    "jid:{!s}".format(TEST_JID.bare)
+                    "xmpp:{!s}".format(TEST_JID.bare)
                 )
             ],
         )
@@ -378,7 +378,7 @@ class TestAccountManager(unittest.TestCase):
                     None,
                     keyring.set_password,
                     client.AccountManager.KEYRING_SERVICE_NAME,
-                    "jid:{!s}".format(TEST_JID.bare),
+                    "xmpp:{!s}".format(TEST_JID.bare),
                     "foobar"
                 )
             ]
@@ -417,7 +417,7 @@ class TestAccountManager(unittest.TestCase):
                     None,
                     keyring.delete_password,
                     client.AccountManager.KEYRING_SERVICE_NAME,
-                    "jid:{!s}".format(TEST_JID.bare),
+                    "xmpp:{!s}".format(TEST_JID.bare),
                 )
             ]
         )
@@ -443,7 +443,7 @@ class TestAccountManager(unittest.TestCase):
                     None,
                     keyring.delete_password,
                     client.AccountManager.KEYRING_SERVICE_NAME,
-                    "jid:{!s}".format(TEST_JID.bare),
+                    "xmpp:{!s}".format(TEST_JID.bare),
                 )
             ]
         )
