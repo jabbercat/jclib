@@ -100,8 +100,8 @@ class SinglePresenceState(xso.XSO):
         "show",
         type_=stanza.Presence.show.type_
     )
-    status = xso.ChildLangMap(
-        [SinglePresenceStateStatus]
+    status = xso.ChildList(
+        [aioxmpp.stanza.Status]
     )
     jid = xso.Attr(
         "jid",
@@ -113,9 +113,9 @@ class SinglePresenceState(xso.XSO):
         super().__init__()
         self.presence = presence
         if isinstance(status, str):
-            self.status[None] = [SinglePresenceStateStatus(status)]
+            self.status.append(aioxmpp.stanza.Status(status))
         elif isinstance(status, collections.abc.Iterable):
-            type(self).status.fill_into_dict(status, self.status)
+            self.status[:] = status
 
     @property
     def presence(self):
@@ -162,7 +162,7 @@ class FundamentalPresenceState:
     def __init__(self, state=structs.PresenceState()):
         super().__init__()
         self.states = {
-            None: SinglePresenceState(state)
+            None: [SinglePresenceState(state)]
         }
 
 
@@ -437,7 +437,15 @@ class Client:
 
         self._states = {}
 
-        self._global_presence = structs.PresenceState(False)
+        self._current_presence = FundamentalPresenceState(
+            aioxmpp.structs.PresenceState(False)
+        )
+
+    def _single_presence_for_jid(self, jid):
+        try:
+            return self._current_presence.states[jid][0]
+        except (KeyError, IndexError):
+            return self._current_presence.states[None][0]
 
     def _on_account_enabled(self, account):
         node = aioxmpp.node.PresenceManagedClient(
@@ -450,7 +458,7 @@ class Client:
                 )
             )
         )
-        node.presence = self.global_presence
+        node.presence = self._single_presence_for_jid(account.jid).presence
 
         self._states[account] = node
 
@@ -473,14 +481,15 @@ class Client:
         return self._states[account]
 
     @property
-    def global_presence(self):
-        return self._global_presence
+    def current_presence(self):
+        return self._current_presence
 
-    def set_global_presence(self, new_state, *, force=False):
-        for state in self._states.values():
-            if force or state.presence == self._global_presence:
-                state.presence = new_state
-        self._global_presence = new_state
+    def apply_presence_state(self, new_presence):
+        self._current_presence = new_presence
+        for account, state in self._states.items():
+            single_presence = self._single_presence_for_jid(account.jid)
+            state.set_presence(single_presence.presence,
+                               single_presence.status)
 
     def stop_all(self):
         for node in self._states.values():
