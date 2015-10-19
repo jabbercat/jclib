@@ -132,6 +132,13 @@ class SinglePresenceState(xso.XSO):
             self._available = None
             self._show = None
 
+    def __eq__(self, other):
+        try:
+            return (self.presence == other.presence and
+                    self.status == other.status)
+        except AttributeError:
+            return NotImplemented
+
 
 def _state_jid_key(state):
     return state.jid
@@ -151,6 +158,14 @@ class ComplexPresenceState(xso.XSO):
     )
 
 
+class FundamentalPresenceState:
+    def __init__(self, state=structs.PresenceState()):
+        super().__init__()
+        self.states = {
+            None: SinglePresenceState(state)
+        }
+
+
 class _ComplexPresenceList(xso.XSO):
     TAG = (mlxc_namespaces.presence, "presences")
 
@@ -162,7 +177,7 @@ class _ComplexPresenceList(xso.XSO):
 
     def __init__(self, items=[]):
         super().__init__()
-        self.items = items
+        self.items[:] = items
 
 
 class _AccountList(xso.XSO):
@@ -552,6 +567,12 @@ class Client:
             self._load_pin_store()
         except Exception as exc:
             logger.error("failed to load certificate pin store",
+                         exc_info=True)
+
+        try:
+            self._load_presence_states()
+        except Exception as exc:
+            logger.error("failed to load custom presence states",
                          exc_info=True)
 
     def save_state(self):

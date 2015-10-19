@@ -48,6 +48,12 @@ class Testescape_dirname(unittest.TestCase):
             config.escape_dirname("\\foo")
         )
 
+    def test_safe_against_colons(self):
+        self.assertEqual(
+            "%3Afoo",
+            config.escape_dirname(":foo")
+        )
+
     def test_not_escaping_spaces(self):
         self.assertEqual(
             " foo",

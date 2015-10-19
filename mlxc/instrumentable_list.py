@@ -177,9 +177,9 @@ class ModelList(collections.abc.MutableSequence):
     begin_move_rows = None
     end_move_rows = None
 
-    def __init__(self):
+    def __init__(self, initial=()):
         super().__init__()
-        self._storage = list()
+        self._storage = list(initial)
 
     def _check_and_normalize_index(self, index):
         if abs(index) > len(self._storage) or index == len(self._storage):

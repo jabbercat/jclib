@@ -378,8 +378,41 @@ class TestSinglePresenceState(unittest.TestCase):
             "dnd"
         )
 
+    def test_equality(self):
+        aps1 = client.SinglePresenceState(status="foobar")
+        aps2 = client.SinglePresenceState()
 
-class TestCustomPresenceState(unittest.TestCase):
+        self.assertFalse(aps1 == aps2)
+        self.assertTrue(aps1 != aps2)
+
+        aps1.status.clear()
+
+        self.assertTrue(aps1 == aps2)
+        self.assertFalse(aps1 != aps2)
+
+        aps1.presence = structs.PresenceState()
+
+        self.assertFalse(aps1 == aps2)
+        self.assertTrue(aps1 != aps2)
+
+        aps2.presence = structs.PresenceState()
+
+        self.assertTrue(aps1 == aps2)
+        self.assertFalse(aps1 != aps2)
+
+        aps1.jid = structs.JID.fromstr("foo@bar.example")
+
+        self.assertTrue(aps1 == aps2)
+        self.assertFalse(aps1 != aps2)
+
+    def test_equality_deals_with_foreign_types(self):
+        aps = client.SinglePresenceState()
+        self.assertNotEqual(aps, None)
+        self.assertNotEqual(aps, "foo")
+        self.assertNotEqual(aps, 123)
+
+
+class TestComplexPresenceState(unittest.TestCase):
     def test_is_xso(self):
         self.assertTrue(issubclass(
             client.ComplexPresenceState,
@@ -424,6 +457,31 @@ class TestCustomPresenceState(unittest.TestCase):
         self.assertEqual(
             obj.jid,
             client._state_jid_key(obj)
+        )
+
+
+class TestFundamentalPresenceState(unittest.TestCase):
+    def test_init_default(self):
+        fps = client.FundamentalPresenceState()
+        self.assertDictEqual(
+            fps.states,
+            {
+                None: client.SinglePresenceState(
+                    structs.PresenceState()
+                )
+            }
+        )
+
+    def test_init_with_presence_state(self):
+        state = structs.PresenceState(available=True, show="dnd")
+        fps = client.FundamentalPresenceState(state)
+        self.assertDictEqual(
+            fps.states,
+            {
+                None: client.SinglePresenceState(
+                    state
+                )
+            }
         )
 
 
@@ -2077,6 +2135,7 @@ class TestClient(unittest.TestCase):
         funcs = [
             "_load_accounts",
             "_load_pin_store",
+            "_load_presence_states",
         ]
 
         for func_to_fail_name in funcs:

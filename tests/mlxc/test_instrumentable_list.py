@@ -306,6 +306,14 @@ class TestModelList(unittest.TestCase):
         self.assertIsNone(mlist.begin_move_rows)
         self.assertIsNone(mlist.end_move_rows)
 
+    def test_init_with_items(self):
+        def generator():
+            yield 2
+            yield 1
+            yield 3
+        mlist = ModelList(generator())
+        self.assertSequenceEqual(mlist, [2, 1, 3])
+
     def test_insert(self):
         self.mlist.insert(0, 1)
         self.mlist.insert(0, 2)
