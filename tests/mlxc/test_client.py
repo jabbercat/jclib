@@ -64,6 +64,7 @@ class TestConnectionOverride(unittest.TestCase):
             client.ConnectionOverride.host,
             xso.Text
         )
+        self.assertIsNone(client.ConnectionOverride.host.default)
 
     def test_port_attr(self):
         self.assertIsInstance(
@@ -77,6 +78,10 @@ class TestConnectionOverride(unittest.TestCase):
         self.assertIsInstance(
             client.ConnectionOverride.port.type_,
             xso.Integer
+        )
+        self.assertEqual(
+            client.ConnectionOverride.port.default,
+            5222
         )
 
 
@@ -106,8 +111,9 @@ class TestAccountSettings(unittest.TestCase):
             client.AccountSettings._jid.type_,
             xso.JID
         )
-        self.assertTrue(
-            client.AccountSettings._jid.required
+        self.assertIs(
+            client.AccountSettings._jid.default,
+            xso.NO_DEFAULT
         )
 
     def test__enabled_attr(self):
@@ -123,12 +129,9 @@ class TestAccountSettings(unittest.TestCase):
             client.AccountSettings._enabled.type_,
             xso.Bool
         )
-        self.assertFalse(
-            client.AccountSettings._enabled.required
-        )
         self.assertIs(
-            False,
-            client.AccountSettings._enabled.default
+            client.AccountSettings._enabled.default,
+            False
         )
 
     def test_resource_attr(self):
@@ -148,8 +151,9 @@ class TestAccountSettings(unittest.TestCase):
             client.AccountSettings.resource.type_.prepfunc,
             aioxmpp.stringprep.resourceprep
         )
-        self.assertFalse(
-            client.AccountSettings.resource.required
+        self.assertIs(
+            client.AccountSettings.resource.default,
+            None
         )
 
     def test_connection_override(self):
@@ -162,6 +166,9 @@ class TestAccountSettings(unittest.TestCase):
             {
                 client.ConnectionOverride,
             },
+        )
+        self.assertFalse(
+            client.AccountSettings.override_peer.required
         )
 
     def test_allow_unencrypted_attr(self):
@@ -180,9 +187,6 @@ class TestAccountSettings(unittest.TestCase):
         self.assertIs(
             client.AccountSettings.allow_unencrypted.default,
             False,
-        )
-        self.assertFalse(
-            client.AccountSettings.allow_unencrypted.required
         )
 
     def test_init_requires_jid(self):
@@ -262,7 +266,7 @@ class TestSinglePresenceState(unittest.TestCase):
         )
         self.assertIs(
             client.SinglePresenceState._available.default,
-            None
+            True
         )
 
     def test__show_prop(self):
@@ -277,6 +281,9 @@ class TestSinglePresenceState(unittest.TestCase):
         self.assertIs(
             client.SinglePresenceState._show.type_,
             stanza.Presence.show.type_
+        )
+        self.assertIsNone(
+            client.SinglePresenceState._show.default
         )
 
     def test_status(self):
@@ -304,52 +311,56 @@ class TestSinglePresenceState(unittest.TestCase):
         )
         self.assertIs(
             client.SinglePresenceState.jid.default,
-            None
+            xso.NO_DEFAULT
         )
 
     def test_init_default(self):
-        aps = client.SinglePresenceState()
+        aps = client.SinglePresenceState(TEST_JID)
+        self.assertEqual(aps.jid, TEST_JID)
         self.assertFalse(aps.status)
-        self.assertIsNone(aps.presence)
+        self.assertEqual(aps.state, structs.PresenceState(True))
 
     def test_init_args(self):
         aps = client.SinglePresenceState(
+            TEST_JID,
             structs.PresenceState(available=True),
             "foobar")
+        self.assertEqual(aps.jid, TEST_JID)
         self.assertEqual(
-            aps.presence,
+            aps.state,
             structs.PresenceState(available=True)
         )
         self.assertEqual(
             aps.status,
-            [client.SinglePresenceStateStatus("foobar")]
+            [stanza.Status("foobar")]
         )
 
         aps = client.SinglePresenceState(
+            TEST_JID,
             structs.PresenceState(available=True),
-            [client.SinglePresenceStateStatus("foobar"),
-             client.SinglePresenceStateStatus(
+            [stanza.Status("foobar"),
+             stanza.Status(
                  "baz",
                  lang=structs.LanguageTag.fromstr("de-DE"))]
         )
         self.assertEqual(
-            aps.presence,
+            aps.state,
             structs.PresenceState(available=True)
         )
         self.assertEqual(
             aps.status,
-            [client.SinglePresenceStateStatus("foobar"),
-             client.SinglePresenceStateStatus(
+            [stanza.Status("foobar"),
+             stanza.Status(
                  "baz",
                  lang=structs.LanguageTag.fromstr("de-DE"))
             ]
         )
 
-    def test_presence_attr(self):
-        aps = client.SinglePresenceState()
-        aps.presence = structs.PresenceState(available=True, show="dnd")
+    def test_state_attr(self):
+        aps = client.SinglePresenceState(TEST_JID)
+        aps.state = structs.PresenceState(available=True, show="dnd")
         self.assertEqual(
-            aps.presence,
+            aps.state,
             structs.PresenceState(available=True, show="dnd")
         )
 
@@ -363,8 +374,8 @@ class TestSinglePresenceState(unittest.TestCase):
         )
 
     def test_equality(self):
-        aps1 = client.SinglePresenceState(status="foobar")
-        aps2 = client.SinglePresenceState()
+        aps1 = client.SinglePresenceState(TEST_JID, status="foobar")
+        aps2 = client.SinglePresenceState(TEST_JID)
 
         self.assertFalse(aps1 == aps2)
         self.assertTrue(aps1 != aps2)
@@ -374,12 +385,12 @@ class TestSinglePresenceState(unittest.TestCase):
         self.assertTrue(aps1 == aps2)
         self.assertFalse(aps1 != aps2)
 
-        aps1.presence = structs.PresenceState()
+        aps1.state = structs.PresenceState()
 
         self.assertFalse(aps1 == aps2)
         self.assertTrue(aps1 != aps2)
 
-        aps2.presence = structs.PresenceState()
+        aps2.state = structs.PresenceState()
 
         self.assertTrue(aps1 == aps2)
         self.assertFalse(aps1 != aps2)
@@ -390,10 +401,105 @@ class TestSinglePresenceState(unittest.TestCase):
         self.assertFalse(aps1 != aps2)
 
     def test_equality_deals_with_foreign_types(self):
-        aps = client.SinglePresenceState()
+        aps = client.SinglePresenceState(TEST_JID)
         self.assertNotEqual(aps, None)
         self.assertNotEqual(aps, "foo")
         self.assertNotEqual(aps, 123)
+
+    def setUp(self):
+        self.aps = client.SinglePresenceState(TEST_JID)
+
+    def test_get_status_for_locale(self):
+        range_ = object()
+        with contextlib.ExitStack() as stack:
+            filter_ = stack.enter_context(
+                unittest.mock.patch.object(self.aps.status, "filter")
+            )
+
+            result = self.aps.get_status_for_locale(range_)
+
+        self.assertSequenceEqual(
+            filter_.mock_calls,
+            [
+                unittest.mock.call(lang=range_),
+                unittest.mock.call().__next__()
+            ]
+        )
+
+        self.assertEqual(result, next(filter_()))
+
+    def test_get_status_for_locale_raise_KeyError_if_none_found(self):
+        range_ = object()
+        with contextlib.ExitStack() as stack:
+            filter_ = stack.enter_context(
+                unittest.mock.patch.object(self.aps.status, "filter")
+            )
+
+            filter_().__next__.side_effect = StopIteration()
+            filter_.mock_calls.clear()
+
+            with self.assertRaises(KeyError):
+                self.aps.get_status_for_locale(range_)
+
+        self.assertSequenceEqual(
+            filter_.mock_calls,
+            [
+                unittest.mock.call(lang=range_),
+                unittest.mock.call().__next__()
+            ]
+        )
+
+    def test_get_status_for_locale_try_None(self):
+        def filter_mock(original, *args, lang=None, **kwargs):
+            result = original(*args, lang=lang, **kwargs)
+            if lang is not None:
+                result.__next__.side_effect = StopIteration()
+            else:
+                result.__next__.side_effect = None
+            return result
+
+        range_ = object()
+        base = unittest.mock.MagicMock()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(unittest.mock.patch.object(
+                self.aps.status, "filter",
+                new=functools.partial(filter_mock, base.filter)
+            ))
+
+            result = self.aps.get_status_for_locale(range_, try_none=True)
+
+        self.assertSequenceEqual(
+            base.mock_calls,
+            [
+                unittest.mock.call.filter(lang=range_),
+                unittest.mock.call.filter().__next__(),
+                unittest.mock.call.filter(attrs={"lang": None}, lang=None),
+                unittest.mock.call.filter().__next__()
+            ]
+        )
+
+    def test_get_status_for_locale_try_None_raises_KeyError_on_failure(self):
+        range_ = object()
+        with contextlib.ExitStack() as stack:
+            filter_ = stack.enter_context(
+                unittest.mock.patch.object(self.aps.status, "filter")
+            )
+
+            filter_().__next__.side_effect = StopIteration()
+            filter_.mock_calls.clear()
+
+            with self.assertRaises(KeyError):
+                self.aps.get_status_for_locale(range_, try_none=True)
+
+        self.assertSequenceEqual(
+            filter_.mock_calls,
+            [
+                unittest.mock.call(lang=range_),
+                unittest.mock.call().__next__(),
+                unittest.mock.call(attrs={"lang": None}),
+                unittest.mock.call().__next__()
+            ]
+        )
 
 
 class TestComplexPresenceState(unittest.TestCase):
@@ -402,6 +508,49 @@ class TestComplexPresenceState(unittest.TestCase):
             client.ComplexPresenceState,
             xso.XSO
         ))
+
+    def test__available(self):
+        self.assertIsInstance(
+            client.ComplexPresenceState._available,
+            xso.Attr
+        )
+        self.assertEqual(
+            client.ComplexPresenceState._available.tag,
+            (None, "available")
+        )
+        self.assertIsInstance(
+            client.ComplexPresenceState._available.type_,
+            xso.Bool
+        )
+        self.assertIs(
+            client.ComplexPresenceState._available.default,
+            True
+        )
+
+    def test__show_prop(self):
+        self.assertIsInstance(
+            client.ComplexPresenceState._show,
+            xso.Attr
+        )
+        self.assertEqual(
+            client.ComplexPresenceState._show.tag,
+            (None, "show")
+        )
+        self.assertIs(
+            client.ComplexPresenceState._show.type_,
+            stanza.Presence.show.type_
+        )
+        self.assertIsNone(client.ComplexPresenceState._show.default)
+
+    def test_status(self):
+        self.assertIsInstance(
+            client.ComplexPresenceState.status,
+            xso.ChildList
+        )
+        self.assertSetEqual(
+            client.ComplexPresenceState.status._classes,
+            {stanza.Status}
+        )
 
     def test_tag(self):
         self.assertEqual(
@@ -418,55 +567,230 @@ class TestComplexPresenceState(unittest.TestCase):
             client.ComplexPresenceState.name.tag,
             (None, "name")
         )
-        self.assertTrue(
-            client.ComplexPresenceState.name.required
+        self.assertIs(
+            client.ComplexPresenceState.name.default,
+            xso.NO_DEFAULT
         )
 
-    def test_states(self):
+    def test_overrides(self):
         self.assertIsInstance(
-            client.ComplexPresenceState.states,
-            xso.ChildMap
-        )
-        self.assertEqual(
-            client.ComplexPresenceState.states.key,
-            client._state_jid_key
+            client.ComplexPresenceState.overrides,
+            xso.ChildList
         )
         self.assertSetEqual(
-            client.ComplexPresenceState.states._classes,
+            client.ComplexPresenceState.overrides._classes,
             {client.SinglePresenceState}
         )
 
-    def test__state_jid_key(self):
-        obj = unittest.mock.Mock(["jid"])
+    def test_init_default(self):
+        cps = client.ComplexPresenceState()
         self.assertEqual(
-            obj.jid,
-            client._state_jid_key(obj)
+            cps.state,
+            structs.PresenceState(available=True)
+        )
+        self.assertIs(
+            cps._available,
+            True
+        )
+        self.assertIsNone(cps._show)
+        self.assertEqual(len(cps.status), 0)
+        self.assertEqual(len(cps.overrides), 0)
+
+    def test_init_args_status_list(self):
+        status_list = [
+            stanza.Status("foo"),
+            stanza.Status("de", lang=structs.LanguageTag.fromstr("de-DE"))
+        ]
+
+        cps = client.ComplexPresenceState(
+            state=structs.PresenceState(available=True,
+                                        show="chat"),
+            status=status_list
+        )
+
+        self.assertEqual(
+            cps.state,
+            structs.PresenceState(available=True, show="chat")
+        )
+        self.assertSequenceEqual(
+            cps.status,
+            status_list
+        )
+        self.assertEqual(
+            cps._available,
+            True
+        )
+        self.assertEqual(
+            cps._show,
+            "chat"
+        )
+        self.assertEqual(len(cps.overrides), 0)
+
+    def setUp(self):
+        self.cps = client.ComplexPresenceState()
+
+    def test_state_property(self):
+        self.cps.state = structs.PresenceState(available=True,
+                                               show="dnd")
+        self.assertTrue(self.cps._available)
+        self.assertEqual(self.cps._show, "dnd")
+        self.cps.state = structs.PresenceState(available=False)
+        self.assertFalse(self.cps._available)
+        self.assertIsNone(self.cps._show)
+
+    def test_get_presence_for_jid_defaulting(self):
+        self.cps.state = structs.PresenceState(available=True,
+                                               show="dnd")
+        self.cps.status[:] = [
+            stanza.Status("foo")
+        ]
+        result = self.cps.get_presence_for_jid(TEST_JID)
+
+        self.assertEqual(self.cps.state, result.state)
+        self.assertEqual(self.cps.status, result.status)
+
+    def test_get_presence_for_jid_with_override(self):
+        foo_override = client.SinglePresenceState(
+            TEST_JID.replace(localpart="foo"),
+            structs.PresenceState(available=False)
+        )
+        bar_override = client.SinglePresenceState(
+            TEST_JID.replace(localpart="bar"),
+            structs.PresenceState(available=True,
+                                  show="dnd")
+        )
+
+        self.cps.overrides.append(foo_override)
+        self.cps.overrides.append(bar_override)
+
+        self.assertIs(
+            self.cps.get_presence_for_jid(TEST_JID.replace(localpart="foo")),
+            foo_override
+        )
+
+    def test_get_status_for_locale(self):
+        range_ = object()
+        with contextlib.ExitStack() as stack:
+            filter_ = stack.enter_context(
+                unittest.mock.patch.object(self.cps.status, "filter")
+            )
+
+            result = self.cps.get_status_for_locale(range_)
+
+        self.assertSequenceEqual(
+            filter_.mock_calls,
+            [
+                unittest.mock.call(lang=range_),
+                unittest.mock.call().__next__()
+            ]
+        )
+
+        self.assertEqual(result, next(filter_()))
+
+    def test_get_status_for_locale_raise_KeyError_if_none_found(self):
+        range_ = object()
+        with contextlib.ExitStack() as stack:
+            filter_ = stack.enter_context(
+                unittest.mock.patch.object(self.cps.status, "filter")
+            )
+
+            filter_().__next__.side_effect = StopIteration()
+            filter_.mock_calls.clear()
+
+            with self.assertRaises(KeyError):
+                self.cps.get_status_for_locale(range_)
+
+        self.assertSequenceEqual(
+            filter_.mock_calls,
+            [
+                unittest.mock.call(lang=range_),
+                unittest.mock.call().__next__()
+            ]
+        )
+
+    def test_get_status_for_locale_try_None(self):
+        def filter_mock(original, *args, lang=None, **kwargs):
+            result = original(*args, lang=lang, **kwargs)
+            if lang is not None:
+                result.__next__.side_effect = StopIteration()
+            else:
+                result.__next__.side_effect = None
+            return result
+
+        range_ = object()
+        base = unittest.mock.MagicMock()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(unittest.mock.patch.object(
+                self.cps.status, "filter",
+                new=functools.partial(filter_mock, base.filter)
+            ))
+
+            result = self.cps.get_status_for_locale(range_, try_none=True)
+
+        self.assertSequenceEqual(
+            base.mock_calls,
+            [
+                unittest.mock.call.filter(lang=range_),
+                unittest.mock.call.filter().__next__(),
+                unittest.mock.call.filter(attrs={"lang": None}, lang=None),
+                unittest.mock.call.filter().__next__()
+            ]
+        )
+
+    def test_get_status_for_locale_try_None_raises_KeyError_on_failure(self):
+        range_ = object()
+        with contextlib.ExitStack() as stack:
+            filter_ = stack.enter_context(
+                unittest.mock.patch.object(self.cps.status, "filter")
+            )
+
+            filter_().__next__.side_effect = StopIteration()
+            filter_.mock_calls.clear()
+
+            with self.assertRaises(KeyError):
+                self.cps.get_status_for_locale(range_, try_none=True)
+
+        self.assertSequenceEqual(
+            filter_.mock_calls,
+            [
+                unittest.mock.call(lang=range_),
+                unittest.mock.call().__next__(),
+                unittest.mock.call(attrs={"lang": None}),
+                unittest.mock.call().__next__()
+            ]
         )
 
 
 class TestFundamentalPresenceState(unittest.TestCase):
-    def test_init_default(self):
-        fps = client.FundamentalPresenceState()
-        self.assertDictEqual(
-            fps.states,
-            {
-                None: [client.SinglePresenceState(
-                    structs.PresenceState()
-                )]
-            }
-        )
-
     def test_init_with_presence_state(self):
         state = structs.PresenceState(available=True, show="dnd")
         fps = client.FundamentalPresenceState(state)
-        self.assertDictEqual(
-            fps.states,
-            {
-                None: [client.SinglePresenceState(
-                    state
-                )]
-            }
+        self.assertEqual(fps.state, state)
+
+    def setUp(self):
+        self.fps = client.FundamentalPresenceState()
+
+    def test_get_status_for_locale_raises_KeyError(self):
+        with self.assertRaises(KeyError):
+            self.fps.get_status_for_locale(
+                structs.LanguageRange.fromstr("de-de")
+            )
+        with self.assertRaises(KeyError):
+            self.fps.get_status_for_locale(
+                structs.LanguageRange.fromstr("de-de"),
+                try_none=True
+            )
+
+    def test_get_presence_for_jid_returns_self(self):
+        self.assertIs(self.fps.get_presence_for_jid(TEST_JID), self.fps)
+        self.assertIs(
+            self.fps.get_presence_for_jid(TEST_JID.replace(localpart="foo")),
+            self.fps
         )
+
+    def test_status_is_empty_iterable(self):
+        self.assertEqual(self.fps.status, ())
+
 
 
 class Test_ComplexPresenceList(unittest.TestCase):
@@ -1474,10 +1798,12 @@ class TestClient(unittest.TestCase):
             AccountManager()
         )
 
-        self.assertDictEqual(
-            c.current_presence.states,
-            client.FundamentalPresenceState(structs.PresenceState()).states
+        self.assertEqual(
+            c.current_presence.state,
+            structs.PresenceState()
         )
+        self.assertIsInstance(c.current_presence,
+                              client.FundamentalPresenceState)
 
     def test_enable_account_creates_state(self):
         self.c.apply_presence_state(client.FundamentalPresenceState(
@@ -1514,6 +1840,10 @@ class TestClient(unittest.TestCase):
                     TEST_JID,
                     self.tls_with_password_based_authentication()
                 ),
+                unittest.mock.call().set_presence(
+                    structs.PresenceState(True, "dnd"),
+                    ()
+                )
             ]
         )
 
@@ -1521,11 +1851,6 @@ class TestClient(unittest.TestCase):
         self.assertEqual(
             state,
             self.PresenceManagedClient(),
-        )
-
-        self.assertEqual(
-            state.presence,
-            self.c.current_presence.states[None][0].presence
         )
 
     def test_account_state_raises_KeyError_for_disabled_account(self):
@@ -1560,14 +1885,14 @@ class TestClient(unittest.TestCase):
 
         clients = []
 
+        self.c.apply_presence_state(client.FundamentalPresenceState(
+            structs.PresenceState(True))
+        )
+
         for acc in accs:
             self.c.accounts.set_account_enabled(acc.jid, True)
             clients.append(self.PresenceManagedClient.return_value)
             self.PresenceManagedClient.return_value = ConnectedClientMock()
-
-        self.c.apply_presence_state(client.FundamentalPresenceState(
-            structs.PresenceState(True))
-        )
 
         self.c.stop_all()
 
@@ -1577,7 +1902,7 @@ class TestClient(unittest.TestCase):
                 [
                     unittest.mock.call.set_presence(
                         structs.PresenceState(True),
-                        []
+                        ()
                     ),
                     unittest.mock.call.stop()
                 ]
@@ -1595,6 +1920,10 @@ class TestClient(unittest.TestCase):
             for jid in jids
         ]
 
+        self.c.apply_presence_state(client.FundamentalPresenceState(
+            structs.PresenceState(True))
+        )
+
         for acc in accs:
             self.c.accounts.set_account_enabled(acc.jid, True)
             self.PresenceManagedClient.return_value = ConnectedClientMock()
@@ -1603,10 +1932,6 @@ class TestClient(unittest.TestCase):
             self.c.account_state(acc)
             for acc in accs
         ]
-
-        self.c.apply_presence_state(client.FundamentalPresenceState(
-            structs.PresenceState(True))
-        )
 
         for state in states:
             state.running = True
@@ -1622,8 +1947,9 @@ class TestClient(unittest.TestCase):
         for state in states:
             self.assertSequenceEqual(
                 [
-                    unittest.mock.call.set_presence(structs.PresenceState(True),
-                                                    []),
+                    unittest.mock.call.set_presence(
+                        structs.PresenceState(True),
+                        ()),
                     unittest.mock.call.stop(),
                 ],
                 state.mock_calls
@@ -1662,6 +1988,10 @@ class TestClient(unittest.TestCase):
             for jid in jids
         ]
 
+        self.c.apply_presence_state(client.FundamentalPresenceState(
+            structs.PresenceState(True))
+        )
+
         for acc in accs:
             self.c.accounts.set_account_enabled(acc.jid, True)
             self.PresenceManagedClient.return_value = ConnectedClientMock()
@@ -1670,11 +2000,6 @@ class TestClient(unittest.TestCase):
             self.c.account_state(acc)
             for acc in accs
         ]
-
-
-        self.c.apply_presence_state(client.FundamentalPresenceState(
-            structs.PresenceState(True))
-        )
         states[1].presence = structs.PresenceState(False)
 
         for i, state in enumerate(states):
@@ -1694,7 +2019,7 @@ class TestClient(unittest.TestCase):
                     [
                         unittest.mock.call.set_presence(
                             structs.PresenceState(True),
-                            []),
+                            ()),
                     ],
                     state.mock_calls)
             else:
@@ -1702,7 +2027,7 @@ class TestClient(unittest.TestCase):
                     [
                         unittest.mock.call.set_presence(
                             structs.PresenceState(True),
-                            []),
+                            ()),
                         unittest.mock.call.stop(),
                     ],
                     state.mock_calls
@@ -2229,40 +2554,34 @@ class TestClient(unittest.TestCase):
             for acc in accs
         ]
 
-        pres = client.ComplexPresenceState()
-        pres.states[None] = [client.SinglePresenceState(
-            structs.PresenceState(available=True, show="chat"),
+        pres = client.ComplexPresenceState(
+            state=structs.PresenceState(available=True, show="chat"),
             status=[
-                client.SinglePresenceStateStatus(
+                stanza.Status(
                     text="I feel chatty!",
                     lang=structs.LanguageTag.fromstr("en")
                 ),
-                client.SinglePresenceStateStatus(
+                stanza.Status(
                     text="Ich will chatten!",
                     lang=structs.LanguageTag.fromstr("de")
                 ),
             ]
-        )]
-        pres.states[jids[1]] = [client.SinglePresenceState(
+        )
+        pres.overrides.append(client.SinglePresenceState(
+            jids[1],
             structs.PresenceState(available=False)
-        )]
-        pres.states[jids[2]] = [client.SinglePresenceState(
+        ))
+        pres.overrides.append(client.SinglePresenceState(
+            jids[2],
             structs.PresenceState(available=True, show="dnd")
-        )]
+        ))
 
         self.c.apply_presence_state(pres)
 
         for acc, state in zip(accs, states):
-            try:
-                single_presence = pres.states[acc.jid][0]
-            except IndexError:
-                single_presence = None
-
-            if single_presence is None:
-                single_presence = pres.states[None][0]
-
+            single_presence = pres.get_presence_for_jid(acc.jid)
             state.set_presence.assert_called_with(
-                single_presence.presence,
+                single_presence.state,
                 single_presence.status
             )
 

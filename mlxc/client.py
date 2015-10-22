@@ -32,11 +32,12 @@ class PasswordStoreIsUnsafe(RuntimeError):
 class ConnectionOverride(xso.XSO):
     TAG = (mlxc_namespaces.account, "override-host")
 
-    host = xso.Text()
+    host = xso.Text(default=None)
 
     port = xso.Attr(
         "port",
-        type_=xso.Integer()
+        type_=xso.Integer(),
+        default=5222
     )
 
 
@@ -46,7 +47,6 @@ class AccountSettings(xso.XSO):
     _jid = xso.Attr(
         "jid",
         type_=xso.JID(),
-        required=True,
     )
 
     _enabled = xso.Attr(
@@ -57,8 +57,8 @@ class AccountSettings(xso.XSO):
 
     resource = xso.Attr(
         "resource",
-        required=False,
-        type_=xso.String(prepfunc=aioxmpp.stringprep.resourceprep)
+        type_=xso.String(prepfunc=aioxmpp.stringprep.resourceprep),
+        default=None
     )
 
     override_peer = xso.Child([ConnectionOverride])
@@ -84,86 +84,112 @@ class AccountSettings(xso.XSO):
         return self._enabled
 
 
-class SinglePresenceStateStatus(xso.AbstractTextChild):
-    TAG = (mlxc_namespaces.presence, "status")
-
-
-class SinglePresenceState(xso.XSO):
-    TAG = (mlxc_namespaces.presence, "single-presence")
-
+class _AbstractPresence(xso.XSO):
     _available = xso.Attr(
         "available",
         type_=xso.Bool(),
-        default=None
+        default=True,
     )
+
     _show = xso.Attr(
         "show",
-        type_=stanza.Presence.show.type_
-    )
-    status = xso.ChildList(
-        [aioxmpp.stanza.Status]
-    )
-    jid = xso.Attr(
-        "jid",
-        type_=xso.JID(),
+        type_=stanza.Presence.show.type_,
         default=None
     )
 
-    def __init__(self, presence=None, status=None):
+    status = xso.ChildList(
+        [aioxmpp.stanza.Status]
+    )
+
+    def __init__(self, state=structs.PresenceState(True), status=()):
         super().__init__()
-        self.presence = presence
+        self.state = state
         if isinstance(status, str):
             self.status.append(aioxmpp.stanza.Status(status))
         elif isinstance(status, collections.abc.Iterable):
             self.status[:] = status
 
     @property
-    def presence(self):
-        if self._available is None:
-            return None
+    def state(self):
         return structs.PresenceState(self._available, self._show)
 
-    @presence.setter
-    def presence(self, value):
-        if value is not None:
-            self._available = value.available
-            self._show = value.show
-        else:
-            self._available = None
-            self._show = None
+    @state.setter
+    def state(self, state):
+        self._available = state.available
+        self._show = state.show
+
+    def get_status_for_locale(self, lang, *, try_none=False):
+        try:
+            return next(self.status.filter(lang=lang))
+        except StopIteration:
+            if try_none:
+                try:
+                    return next(self.status.filter(attrs={"lang": None}))
+                except StopIteration:
+                    pass
+            raise KeyError() from None
+
+
+class SinglePresenceState(_AbstractPresence):
+    TAG = (mlxc_namespaces.presence, "single-presence")
+
+    jid = xso.Attr(
+        "jid",
+        type_=xso.JID(),
+    )
+
+    def __init__(self, jid, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.jid = jid
+
+    @property
+    def state(self):
+        return structs.PresenceState(self._available, self._show)
+
+    @state.setter
+    def state(self, value):
+        self._available = value.available
+        self._show = value.show
 
     def __eq__(self, other):
         try:
-            return (self.presence == other.presence and
+            return (self.state == other.state and
                     self.status == other.status)
         except AttributeError:
             return NotImplemented
 
 
-def _state_jid_key(state):
-    return state.jid
-
-
-class ComplexPresenceState(xso.XSO):
+class ComplexPresenceState(_AbstractPresence):
     TAG = (mlxc_namespaces.presence, "complex-presence")
 
     name = xso.Attr(
         "name",
-        required=True
+        # required=True
     )
 
-    states = xso.ChildMap(
+    overrides = xso.ChildList(
         [SinglePresenceState],
-        key=_state_jid_key
     )
+
+    def get_presence_for_jid(self, jid):
+        try:
+            return next(self.overrides.filter(attrs={"jid": jid}))
+        except StopIteration:
+            pass
+        return self
 
 
 class FundamentalPresenceState:
     def __init__(self, state=structs.PresenceState()):
         super().__init__()
-        self.states = {
-            None: [SinglePresenceState(state)]
-        }
+        self.state = state
+        self.status = ()
+
+    def get_status_for_locale(self, lang, *, try_none=False):
+        raise KeyError()
+
+    def get_presence_for_jid(self, jid):
+        return self
 
 
 class _ComplexPresenceList(xso.XSO):
@@ -441,12 +467,6 @@ class Client:
             aioxmpp.structs.PresenceState(False)
         )
 
-    def _single_presence_for_jid(self, jid):
-        try:
-            return self._current_presence.states[jid][0]
-        except (KeyError, IndexError):
-            return self._current_presence.states[None][0]
-
     def _on_account_enabled(self, account):
         node = aioxmpp.node.PresenceManagedClient(
             account.jid.replace(resource=account.resource),
@@ -458,7 +478,11 @@ class Client:
                 )
             )
         )
-        node.presence = self._single_presence_for_jid(account.jid).presence
+        presence = self._current_presence.get_presence_for_jid(account.jid)
+        node.set_presence(
+            presence.state,
+            presence.status
+        )
 
         self._states[account] = node
 
@@ -487,8 +511,9 @@ class Client:
     def apply_presence_state(self, new_presence):
         self._current_presence = new_presence
         for account, state in self._states.items():
-            single_presence = self._single_presence_for_jid(account.jid)
-            state.set_presence(single_presence.presence,
+            single_presence = self._current_presence.get_presence_for_jid(
+                account.jid)
+            state.set_presence(single_presence.state,
                                single_presence.status)
 
     def stop_all(self):
