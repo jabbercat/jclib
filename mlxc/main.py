@@ -26,7 +26,19 @@ class _UnixGlobalSingleton:
         self.socket_path = None
 
     def _on_connected(self, reader, writer):
-        pass
+        writer.close()
+
+    @classmethod
+    def test_liveness(self, path):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0)
+        try:
+            sock.connect(path)
+            return True
+        except ConnectionError:
+            logger.debug("peer socket at %s is dead", path)
+            return None
+        finally:
+            sock.close()
 
     @classmethod
     def get_socket_path(cls):
@@ -44,8 +56,18 @@ class _UnixGlobalSingleton:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             os.chmod(sock.fileno(), stat.S_ISVTX | stat.S_IRWXU)
+        except OSError:
+            sock.close()
+            raise
+
+        try:
             sock.bind(path)
         except OSError:
+            if cls.test_liveness(path) is None:
+                logger.info("removing stale socket from %s", path)
+                os.unlink(path)
+                sock.bind(path)
+                return sock
             sock.close()
             raise
         return sock

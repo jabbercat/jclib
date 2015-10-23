@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import functools
 import signal
 import socket
 import stat
@@ -69,6 +70,64 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
         self.assertEqual(
             path,
             join()
+        )
+
+    def test_test_liveness_on_dead_target(self):
+        path = object()
+        base = unittest.mock.Mock()
+
+        with contextlib.ExitStack() as stack:
+            socket_socket = stack.enter_context(unittest.mock.patch(
+                "socket.socket",
+                new=base.socket
+            ))
+
+            socket_socket().connect.side_effect = ConnectionError()
+
+            base.mock_calls.clear()
+
+            result = main._UnixGlobalSingleton.test_liveness(path)
+
+        self.assertIsNone(result)
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.socket(socket.AF_UNIX,
+                                          socket.SOCK_STREAM,
+                                          0),
+                unittest.mock.call.socket().connect(path),
+                unittest.mock.call.socket().close()
+            ]
+        )
+
+    def test_test_liveness_on_live_target(self):
+        path = object()
+        base = unittest.mock.Mock()
+
+        with contextlib.ExitStack() as stack:
+            socket_socket = stack.enter_context(unittest.mock.patch(
+                "socket.socket",
+                new=base.socket
+            ))
+
+            base.mock_calls.clear()
+
+            result = main._UnixGlobalSingleton.test_liveness(path)
+
+        self.assertTrue(result)
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.socket(socket.AF_UNIX,
+                                          socket.SOCK_STREAM,
+                                          0),
+                unittest.mock.call.socket().connect(path),
+                unittest.mock.call.socket().close()
+            ]
         )
 
     def test_bind_socket(self):
@@ -168,7 +227,7 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
             ]
         )
 
-    def test_bind_socket_closes_and_reraises_on_error_in_chmod(self):
+    def test_bind_socket_calls_test_liveness_on_os_error_in_bind(self):
         path = object()
         base = unittest.mock.Mock()
 
@@ -189,10 +248,16 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
                 "os.path.dirname",
                 new=base.dirname
             ))
+            test_liveness = stack.enter_context(unittest.mock.patch.object(
+                main._UnixGlobalSingleton,
+                "test_liveness",
+                new=base.test_liveness
+            ))
 
             exc = OSError()
 
             socket_socket().bind.side_effect = exc
+            test_liveness.return_value = 1234
 
             base.mock_calls.clear()
 
@@ -218,8 +283,85 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
                 unittest.mock.call.chmod(socket_socket().fileno(),
                                          stat.S_ISVTX | stat.S_IRWXU),
                 unittest.mock.call.socket().bind(path),
+                unittest.mock.call.test_liveness(path),
                 unittest.mock.call.socket().close(),
             ]
+        )
+
+    def test_bind_socket_calls_unlinks_on_dead_peer(self):
+        path = object()
+        base = unittest.mock.Mock()
+
+        first_bind = True
+        def bind_mock(original, exc, path):
+            nonlocal first_bind
+            original(path)
+            if first_bind:
+                first_bind = False
+                raise exc
+
+        with contextlib.ExitStack() as stack:
+            socket_socket = stack.enter_context(unittest.mock.patch(
+                "socket.socket",
+                new=base.socket
+            ))
+            chmod = stack.enter_context(unittest.mock.patch(
+                "os.chmod",
+                new=base.chmod
+            ))
+            makedirs = stack.enter_context(unittest.mock.patch(
+                "os.makedirs",
+                new=base.makedirs
+            ))
+            dirname = stack.enter_context(unittest.mock.patch(
+                "os.path.dirname",
+                new=base.dirname
+            ))
+            test_liveness = stack.enter_context(unittest.mock.patch.object(
+                main._UnixGlobalSingleton,
+                "test_liveness",
+                new=base.test_liveness
+            ))
+            unlink = stack.enter_context(unittest.mock.patch(
+                "os.unlink",
+                new=base.unlink
+            ))
+
+            exc = OSError()
+
+            socket_socket().bind = functools.partial(
+                bind_mock,
+                socket_socket().bind,
+                exc)
+            test_liveness.return_value = None
+
+            base.mock_calls.clear()
+
+            sock = main._UnixGlobalSingleton.bind_socket(path)
+
+        calls = list(base.mock_calls)
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.dirname(path),
+                unittest.mock.call.makedirs(
+                    dirname(),
+                    mode=0o700),
+                unittest.mock.call.socket(socket.AF_UNIX,
+                                          socket.SOCK_STREAM),
+                unittest.mock.call.socket().fileno(),
+                unittest.mock.call.chmod(socket_socket().fileno(),
+                                         stat.S_ISVTX | stat.S_IRWXU),
+                unittest.mock.call.socket().bind(path),
+                unittest.mock.call.test_liveness(path),
+                unittest.mock.call.unlink(path),
+                unittest.mock.call.socket().bind(path),
+            ]
+        )
+
+        self.assertEqual(
+            sock,
+            socket_socket()
         )
 
     def test_start_returns_true_on_success(self):
@@ -262,7 +404,7 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
                     "singletonify.sock"),
                 unittest.mock.call.bind_socket(join()),
                 unittest.mock.call.start_unix_server(
-                    unittest.mock.ANY,
+                    self.singleton._on_connected,
                     sock=bind_socket(),
                     loop=self.loop)
             ]
@@ -455,6 +597,15 @@ class Test_UnixGlobalSingleton(unittest.TestCase):
                                     "not supported on this platform"):
             main._UnixGlobalSingleton(loop)
 
+    def test_on_connected_closes_socket(self):
+        base = unittest.mock.Mock()
+        self.singleton._on_connected(base.reader, base.writer)
+        self.assertSequenceEqual(
+            base.mock_calls,
+            [
+                unittest.mock.call.writer.close()
+            ]
+        )
 
     def tearDown(self):
         del self.singleton
