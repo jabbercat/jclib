@@ -188,28 +188,26 @@ class ModelList(collections.abc.MutableSequence):
             return index % len(self._storage)
         return index
 
-    def _begin_insert_rows(self, parent, index1, index2):
+    def _begin_insert_rows(self, index1, index2):
         if self.begin_insert_rows is not None:
-            self.begin_insert_rows(parent, index1, index2)
+            self.begin_insert_rows(None, index1, index2)
 
     def _end_insert_rows(self):
         if self.end_insert_rows is not None:
             self.end_insert_rows()
 
-    def _begin_remove_rows(self, parent, index1, index2):
+    def _begin_remove_rows(self, index1, index2):
         if self.begin_remove_rows is not None:
-            self.begin_remove_rows(parent, index1, index2)
+            self.begin_remove_rows(None, index1, index2)
 
     def _end_remove_rows(self):
         if self.end_remove_rows is not None:
             self.end_remove_rows()
 
-    def _begin_move_rows(self,
-                         srcparent, index1, index2,
-                         destparent, destindex):
+    def _begin_move_rows(self, index1, index2, destindex):
         if self.begin_move_rows is not None:
-            self.begin_move_rows(srcparent, index1, index2,
-                                 destparent, destindex)
+            self.begin_move_rows(None, index1, index2,
+                                 None, destindex)
 
     def _end_move_rows(self):
         if self.end_move_rows is not None:
@@ -225,11 +223,11 @@ class ModelList(collections.abc.MutableSequence):
         if isinstance(index, slice):
             start, end, stride = index.indices(len(self._storage))
             if stride == 1:
-                self._begin_remove_rows(None, start, end-1)
+                self._begin_remove_rows(start, end-1)
                 del self._storage[index]
                 self._end_remove_rows()
             elif stride == -1:
-                self._begin_remove_rows(None, end+1, start)
+                self._begin_remove_rows(end+1, start)
                 del self._storage[index]
                 self._end_remove_rows()
             else:
@@ -243,7 +241,7 @@ class ModelList(collections.abc.MutableSequence):
 
         index = self._check_and_normalize_index(index)
 
-        self._begin_remove_rows(None, index, index)
+        self._begin_remove_rows(index, index)
         del self._storage[index]
         self._end_remove_rows()
 
@@ -252,17 +250,17 @@ class ModelList(collections.abc.MutableSequence):
             items = list(item)
             start, end, stride = index.indices(len(self._storage))
             if stride == 1:
-                self._begin_remove_rows(None, start, end-1)
+                self._begin_remove_rows(start, end-1)
                 del self._storage[index]
                 self._end_remove_rows()
-                self._begin_insert_rows(None, start, len(items)+start-1)
+                self._begin_insert_rows(start, len(items)+start-1)
                 self._storage[start:start] = items
                 self._end_insert_rows()
             elif stride == -1:
-                self._begin_remove_rows(None, end+1, start)
+                self._begin_remove_rows(end+1, start)
                 del self._storage[index]
                 self._end_remove_rows()
-                self._begin_insert_rows(None, end+1, len(items)+end)
+                self._begin_insert_rows(end+1, len(items)+end)
                 self._storage[end+1:end+1] = items
                 self._end_insert_rows()
             else:
@@ -270,10 +268,10 @@ class ModelList(collections.abc.MutableSequence):
             return
 
         index = self._check_and_normalize_index(index)
-        self._begin_remove_rows(None, index, index)
+        self._begin_remove_rows(index, index)
         del self._storage[index]
         self._end_remove_rows()
-        self._begin_insert_rows(None, index, index)
+        self._begin_insert_rows(index, index)
         self._storage.insert(index, item)
         self._end_insert_rows()
 
@@ -286,7 +284,7 @@ class ModelList(collections.abc.MutableSequence):
             else:
                 index = index % len(self._storage)
 
-        self._begin_insert_rows(None, index, index)
+        self._begin_insert_rows(index, index)
         self._storage.insert(index, item)
         self._end_insert_rows()
 
@@ -304,7 +302,7 @@ class ModelList(collections.abc.MutableSequence):
         if index1 == index2 or index1 == index2-1:
             return
 
-        self._begin_move_rows(None, index1, index1, None, index2)
+        self._begin_move_rows(index1, index1, index2)
         if index2 > index1:
             index2 -= 1
         item = self._storage.pop(index1)
@@ -330,7 +328,7 @@ class ModelList(collections.abc.MutableSequence):
 
     def pop(self, index):
         index = self._check_and_normalize_index(index)
-        self._begin_remove_rows(None, index, index)
+        self._begin_remove_rows(index, index)
         result = self._storage.pop(index)
         self._end_remove_rows()
         return result
