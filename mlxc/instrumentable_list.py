@@ -161,7 +161,38 @@ class ModelList(collections.abc.MutableSequence):
        This attribute is called after rows have been moved.
 
     The above attributes are called whenever neccessary by the mutable sequence
-    implementation. The usual methods and operators of mutable sequences are
+    implementation. In addition, signals having an identical function to those
+    found in :class:`IList` are found:
+
+    .. method:: on_register_item(item)
+
+       A :class:`aioxmpp.callbacks.Signal` which is called whenever an entry is
+       newly added to the list. It is called after the item has been added to
+       the backing storage, it can thus already been found in the list.
+
+       It is called between :meth:`begin_insert_rows` and
+       :meth:`end_insert_rows`. Methods connected directly to this signal
+       **must not** raise. If they do, the list is left in an inconsistent
+       state.
+
+       In future versions, exceptions might be silently swallowed or re-raised
+       after the insertion operation has been completed. Aborting an insertion
+       operation is not possible due to constraints in the API provided by the
+       above callbacks.
+
+    .. method:: on_unregister_item(item)
+
+       A :class:`aioxmpp.callbacks.Signal` which is called whenever an entry is
+       finally removed from the list. It is called while the item is still in
+       the list.
+
+       With respect to exceptions, the same conditions as for
+       :meth:`on_register_item` hold.
+
+    Note that :meth:`on_register_item` and :meth:`on_unregister_item` are not
+    called during :meth:`move` operations, as the items stay in the list.
+
+    The usual methods and operators of mutable sequences are
     available. For some methods special rules hold and others have been addded:
 
     .. automethod:: move
@@ -169,6 +200,9 @@ class ModelList(collections.abc.MutableSequence):
     .. automethod:: reverse
 
     """
+
+    on_register_item = aioxmpp.callbacks.Signal()
+    on_unregister_item = aioxmpp.callbacks.Signal()
 
     begin_insert_rows = None
     end_insert_rows = None
@@ -187,6 +221,14 @@ class ModelList(collections.abc.MutableSequence):
         if index < 0:
             return index % len(self._storage)
         return index
+
+    def _register_items(self, items):
+        for item in items:
+            self.on_register_item(item)
+
+    def _unregister_items(self, items):
+        for item in items:
+            self.on_unregister_item(item)
 
     def _begin_insert_rows(self, index1, index2):
         if self.begin_insert_rows is not None:
@@ -224,10 +266,12 @@ class ModelList(collections.abc.MutableSequence):
             start, end, stride = index.indices(len(self._storage))
             if stride == 1:
                 self._begin_remove_rows(start, end-1)
+                self._unregister_items(self._storage[index])
                 del self._storage[index]
                 self._end_remove_rows()
             elif stride == -1:
                 self._begin_remove_rows(end+1, start)
+                self._unregister_items(reversed(self._storage[index]))
                 del self._storage[index]
                 self._end_remove_rows()
             else:
@@ -242,6 +286,7 @@ class ModelList(collections.abc.MutableSequence):
         index = self._check_and_normalize_index(index)
 
         self._begin_remove_rows(index, index)
+        self._unregister_items([self._storage[index]])
         del self._storage[index]
         self._end_remove_rows()
 
@@ -251,17 +296,21 @@ class ModelList(collections.abc.MutableSequence):
             start, end, stride = index.indices(len(self._storage))
             if stride == 1:
                 self._begin_remove_rows(start, end-1)
+                self._unregister_items(self._storage[index])
                 del self._storage[index]
                 self._end_remove_rows()
                 self._begin_insert_rows(start, len(items)+start-1)
                 self._storage[start:start] = items
+                self._register_items(items)
                 self._end_insert_rows()
             elif stride == -1:
                 self._begin_remove_rows(end+1, start)
+                self._unregister_items(reversed(self._storage[index]))
                 del self._storage[index]
                 self._end_remove_rows()
                 self._begin_insert_rows(end+1, len(items)+end)
                 self._storage[end+1:end+1] = items
+                self._register_items(items)
                 self._end_insert_rows()
             else:
                 raise IndexError("non-unity strides not supported")
@@ -269,10 +318,12 @@ class ModelList(collections.abc.MutableSequence):
 
         index = self._check_and_normalize_index(index)
         self._begin_remove_rows(index, index)
+        self._unregister_items([self._storage[index]])
         del self._storage[index]
         self._end_remove_rows()
         self._begin_insert_rows(index, index)
         self._storage.insert(index, item)
+        self._register_items([item])
         self._end_insert_rows()
 
     def insert(self, index, item):
@@ -286,6 +337,7 @@ class ModelList(collections.abc.MutableSequence):
 
         self._begin_insert_rows(index, index)
         self._storage.insert(index, item)
+        self._register_items([item])
         self._end_insert_rows()
 
     def move(self, index1, index2):
@@ -329,6 +381,7 @@ class ModelList(collections.abc.MutableSequence):
     def pop(self, index):
         index = self._check_and_normalize_index(index)
         self._begin_remove_rows(index, index)
+        self._unregister_items([self._storage[index]])
         result = self._storage.pop(index)
         self._end_remove_rows()
         return result

@@ -290,6 +290,15 @@ class TestModelList(unittest.TestCase):
         self.mlist = ModelList()
         self.mock = unittest.mock.Mock()
 
+        self.mock.register_item.return_value = False
+        self.mock.unregister_item.return_value = False
+        self.mlist.on_register_item.connect(
+            self.mock.register_item
+        )
+        self.mlist.on_unregister_item.connect(
+            self.mock.unregister_item
+        )
+
         self.mlist.begin_insert_rows = self.mock.begin_insert_rows
         self.mlist.end_insert_rows = self.mock.end_insert_rows
         self.mlist.begin_remove_rows = self.mock.begin_remove_rows
@@ -299,6 +308,10 @@ class TestModelList(unittest.TestCase):
 
     def test_init_bare(self):
         mlist = ModelList()
+        self.assertIsInstance(mlist.on_register_item,
+                              aioxmpp.callbacks.AdHocSignal)
+        self.assertIsInstance(mlist.on_unregister_item,
+                              aioxmpp.callbacks.AdHocSignal)
         self.assertIsNone(mlist.begin_insert_rows)
         self.assertIsNone(mlist.end_insert_rows)
         self.assertIsNone(mlist.begin_remove_rows)
@@ -330,10 +343,13 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
+                unittest.mock.call.register_item(1),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
+                unittest.mock.call.register_item(2),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 1),
+                unittest.mock.call.register_item(3),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -354,10 +370,13 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
+                unittest.mock.call.register_item(1),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
+                unittest.mock.call.register_item(2),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 2, 2),
+                unittest.mock.call.register_item(3),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -378,10 +397,13 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
+                unittest.mock.call.register_item(1),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
+                unittest.mock.call.register_item(2),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 1),
+                unittest.mock.call.register_item(3),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -402,13 +424,33 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
+                unittest.mock.call.register_item(1),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
+                unittest.mock.call.register_item(2),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
+                unittest.mock.call.register_item(3),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
+
+    def test_insert_calls_register_after_item_is_added_to_storage(self):
+        def cb(item):
+            self.assertIn(item, self.mlist)
+
+        self.mlist.on_register_item.connect(cb)
+
+        self.mlist.insert(0, 1)
+
+    def test_delitem_unregisters_item_before_removal(self):
+        def cb(item):
+            self.assertIn(item, self.mlist)
+
+        self.mlist.on_unregister_item.connect(cb)
+
+        self.mlist.insert(0, 1)
+        del self.mlist[0]
 
     def test_delitem_single(self):
         self.mlist.insert(0, 1)
@@ -443,10 +485,13 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 0, 0),
+                unittest.mock.call.unregister_item(2),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_remove_rows(None, 1, 1),
+                unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_remove_rows(None, 0, 0),
+                unittest.mock.call.unregister_item(3),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -490,8 +535,11 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 2),
+                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_remove_rows(None, 0, 0),
+                unittest.mock.call.unregister_item(2),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -511,6 +559,9 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 0, 2),
+                unittest.mock.call.unregister_item(2),
+                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -530,6 +581,9 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 0, 2),
+                unittest.mock.call.unregister_item(2),
+                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -549,6 +603,8 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 2),
+                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -568,8 +624,10 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 0, 0),
+                unittest.mock.call.unregister_item(2),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_remove_rows(None, 1, 1),
+                unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -589,8 +647,10 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 1),
+                unittest.mock.call.unregister_item(3),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 1),
+                unittest.mock.call.register_item(10),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -610,8 +670,10 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 2, 2),
+                unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 2, 2),
+                unittest.mock.call.register_item(10),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -652,8 +714,13 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 2),
+                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 3),
+                unittest.mock.call.register_item(10),
+                unittest.mock.call.register_item(11),
+                unittest.mock.call.register_item(12),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -673,8 +740,12 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 2, 2),
+                unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 2, 4),
+                unittest.mock.call.register_item(10),
+                unittest.mock.call.register_item(11),
+                unittest.mock.call.register_item(12),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -694,8 +765,14 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 0, 2),
+                unittest.mock.call.unregister_item(2),
+                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 2),
+                unittest.mock.call.register_item(10),
+                unittest.mock.call.register_item(11),
+                unittest.mock.call.register_item(12),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -715,8 +792,13 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 2),
+                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 3),
+                unittest.mock.call.register_item(10),
+                unittest.mock.call.register_item(11),
+                unittest.mock.call.register_item(12),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -1000,6 +1082,7 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 1),
+                unittest.mock.call.unregister_item(2),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -1015,6 +1098,7 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 2, 2),
+                unittest.mock.call.unregister_item(3),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
