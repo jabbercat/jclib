@@ -1119,3 +1119,44 @@ class TestModelList(unittest.TestCase):
             [
             ]
         )
+
+    def test_register_item_is_called_on_initialisation(self):
+        def generate():
+            yield 1
+            yield 3
+            yield 2
+
+        with unittest.mock.patch.object(
+                ModelList,
+                "on_register_item") as on_register_item:
+            mlist = ModelList(generate())
+            self.assertSequenceEqual(
+                mlist,
+                [1, 3, 2]
+            )
+
+        self.assertSequenceEqual(
+            on_register_item.mock_calls,
+            [
+                unittest.mock.call(1),
+                unittest.mock.call(3),
+                unittest.mock.call(2),
+            ]
+        )
+
+    def test_init_forwards_keyword_arguments(self):
+        class Foo:
+            def __init__(self, *args, **kwargs):
+                self.args = args
+                self.kwargs = kwargs
+
+        class Bar(ModelList, Foo):
+            pass
+
+        b = Bar(x="a")
+        self.assertDictEqual(
+            b.kwargs,
+            {
+                "x": "a"
+            }
+        )

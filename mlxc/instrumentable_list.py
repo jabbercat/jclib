@@ -108,7 +108,8 @@ class IList(collections.abc.MutableSequence):
 class ModelList(collections.abc.MutableSequence):
     """
     A model list is a mutable sequence suitable for use with Qt-like list
-    models.
+    models. The consturctor forwards the keyword arguments to the next classes
+    in the resolution order.
 
     It provides the following callbacks which notify the user about list
     mutation. Note that all these are simple attributes which default to
@@ -180,6 +181,9 @@ class ModelList(collections.abc.MutableSequence):
        operation is not possible due to constraints in the API provided by the
        above callbacks.
 
+       In contrast to :meth:`begin_insert_rows`, :meth:`on_register_item` is
+       also called during initialisation.
+
     .. method:: on_unregister_item(item)
 
        A :class:`aioxmpp.callbacks.Signal` which is called whenever an entry is
@@ -211,9 +215,11 @@ class ModelList(collections.abc.MutableSequence):
     begin_move_rows = None
     end_move_rows = None
 
-    def __init__(self, initial=()):
-        super().__init__()
-        self._storage = list(initial)
+    def __init__(self, initial=(), **kwargs):
+        super().__init__(**kwargs)
+        items = list(initial)
+        self._storage = items
+        self._register_items(items)
 
     def _check_and_normalize_index(self, index):
         if abs(index) > len(self._storage) or index == len(self._storage):
