@@ -444,6 +444,9 @@ class Client:
 
     AccountManager = AccountManager
 
+    on_account_enabling = aioxmpp.callbacks.Signal()
+    on_account_disabling = aioxmpp.callbacks.Signal()
+
     def __init__(self, config_manager):
         super().__init__()
         self.config_manager = config_manager
@@ -478,6 +481,9 @@ class Client:
                 )
             )
         )
+
+        self.on_account_enabling(account, node)
+
         presence = self._current_presence.get_presence_for_jid(account.jid)
         node.set_presence(
             presence.state,
@@ -487,6 +493,9 @@ class Client:
         self._states[account] = node
 
     def _on_account_disabled(self, account, reason):
+        self.on_account_disabling(account,
+                                  self._states[account],
+                                  reason=reason)
         del self._states[account]
 
     def _make_certificate_verifier(self, account):

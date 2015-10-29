@@ -1805,6 +1805,16 @@ class TestClient(unittest.TestCase):
         self.assertIsInstance(c.current_presence,
                               client.FundamentalPresenceState)
 
+    def test_signals(self):
+        self.assertIsInstance(
+            self.c.on_account_enabling,
+            aioxmpp.callbacks.AdHocSignal
+        )
+        self.assertIsInstance(
+            self.c.on_account_disabling,
+            aioxmpp.callbacks.AdHocSignal
+        )
+
     def test_enable_account_creates_state(self):
         self.c.apply_presence_state(client.FundamentalPresenceState(
             structs.PresenceState(True, "dnd")
@@ -1852,6 +1862,27 @@ class TestClient(unittest.TestCase):
             state,
             self.PresenceManagedClient(),
         )
+
+    def test_enable_account_emits_account_enabling(self):
+        mock = unittest.mock.Mock()
+        self.c.on_account_enabling.connect(mock)
+
+        acc = self.c.accounts.new_account(TEST_JID)
+        self.c.accounts.set_account_enabled(TEST_JID, True)
+
+        mock.assert_called_with(acc, self.c.account_state(acc))
+
+    def test_disable_account_emits_account_disabling(self):
+        mock = unittest.mock.Mock()
+        self.c.on_account_disabling.connect(mock)
+        reason = object()
+
+        acc = self.c.accounts.new_account(TEST_JID)
+        self.c.accounts.set_account_enabled(TEST_JID, True)
+        state = self.c.account_state(acc)
+        self.c._on_account_disabled(acc, reason=reason)
+
+        mock.assert_called_with(acc, state, reason=reason)
 
     def test_account_state_raises_KeyError_for_disabled_account(self):
         acc = self.c.accounts.new_account(TEST_JID)
