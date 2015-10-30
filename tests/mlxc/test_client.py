@@ -16,6 +16,8 @@ import aioxmpp.structs as structs
 import aioxmpp.xso as xso
 
 import mlxc.client as client
+import mlxc.plugin
+import mlxc.roster
 import mlxc.utils
 import mlxc.instrumentable_list as instrumentable_list
 
@@ -1804,6 +1806,8 @@ class TestClient(unittest.TestCase):
         )
         self.assertIsInstance(c.current_presence,
                               client.FundamentalPresenceState)
+        self.assertIsInstance(c.roster,
+                              mlxc.roster.Tree)
 
     def test_signals(self):
         self.assertIsInstance(
@@ -2615,6 +2619,59 @@ class TestClient(unittest.TestCase):
                 single_presence.state,
                 single_presence.status
             )
+
+    def test_summon(self):
+        svc_init = unittest.mock.Mock()
+
+        class Svc1(mlxc.plugin.Base):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                getattr(svc_init, type(self).__name__)(*args, **kwargs)
+
+        class Svc2(mlxc.plugin.Base):
+            ORDER_BEFORE = [Svc1]
+
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                getattr(svc_init, type(self).__name__)(*args, **kwargs)
+
+        class Svc3(mlxc.plugin.Base):
+            ORDER_BEFORE = [Svc2]
+
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                getattr(svc_init, type(self).__name__)(*args, **kwargs)
+
+        svc2 = self.c.summon(Svc2)
+
+        self.assertSequenceEqual(
+            [
+                unittest.mock.call.Svc3(self.c),
+                unittest.mock.call.Svc2(self.c),
+            ],
+            svc_init.mock_calls
+        )
+
+        svc3 = self.c.summon(Svc3)
+
+        self.assertSequenceEqual(
+            [
+                unittest.mock.call.Svc3(self.c),
+                unittest.mock.call.Svc2(self.c),
+            ],
+            svc_init.mock_calls
+        )
+
+        svc1 = self.c.summon(Svc1)
+
+        self.assertSequenceEqual(
+            [
+                unittest.mock.call.Svc3(self.c),
+                unittest.mock.call.Svc2(self.c),
+                unittest.mock.call.Svc1(self.c),
+            ],
+            svc_init.mock_calls
+        )
 
     def tearDown(self):
         del self.c

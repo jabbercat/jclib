@@ -16,6 +16,7 @@ import aioxmpp.stanza as stanza
 import aioxmpp.structs as structs
 import aioxmpp.xso as xso
 
+import mlxc.roster as roster
 import mlxc.utils as utils
 import mlxc.instrumentable_list as instrumentable_list
 
@@ -463,8 +464,10 @@ class Client:
         self.pin_store = aioxmpp.security_layer.PublicKeyPinStore()
 
         self.presence_states = instrumentable_list.ModelList()
+        self.roster = roster.Tree()
 
         self._states = {}
+        self._plugins = {}
 
         self._current_presence = FundamentalPresenceState(
             aioxmpp.structs.PresenceState(False)
@@ -599,6 +602,30 @@ class Client:
             raise
         else:
             self.pin_store.import_from_json(data, override=True)
+
+    def _summon(self, class_):
+        try:
+            return self._plugins[class_]
+        except KeyError:
+            instance = class_(self)
+            self._plugins[class_] = instance
+            return instance
+
+    def summon(self, class_):
+        """
+        Summon a plugin (subclass of :class:`~mlxc.plugin.Base`) for the client.
+
+        If the `class_` has already been summoned for the client, it’s instance
+        is returned.
+
+        Otherwise, all requirements for the class are first summoned (if they
+        are not there already). Afterwards, the class itself is summoned and
+        the instance is returned.
+        """
+        requirements = sorted(class_.ORDER_AFTER)
+        for req in requirements:
+            self._summon(req)
+        return self._summon(class_)
 
     def load_state(self):
         try:
