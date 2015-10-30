@@ -41,7 +41,6 @@ class VisitorMeta(abc.ABCMeta):
             if hasattr(base, "VISITOR_HANDLERS"):
                 visitors.update(base.VISITOR_HANDLERS)
 
-        print(namespace)
         for key, value in namespace.items():
             if hasattr(value, "roster_visited_class"):
                 visitors[value.roster_visited_class] = value
