@@ -441,12 +441,29 @@ class Client:
     presence will only affect the account if its current presence is equal to
     the current global presence.
 
+    .. signal:: on_account_enabling(account, state)
+
+       This signal emits right before an account gets its presence set and
+       after it has been enabled.
+
+       This is the right place to load :mod:`aioxmpp` services.
+
+    .. signal:: on_account_disabling(account, state)
+
+       This signal emits right before the account state is removed from the
+       client.
+
+    .. signal:: on_loaded()
+
+       Fires right after all state has been loaded.
+
     """
 
     AccountManager = AccountManager
 
     on_account_enabling = aioxmpp.callbacks.Signal()
     on_account_disabling = aioxmpp.callbacks.Signal()
+    on_loaded = aioxmpp.callbacks.Signal()
 
     def __init__(self, config_manager):
         super().__init__()
@@ -603,6 +620,19 @@ class Client:
         else:
             self.pin_store.import_from_json(data, override=True)
 
+    def _load_roster(self):
+        try:
+            f = self.config_manager.open_single(
+                utils.mlxc_uid,
+                "roster.xml")
+        except OSError:
+            self.roster.root.clear()
+        else:
+            with f:
+                utils.read_xso(f, {
+                    roster.TreeRoot.XSORepr: self.roster.root.load_from_xso
+                })
+
     def _summon(self, class_):
         try:
             return self._plugins[class_]
@@ -628,10 +658,22 @@ class Client:
         return self._summon(class_)
 
     def load_state(self):
+        """
+        Load the client state in this order:
+
+        * Roster tree
+        * Certificate pin store
+        * Account settings
+        * Custom presence states
+
+        Finally, :meth:`on_loaded` is emitted.
+
+        """
         try:
-            self._load_accounts()
+            self._load_roster()
         except Exception as exc:
-            logger.error("failed to load accounts", exc_info=True)
+            logger.error("failed to load roster",
+                         exc_info=True)
 
         try:
             self._load_pin_store()
@@ -640,10 +682,17 @@ class Client:
                          exc_info=True)
 
         try:
+            self._load_accounts()
+        except Exception as exc:
+            logger.error("failed to load accounts", exc_info=True)
+
+        try:
             self._load_presence_states()
         except Exception as exc:
             logger.error("failed to load custom presence states",
                          exc_info=True)
+
+        self.on_loaded()
 
     def save_state(self):
         with self.config_manager.open_single(
@@ -664,5 +713,12 @@ class Client:
         with self.config_manager.open_single(
                 utils.mlxc_uid,
                 "presence.xml",
+                mode="wb") as f:
+            utils.write_xso(f, xso)
+
+        xso = self.roster.root.to_xso()
+        with self.config_manager.open_single(
+                utils.mlxc_uid,
+                "roster.xml",
                 mode="wb") as f:
             utils.write_xso(f, xso)

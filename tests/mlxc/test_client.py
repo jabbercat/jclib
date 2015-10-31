@@ -2389,11 +2389,77 @@ class TestClient(unittest.TestCase):
             ]
         )
 
+    def test__load_roster(self):
+        base = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            self.config_manager.open_single = base.open_single
+            open_single = base.open_single
+
+            load_from_xso = stack.enter_context(unittest.mock.patch.object(
+                self.c.roster.root,
+                "load_from_xso",
+                new=base.load_from_xso
+            ))
+
+            read_xso = stack.enter_context(unittest.mock.patch(
+                "mlxc.utils.read_xso",
+                new=base.read_xso
+            ))
+
+            self.c._load_roster()
+
+        calls = list(base.mock_calls)
+
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
+                    "roster.xml"),
+                unittest.mock.call.open_single().__enter__(),
+                unittest.mock.call.read_xso(open_single(), {
+                    mlxc.roster.TreeRoot.XSORepr: load_from_xso
+                }),
+                unittest.mock.call.open_single().__exit__(None, None, None),
+            ]
+        )
+
+    def test__load_roster_states_clears_on_open_error(self):
+        base = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            self.config_manager.open_single = base.open_single
+            open_single = base.open_single
+
+            presence_states = stack.enter_context(unittest.mock.patch.object(
+                self.c.roster.root,
+                "clear",
+                new=base.clear
+            ))
+
+            open_single.side_effect = OSError()
+
+            self.c._load_roster()
+
+        calls = list(base.mock_calls)
+
+        self.assertSequenceEqual(
+            calls,
+            [
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
+                    "roster.xml"),
+                unittest.mock.call.clear()
+            ]
+        )
+
     def test_load_state_ignores_exceptions(self):
         funcs = [
             "_load_accounts",
             "_load_pin_store",
             "_load_presence_states",
+            "_load_roster",
         ]
 
         for func_to_fail_name in funcs:
@@ -2442,6 +2508,55 @@ class TestClient(unittest.TestCase):
                     )
                 )
 
+    def test_load_state_loads_all_state(self):
+        base = unittest.mock.Mock()
+        funcs = [
+            "_load_roster",
+            "_load_pin_store",
+            "_load_accounts",
+            "_load_presence_states",
+        ]
+
+        with contextlib.ExitStack() as stack:
+            for func in funcs:
+                stack.enter_context(unittest.mock.patch.object(
+                    self.c,
+                    func,
+                    new=getattr(base, func)
+                ))
+
+            self.c.load_state()
+
+        self.assertSequenceEqual(
+            base.mock_calls,
+            [
+                getattr(unittest.mock.call, func)()
+                for func in funcs
+            ]
+        )
+
+    def test_load_state_emits_on_loaded(self):
+        mock = unittest.mock.Mock()
+        with contextlib.ExitStack() as stack:
+            funcs = [
+                "_load_accounts",
+                "_load_pin_store",
+                "_load_presence_states",
+                "_load_roster",
+            ]
+
+            for func in funcs:
+                stack.enter_context(unittest.mock.patch.object(
+                    self.c,
+                    func
+                ))
+
+            self.c.on_loaded.connect(mock)
+            self.c.load_state()
+
+        mock.assert_called_with()
+
+
     def test_save_state(self):
         base = unittest.mock.MagicMock()
 
@@ -2474,6 +2589,12 @@ class TestClient(unittest.TestCase):
                 self.c.pin_store,
                 "export_to_json",
                 new=base.export_to_json
+            ))
+
+            to_xso = stack.enter_context(unittest.mock.patch.object(
+                self.c.roster.root,
+                "to_xso",
+                new=base.to_xso
             ))
 
             self.c.save_state()
@@ -2513,6 +2634,17 @@ class TestClient(unittest.TestCase):
                 unittest.mock.call.write_xso(
                     open_single().__enter__(),
                     _ComplexPresenceList(),
+                ),
+                unittest.mock.call.open_single().__exit__(None, None, None),
+                unittest.mock.call.to_xso(),
+                unittest.mock.call.open_single(
+                    mlxc.utils.mlxc_uid,
+                    "roster.xml",
+                    mode="wb"),
+                unittest.mock.call.open_single().__enter__(),
+                unittest.mock.call.write_xso(
+                    open_single().__enter__(),
+                    to_xso(),
                 ),
                 unittest.mock.call.open_single().__exit__(None, None, None),
             ]

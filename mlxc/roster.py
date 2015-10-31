@@ -1,17 +1,23 @@
+import abc
 import asyncio
+import json
 import logging
 
+import aioxmpp.presence
 import aioxmpp.roster
+import aioxmpp.roster.xso
+import aioxmpp.utils
+import aioxmpp.xso
 
 import mlxc.instrumentable_list
 import mlxc.plugin
 import mlxc.visitor
-
+import mlxc.utils
 
 logger = logging.getLogger(__name__)
 
 
-class Node:
+class Node(metaclass=abc.ABCMeta):
     View = None
 
     def __init__(self, *args, **kwargs):
@@ -73,6 +79,10 @@ class Node:
             raise ValueError("only a single view can be attached to a "
                              "node class")
         cls.View = view_cls
+
+    @abc.abstractmethod
+    def to_xso(self):
+        pass
 
 
 class Container(mlxc.instrumentable_list.ModelList, Node):
@@ -159,10 +169,45 @@ class Container(mlxc.instrumentable_list.ModelList, Node):
 
 
 class Via(Node):
-    def __init__(self, account_jid, roster_item):
+    class XSORepr(aioxmpp.roster.xso.Item):
+        TAG = (mlxc.utils.mlxc_namespaces.roster, "via")
+
+        account_jid = aioxmpp.xso.Attr(
+            (None, "account"),
+            type_=aioxmpp.xso.JID(),
+        )
+
+        def __init__(self, via):
+            super().__init__(
+                via.peer_jid,
+                name=via.name,
+                groups=(),
+                subscription=via.subscription,
+                approved=via.approved,
+                ask=via.ask)
+            self.account_jid = via.account_jid
+
+        def to_object(self):
+            result = Via(self.account_jid, self.jid)
+            result._name = self.name
+            result._subscription = self.subscription
+            result._approved = self.approved
+            result._ask = self.ask
+            return result
+
+
+    def __init__(self, account_jid, peer_info):
         super().__init__()
         self._account_jid = account_jid
-        self._roster_item = roster_item
+        if isinstance(peer_info, aioxmpp.roster.Item):
+            self._roster_item = peer_info
+        else:
+            self._roster_item = None
+            self._peer_jid = peer_info
+            self._name = None
+            self._subscription = "none"
+            self._approved = False
+            self._ask = None
 
     @property
     def account_jid(self):
@@ -172,19 +217,77 @@ class Via(Node):
     def roster_item(self):
         return self._roster_item
 
+    @roster_item.setter
+    def roster_item(self, new_value):
+        if new_value is None and self._roster_item is not None:
+            self._peer_jid = self._roster_item.jid
+            self._name = self._roster_item.name
+            self._subscription = self._roster_item.subscription
+            self._approved = self._roster_item.approved
+            self._ask = self._roster_item.ask
+        self._roster_item = new_value
+
+    @property
+    def peer_jid(self):
+        if self._roster_item is not None:
+            return self._roster_item.jid
+        return self._peer_jid
+
     @property
     def label(self):
-        if self._roster_item.name is not None:
+        return self.name or str(self.peer_jid)
+
+    @property
+    def subscription(self):
+        if self._roster_item is not None:
+            return self._roster_item.subscription
+        return self._subscription
+
+    @property
+    def ask(self):
+        if self._roster_item is not None:
+            return self._roster_item.ask
+        return self._ask
+
+    @property
+    def name(self):
+        if self._roster_item is not None:
             return self._roster_item.name
-        return str(self._roster_item.jid)
+        return self._name
+
+    @property
+    def approved(self):
+        if self._roster_item is not None:
+            return self._roster_item.approved
+        return self._approved
 
     def parent_supported(self, parent):
-        if isinstance(parent, Contact):
+        if isinstance(parent, (MetaContact, Group)):
             return True
         return super().parent_supported(parent)
 
+    def to_xso(self):
+        return self.XSORepr(self)
 
-class Contact(Container):
+
+class MetaContact(Container):
+    class XSORepr(aioxmpp.xso.XSO):
+        TAG = (mlxc.utils.mlxc_namespaces.roster, "meta")
+
+        label = aioxmpp.xso.Attr(
+            "label",
+            default=None
+        )
+
+        children = aioxmpp.xso.ChildList([Via.XSORepr])
+
+        def to_object(self):
+            result = MetaContact()
+            result.label = self.label
+            children = [child.to_object() for child in self.children]
+            result[:] = children
+            return result
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._label = None
@@ -205,8 +308,32 @@ class Contact(Container):
             return True
         return super().parent_supported(parent)
 
+    def to_xso(self):
+        xso = self.XSORepr()
+        xso.label = self.label
+        xso.children.extend(child.to_xso() for child in self)
+        return xso
+
 
 class Group(Container):
+    class XSORepr(aioxmpp.xso.XSO):
+        TAG = (mlxc.utils.mlxc_namespaces.roster, "group")
+
+        label = aioxmpp.xso.Attr(
+            "label"
+        )
+
+        children = aioxmpp.xso.ChildList([
+            MetaContact.XSORepr,
+            Via.XSORepr
+        ])
+
+        def to_object(self):
+            result = Group(self.label)
+            result[:] = [child.to_object() for child in self.children]
+            return result
+
+
     def __init__(self, label, **kwargs):
         super().__init__(**kwargs)
         self.label = label
@@ -218,14 +345,49 @@ class Group(Container):
             return True
         return super().parent_supported(parent)
 
+    def to_xso(self):
+        xso = self.XSORepr()
+        xso.label = self.label
+        xso.children.extend(child.to_xso() for child in self)
+        return xso
+
+
+Group.XSORepr.register_child(Group.XSORepr.children, Group.XSORepr)
+
 
 class TreeRoot(Container):
+    class XSORepr(aioxmpp.xso.XSO):
+        TAG = (mlxc.utils.mlxc_namespaces.roster, "tree")
+
+        DECLARE_NS = {
+            None: mlxc.utils.mlxc_namespaces.roster,
+            "xmpp": aioxmpp.utils.namespaces.rfc6121_roster
+        }
+
+        children = aioxmpp.xso.ChildList([
+            Group.XSORepr
+        ])
+
+        def to_object(self):
+            root = TreeRoot()
+            root[:] = [child.to_object() for child in self.children]
+            return root
+
+
     @property
     def root(self):
         return self
 
     def _add_to_parent(self, parent):
         raise TypeError("cannot add TreeRoot to any parent")
+
+    def to_xso(self):
+        xso = self.XSORepr()
+        xso.children.extend(child.to_xso() for child in self)
+        return xso
+
+    def load_from_xso(self, xso):
+        self[:] = [child.to_object() for child in xso.children]
 
 
 class Tree:
@@ -281,7 +443,7 @@ class TreeVisitor(mlxc.visitor.Visitor):
     @mlxc.visitor.for_class(Container)
     def visit_container(self, cont):
         for item in cont:
-            self.visit(item)
+            self._visit(item)
 
     @mlxc.visitor.for_class(Node)
     def visit_node(self, node):
@@ -292,7 +454,6 @@ class _RosterConnector:
     def __init__(self, plugin, account, state):
         self.account = account
         self.plugin = plugin
-        self.service = state.summon(aioxmpp.roster.Service)
 
         self._tokens = []
 
@@ -302,16 +463,26 @@ class _RosterConnector:
                 signal.connect(slot)
             ))
 
-        connect(self.service.on_entry_added,
+        service = state.summon(aioxmpp.roster.Service)
+        connect(service.on_entry_added,
                 self._on_entry_added)
-        connect(self.service.on_entry_name_changed,
+        connect(service.on_entry_name_changed,
                 self._on_entry_name_changed)
-        connect(self.service.on_entry_added_to_group,
+        connect(service.on_entry_added_to_group,
                 self._on_entry_added_to_group)
-        connect(self.service.on_entry_removed_from_group,
+        connect(service.on_entry_removed_from_group,
                 self._on_entry_removed_from_group)
-        connect(self.service.on_entry_removed,
+        connect(service.on_entry_removed,
                 self._on_entry_removed)
+        self.roster_service = service
+
+        service = state.summon(aioxmpp.presence.Service)
+        connect(service.on_available,
+                self._on_resource_available)
+        connect(service.on_changed,
+                self._on_resource_presence_changed)
+        connect(service.on_unavailable,
+                self._on_resource_unavailable)
 
     def _on_entry_added(self, item):
         self.plugin._on_entry_added(self.account, item)
@@ -330,26 +501,96 @@ class _RosterConnector:
     def _on_entry_removed(self, item):
         self.plugin._on_entry_removed(self.account, item)
 
+    def _on_resource_available(self, full_jid, stanza):
+        self.plugin._on_resource_available(
+            self.account,
+            full_jid,
+            stanza)
+
+    def _on_resource_presence_changed(self, full_jid, stanza):
+        self.plugin._on_resource_presence_changed(
+            self.account,
+            full_jid,
+            stanza)
+
+    def _on_resource_unavailable(self, full_jid, stanza):
+        self.plugin._on_resource_unavailable(
+            self.account,
+            full_jid,
+            stanza)
+
     def close(self):
         for signal, token in self._tokens:
             signal.disconnect(token)
 
 
 class _EraseVia(TreeVisitor):
-    def __init__(self, roster_item):
+    def __init__(self, roster_item, *, deep=True):
         super().__init__()
         self._roster_item = roster_item
+        self.deep = deep
+
+    def visit(self, node):
+        self._visit_root = node
+        super().visit(node)
+
+    @mlxc.visitor.for_class(Group)
+    def visit_group(self, group):
+        if not self.deep and group is not self._visit_root:
+            return
+        super().visit_container(group)
 
     @mlxc.visitor.for_class(Via)
     def visit_via(self, via):
         if via.roster_item is self._roster_item:
-            if len(via.parent) == 1:
+            if len(via.parent) == 1 and isinstance(via.parent, MetaContact):
                 del via.parent.parent[via.parent.index_at_parent]
             else:
                 del via.parent[via.index_at_parent]
 
 
+class _RecoverXMPPRoster(TreeVisitor):
+    def __init__(self, account_jid):
+        super().__init__()
+        self._account_jid = account_jid
+
+    def visit(self, root):
+        self._data = {}
+        super().visit(root)
+        return self._data
+
+    @mlxc.visitor.for_class(Group)
+    def visit_group(self, group):
+        self._last_group = group
+        super().visit_container(group)
+
+    @mlxc.visitor.for_class(Via)
+    def visit_via(self, via):
+        if via.account_jid != self._account_jid:
+            return
+
+        data = self._data.setdefault(str(via.peer_jid), {})
+        data["subscription"] = via.subscription
+        data["ask"] = via.ask
+        data["approved"] = via.approved
+        data["name"] = via.name
+        data.setdefault("groups", set()).add(self._last_group.label)
+
+
+class _SetupMaps(TreeVisitor):
+    def __init__(self, plugin):
+        super().__init__()
+        self._plugin = plugin
+
+    @mlxc.visitor.for_class(Group)
+    def visit_group(self, group):
+        self._plugin._group_map[group.label] = group
+        super().visit_container(group)
+
+
 class Plugin(mlxc.plugin.Base):
+    UID = "urn:uuid:7fdad690-1e8e-40cc-aaef-27924db9083e"
+
     def __init__(self, client):
         super().__init__(client)
         self._connectors = {}
@@ -360,6 +601,10 @@ class Plugin(mlxc.plugin.Base):
              client.on_account_enabling.connect(self._on_account_enabling)),
             (client.on_account_disabling,
              client.on_account_disabling.connect(self._on_account_disabling)),
+            (client.on_loaded,
+             client.on_loaded.connect(self._on_loaded)),
+            (client.config_manager.on_writeback,
+             client.config_manager.on_writeback.connect(self._on_writeback)),
         ]
 
         for account in client.accounts:
@@ -375,16 +620,57 @@ class Plugin(mlxc.plugin.Base):
         for signal, token in self._tokens:
             signal.disconnect(token)
 
+    def _account_roster_filename(self, jid):
+        return mlxc.config.escape_dirname(
+            "xmpp:{}.json".format(jid)
+        )
+
+    def load_roster_state(self, jid, roster_service):
+        try:
+            f = self.client.config_manager.open_single(
+                self.UID,
+                self._account_roster_filename(jid),
+                mode="r",
+            )
+        except OSError:
+            pass
+        else:
+            with f:
+                roster = json.load(f)
+            roster_service.import_from_json(roster)
+
+    def dump_roster_state(self, jid, roster_service):
+        roster = roster_service.export_as_json()
+
+        f = self.client.config_manager.open_single(
+            self.UID,
+            self._account_roster_filename(jid),
+            mode="w",
+
+        )
+        with f:
+            json.dump(roster, f)
+
     def _on_account_enabling(self, account, state):
         logger.debug("account enabled: %s", account)
-        self._connectors[account] = _RosterConnector(self, account, state)
+        connector = _RosterConnector(self, account, state)
+        self.load_roster_state(account.jid, connector.roster_service)
+        self._connectors[account] = connector
 
     def _on_account_disabling(self, account, state, reason=None):
         try:
             connector = self._connectors.pop(account)
         except KeyError:
             return
+        self.dump_roster_state(account.jid, connector.roster_service)
         connector.close()
+
+    def _on_loaded(self):
+        pass
+
+    def _on_writeback(self):
+        for account, connector in self._connectors.items():
+            self.dump_roster_state(account.jid, connector.roster_service)
 
     def _autocreate_group(self, group_name):
         try:
@@ -402,19 +688,26 @@ class Plugin(mlxc.plugin.Base):
         root = self.client.roster.root
         for group_name in item.groups:
             via = Via(account.jid, item)
-            contact = Contact(initial=[via])
-            self._autocreate_group(group_name).append(contact)
+            self._autocreate_group(group_name).append(via)
 
     def _on_entry_name_changed(self, item):
         pass
 
     def _on_entry_added_to_group(self, account, item, group_name):
         via = Via(account.jid, item)
-        contact = Contact(initial=[via])
-        self._autocreate_group(group_name).append(contact)
+        self._autocreate_group(group_name).append(via)
 
     def _on_entry_removed_from_group(self, account, item, group_name):
-        _EraseVia(item).visit(self._group_map[group_name])
+        _EraseVia(item, deep=False).visit(self._group_map[group_name])
 
     def _on_entry_removed(self, account, item):
-        _EraseVia(item).visit(self.client.roster.root)
+        _EraseVia(item, deep=True).visit(self.client.roster.root)
+
+    def _on_resource_available(self, account, full_jid, stanza):
+        pass
+
+    def _on_resource_presence_changed(self, account, full_jid, stanza):
+        pass
+
+    def _on_resource_unavailable(self, account, full_jid, stanza):
+        pass

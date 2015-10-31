@@ -34,6 +34,16 @@ class TestClientMock(unittest.TestCase):
             mlxc.roster.Tree
         )
 
+    def test_config_manager(self):
+        self.assertIsInstance(
+            self.mock.config_manager,
+            unittest.mock.MagicMock,
+        )
+        self.assertIsInstance(
+            self.mock.config_manager.on_writeback,
+            aioxmpp.callbacks.AdHocSignal
+        )
+
     def test_on_account_enabling(self):
         self.assertIsInstance(
             self.mock.on_account_enabling,
@@ -46,9 +56,16 @@ class TestClientMock(unittest.TestCase):
             aioxmpp.callbacks.AdHocSignal
         )
 
+    def test_on_loaded(self):
+        self.assertIsInstance(
+            self.mock.on_loaded,
+            aioxmpp.callbacks.AdHocSignal
+        )
+
     def test_signals_are_adhoc_only(self):
         self.assertFalse(hasattr(ClientMock, "on_account_enabling"))
         self.assertFalse(hasattr(ClientMock, "on_account_disabling"))
+        self.assertFalse(hasattr(ClientMock, "on_loaded"))
 
     def tearDown(self):
         del self.mock

@@ -208,13 +208,13 @@ class TestVisitor(unittest.TestCase):
     def setUp(self):
         self.visitor = visitor.Visitor()
 
-    def test_visit(self):
+    def test__visit(self):
         instance = object()
 
         with unittest.mock.patch.object(
                 visitor.Visitor,
                 "visitor") as visitor_:
-            self.visitor.visit(instance)
+            self.visitor._visit(instance)
 
         self.assertSequenceEqual(
             visitor_.mock_calls,
@@ -224,7 +224,7 @@ class TestVisitor(unittest.TestCase):
             ]
         )
 
-    def test_visit_raises_TypeError_on_unhandled_type(self):
+    def test__visit_raises_TypeError_on_unhandled_type(self):
         instance = object()
 
         with unittest.mock.patch.object(
@@ -234,12 +234,27 @@ class TestVisitor(unittest.TestCase):
 
             with self.assertRaisesRegexp(TypeError,
                                          "unhandled type in visitor"):
-                self.visitor.visit(instance)
+                self.visitor._visit(instance)
 
         self.assertSequenceEqual(
             visitor_.mock_calls,
             [
                 unittest.mock.call(instance),
+            ]
+        )
+
+    def test_visit_calls__visit(self):
+        instance = object()
+
+        with unittest.mock.patch.object(
+                self.visitor,
+                "_visit") as visit:
+            self.visitor.visit(instance)
+
+        self.assertSequenceEqual(
+            visit.mock_calls,
+            [
+                unittest.mock.call(instance)
             ]
         )
 

@@ -140,10 +140,18 @@ class Visitor(metaclass=VisitorMeta):
 
     .. automethod:: visit
 
+    .. automethod:: _visit
+
     """
-    def visit(self, object_to_visit):
+
+    def _visit(self, object_to_visit):
         """
         Pass the `object_to_visit` to the responsible visitor.
+
+        Whenever a visitor wants to visit sub-objects of the object passed to
+        :meth:`visit`, it should call :meth:`_visit` (and *not*
+        :meth:`visit`). This allows subclasses to distinguish visitations of
+        nested objects and the start of a visitation.
         """
         try:
             visitor = type(self).visitor(object_to_visit)
@@ -152,3 +160,11 @@ class Visitor(metaclass=VisitorMeta):
                 type(object_to_visit)
             )) from None
         visitor(self, object_to_visit)
+
+    def visit(self, object_to_visit):
+        """
+        Public entry point for visitation of an object (sub-)tree.
+
+        The default implementation merely calls :meth:`_visit`.
+        """
+        self._visit(object_to_visit)
