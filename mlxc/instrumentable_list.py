@@ -391,3 +391,71 @@ class ModelList(collections.abc.MutableSequence):
         result = self._storage.pop(index)
         self._end_remove_rows()
         return result
+
+
+class ModelListView(collections.abc.Sequence):
+    begin_insert_rows = None
+    end_insert_rows = None
+    begin_remove_rows = None
+    end_remove_rows = None
+    begin_move_rows = None
+    end_move_rows = None
+
+    def __init__(self, backend):
+        super().__init__()
+        self._backend = backend
+        self._backend.begin_insert_rows = self._begin_insert_rows
+        self._backend.begin_move_rows = self._begin_move_rows
+        self._backend.begin_remove_rows = self._begin_remove_rows
+        self._backend.end_insert_rows = self._end_insert_rows
+        self._backend.end_move_rows = self._end_move_rows
+        self._backend.end_remove_rows = self._end_remove_rows
+
+    def _begin_insert_rows(self, parent, index1, index2):
+        if self.begin_insert_rows is not None:
+            self.begin_insert_rows(parent, index1, index2)
+
+    def _begin_move_rows(self,
+                         srcparent, srcindex1, srcindex2,
+                         destparent, destindex):
+        if self.begin_move_rows is not None:
+            self.begin_move_rows(srcparent, srcindex1, srcindex2,
+                                 destparent, destindex)
+
+    def _begin_remove_rows(self, parent, index1, index2):
+        if self.begin_remove_rows is not None:
+            self.begin_remove_rows(parent, index1, index2)
+
+    def _end_insert_rows(self):
+        if self.end_insert_rows is not None:
+            self.end_insert_rows()
+
+    def _end_move_rows(self):
+        if self.end_move_rows is not None:
+            self.end_move_rows()
+
+
+    def _end_remove_rows(self):
+        if self.end_remove_rows is not None:
+            self.end_remove_rows()
+
+    def __getitem__(self, index):
+        return self._backend[index]
+
+    def __len__(self):
+        return len(self._backend)
+
+    def __iter__(self):
+        return iter(self._backend)
+
+    def __reversed__(self):
+        return reversed(self._backend)
+
+    def __contains__(self, item):
+        return item in self._backend
+
+    def index(self, item):
+        return self._backend.index(item)
+
+    def count(self, item):
+        return self._backend.count(item)

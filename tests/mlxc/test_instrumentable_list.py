@@ -8,6 +8,7 @@ import aioxmpp.callbacks
 from mlxc.instrumentable_list import (
     IList,
     ModelList,
+    ModelListView,
 )
 
 
@@ -1160,3 +1161,156 @@ class TestModelList(unittest.TestCase):
                 "x": "a"
             }
         )
+
+
+class TestModelListView(unittest.TestCase):
+    def setUp(self):
+        self.mock = unittest.mock.Mock()
+        self.backend = ModelList()
+        self.view = ModelListView(self.backend)
+
+        self.view.begin_insert_rows = self.mock.begin_insert_rows
+        self.view.end_insert_rows = self.mock.end_insert_rows
+        self.view.begin_remove_rows = self.mock.begin_remove_rows
+        self.view.end_remove_rows = self.mock.end_remove_rows
+        self.view.begin_move_rows = self.mock.begin_move_rows
+        self.view.end_move_rows = self.mock.end_move_rows
+
+    def test_init(self):
+        backend = ModelList()
+        view = ModelListView(self.backend)
+
+        self.assertIsNone(view.begin_insert_rows)
+        self.assertIsNone(view.begin_move_rows)
+        self.assertIsNone(view.begin_remove_rows)
+
+        self.assertIsNone(view.end_insert_rows)
+        self.assertIsNone(view.end_move_rows)
+        self.assertIsNone(view.end_remove_rows)
+
+        view._begin_insert_rows(object(), object(), object())
+        view._begin_move_rows(object(), object(), object(), object(), object())
+        view._begin_remove_rows(object(), object(), object())
+
+        view._end_insert_rows()
+        view._end_move_rows()
+        view._end_remove_rows()
+
+    def test_is_sequence(self):
+        self.assertTrue(issubclass(
+            ModelListView,
+            collections.abc.Sequence
+        ))
+
+    def test_is_not_mutable_sequence(self):
+        self.assertFalse(issubclass(
+            ModelListView,
+            collections.abc.MutableSequence
+        ))
+
+    def test_attaches_to_backend(self):
+        self.assertEqual(self.backend.begin_insert_rows,
+                         self.view._begin_insert_rows)
+        self.assertEqual(self.backend.begin_move_rows,
+                         self.view._begin_move_rows)
+        self.assertEqual(self.backend.begin_remove_rows,
+                         self.view._begin_remove_rows)
+        self.assertEqual(self.backend.end_insert_rows,
+                         self.view._end_insert_rows)
+        self.assertEqual(self.backend.end_move_rows,
+                         self.view._end_move_rows)
+        self.assertEqual(self.backend.end_remove_rows,
+                         self.view._end_remove_rows)
+
+    def test__begin_insert_rows(self):
+        a, b, c = object(), object(), object()
+        self.view._begin_insert_rows(a, b, c)
+        self.mock.begin_insert_rows.assert_called_with(a, b, c)
+
+    def test__begin_move_rows(self):
+        a, b, c, d, e = object(), object(), object(), object(), object()
+        self.view._begin_move_rows(a, b, c, d, e)
+        self.mock.begin_move_rows.assert_called_with(a, b, c, d, e)
+
+    def test__begin_remove_rows(self):
+        a, b, c = object(), object(), object()
+        self.view._begin_remove_rows(a, b, c)
+        self.mock.begin_remove_rows.assert_called_with(a, b, c)
+
+    def test__end_insert_rows(self):
+        self.view._end_insert_rows()
+        self.mock.end_insert_rows.assert_called_with()
+
+    def test__end_move_rows(self):
+        self.view._end_move_rows()
+        self.mock.end_move_rows.assert_called_with()
+
+    def test__end_remove_rows(self):
+        self.view._end_remove_rows()
+        self.mock.end_remove_rows.assert_called_with()
+
+    def test___getitem__forwards_to_backend(self):
+        with unittest.mock.patch.object(
+                ModelList, "__getitem__") as getitem:
+            sl = object()
+            result = self.view[sl]
+
+        getitem.assert_called_with(sl)
+        self.assertEqual(result, getitem())
+
+    def test___len__forwards_to_backend(self):
+        with unittest.mock.patch.object(
+                ModelList, "__len__") as len_:
+            result = len(self.view)
+
+        len_.assert_called_with()
+        self.assertEqual(result, int(len_()))
+
+    def test__iter__forwards_to_backend(self):
+        with unittest.mock.patch.object(
+                ModelList, "__iter__") as iter_:
+            result = iter(self.view)
+
+        iter_.assert_called_with()
+        self.assertEqual(result, iter_())
+
+    def test__reversed__forwards_to_backend(self):
+        with unittest.mock.patch.object(
+                ModelList, "__reversed__") as reversed_:
+            result = reversed(self.view)
+
+        reversed_.assert_called_with()
+        self.assertEqual(result, reversed_())
+
+    def test__contains__forwards_to_backend(self):
+        with unittest.mock.patch.object(
+                ModelList, "__contains__") as contains:
+            item = object()
+            result = item in self.view
+
+        contains.assert_called_with(item)
+        self.assertEqual(result, bool(contains()))
+
+    def test_index_forwards_to_backend(self):
+        with unittest.mock.patch.object(
+                self.backend,
+                "index") as index:
+            item = object()
+            result = self.view.index(item)
+
+        index.assert_called_with(item)
+        self.assertEqual(result, index())
+
+    def test_count_forwards_to_backend(self):
+        with unittest.mock.patch.object(
+                self.backend,
+                "count") as count:
+            item = object()
+            result = self.view.count(item)
+
+        count.assert_called_with(item)
+        self.assertEqual(result, count())
+
+    def tearDown(self):
+        del self.view
+        del self.backend
