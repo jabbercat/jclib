@@ -384,13 +384,16 @@ class ModelList(collections.abc.MutableSequence):
                 self.move(upper-2, i)
             upper -= 1
 
-    def pop(self, index):
+    def pop(self, index=-1):
         index = self._check_and_normalize_index(index)
         self._begin_remove_rows(index, index)
         self._unregister_items([self._storage[index]])
         result = self._storage.pop(index)
         self._end_remove_rows()
         return result
+
+    def clear(self):
+        del self[:]
 
 
 class ModelListView(collections.abc.Sequence):

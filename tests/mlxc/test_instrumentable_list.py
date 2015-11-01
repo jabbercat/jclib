@@ -1121,6 +1121,52 @@ class TestModelList(unittest.TestCase):
             ]
         )
 
+    def test_pop_without_index(self):
+        self.mlist[:] = [1, 2, 3]
+
+        self.mock.mock_calls.clear()
+
+        self.mlist.pop()
+
+        self.assertSequenceEqual(
+            self.mock.mock_calls,
+            [
+                unittest.mock.call.begin_remove_rows(None, 2, 2),
+                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.end_remove_rows(),
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.mlist,
+            [
+                1, 2
+            ]
+        )
+
+
+    def test_clear(self):
+        self.mlist[:] = [1, 2, 3]
+        self.mock.mock_calls.clear()
+
+        self.mlist.clear()
+
+        self.assertSequenceEqual(
+            self.mock.mock_calls,
+            [
+                unittest.mock.call.begin_remove_rows(None, 0, 2),
+                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.unregister_item(2),
+                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.end_remove_rows(),
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.mlist,
+            []
+        )
+
     def test_register_item_is_called_on_initialisation(self):
         def generate():
             yield 1
