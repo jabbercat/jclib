@@ -44,6 +44,9 @@ class IList(collections.abc.MutableSequence):
           In general, it is better to avoid raising from functions directly
           connected to the :meth:`on_unregister_item` signal.
 
+          If aioxmpp version >= 0.5 is used, raising from a signal has no
+          effect, as signals provide full isolation.
+
     The usual methods and operators of a mutable sequence are available. All
     methods and operators which return a new sequence will return a plain
     :class:`list` instead of a new :class:`IList`.

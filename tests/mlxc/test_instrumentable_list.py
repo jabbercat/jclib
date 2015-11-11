@@ -173,10 +173,15 @@ class TestInstrumentableList(unittest.TestCase):
             ]
         )
 
+    @unittest.skipIf(
+        aioxmpp.version_info[:2] >= (0, 5),
+        "aioxmpp provides isolation"
+    )
     def test_delitem_slice_rolls_back_on_exception(self):
         exc = Exception()
 
         n = 2
+
         def raise_after(exc, *args):
             nonlocal n
             n -= 1
@@ -207,10 +212,15 @@ class TestInstrumentableList(unittest.TestCase):
             ]
         )
 
+    @unittest.skipIf(
+        aioxmpp.version_info[:2] >= (0, 5),
+        "aioxmpp provides isolation"
+    )
     def test_setitem_slice_rolls_back_on_exception(self):
         exc = Exception()
 
         n = 2
+
         def raise_after(exc, *args):
             nonlocal n
             n -= 1
