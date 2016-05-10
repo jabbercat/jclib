@@ -240,6 +240,46 @@ class TestAccountSettings(unittest.TestCase):
         )
 
 
+class TestAccountGroup(unittest.TestCase):
+    def test_is_xso(self):
+        self.assertTrue(issubclass(
+            client.AccountGroup,
+            xso.XSO
+        ))
+
+    def test_tag(self):
+        self.assertEqual(
+            client.AccountGroup.TAG,
+            (mlxc_namespaces.account, "account-group")
+        )
+
+    def test_name(self):
+        self.assertIsInstance(
+            client.AccountGroup.name,
+            xso.Attr,
+        )
+        self.assertEqual(
+            client.AccountGroup.name.tag,
+            (None, "name")
+        )
+        self.assertIs(
+            client.AccountGroup.name.default,
+            xso.NO_DEFAULT
+        )
+
+    def test_accounts(self):
+        self.assertIsInstance(
+            client.AccountGroup.accounts,
+            xso.ChildList
+        )
+        self.assertSetEqual(
+            client.AccountGroup.accounts._classes,
+            {
+                client.AccountSettings,
+            }
+        )
+
+
 class TestSinglePresenceState(unittest.TestCase):
     def test_is_xso(self):
         self.assertTrue(issubclass(

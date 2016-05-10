@@ -85,6 +85,23 @@ class AccountSettings(xso.XSO):
         return self._enabled
 
 
+class AccountGroup(xso.XSO):
+    """
+    An account group is a collection of accounts which refer to the same person
+    in the same role. The :class:`AccountGroup` is a pretty stupid model class.
+    Do not make modifications here manually; instead, use
+    :class:`AccountManager` which takes care of preventing invalid state.
+    """
+
+    TAG = (mlxc_namespaces.account, "account-group")
+
+    name = xso.Attr(
+        "name",
+    )
+
+    accounts = xso.ChildList([AccountSettings])
+
+
 class _AbstractPresence(xso.XSO):
     _available = xso.Attr(
         "available",
