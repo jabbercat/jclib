@@ -291,7 +291,7 @@ class TestSinglePresenceState(unittest.TestCase):
     def test_status(self):
         self.assertIsInstance(
             client.SinglePresenceState.status,
-            xso.ChildList
+            xso.ChildTextMap
         )
         self.assertSetEqual(
             client.SinglePresenceState.status._classes,
@@ -332,18 +332,20 @@ class TestSinglePresenceState(unittest.TestCase):
             aps.state,
             structs.PresenceState(available=True)
         )
-        self.assertEqual(
+        self.assertDictEqual(
             aps.status,
-            [stanza.Status("foobar")]
+            {
+                None: "foobar"
+            }
         )
 
         aps = client.SinglePresenceState(
             TEST_JID,
             structs.PresenceState(available=True),
-            [stanza.Status("foobar"),
-             stanza.Status(
-                 "baz",
-                 lang=structs.LanguageTag.fromstr("de-DE"))]
+            {
+                None: stanza.Status("foobar"),
+                structs.LanguageTag.fromstr("de-DE"): stanza.Status("baz"),
+            }
         )
         self.assertEqual(
             aps.state,
@@ -351,11 +353,10 @@ class TestSinglePresenceState(unittest.TestCase):
         )
         self.assertEqual(
             aps.status,
-            [stanza.Status("foobar"),
-             stanza.Status(
-                 "baz",
-                 lang=structs.LanguageTag.fromstr("de-DE"))
-            ]
+            {
+                None: stanza.Status("foobar"),
+                structs.LanguageTag.fromstr("de-DE"): stanza.Status("baz"),
+            }
         )
 
     def test_state_attr(self):
@@ -411,98 +412,6 @@ class TestSinglePresenceState(unittest.TestCase):
     def setUp(self):
         self.aps = client.SinglePresenceState(TEST_JID)
 
-    def test_get_status_for_locale(self):
-        range_ = object()
-        with contextlib.ExitStack() as stack:
-            filter_ = stack.enter_context(
-                unittest.mock.patch.object(self.aps.status, "filter")
-            )
-
-            result = self.aps.get_status_for_locale(range_)
-
-        self.assertSequenceEqual(
-            filter_.mock_calls,
-            [
-                unittest.mock.call(lang=range_),
-                unittest.mock.call().__next__()
-            ]
-        )
-
-        self.assertEqual(result, next(filter_()))
-
-    def test_get_status_for_locale_raise_KeyError_if_none_found(self):
-        range_ = object()
-        with contextlib.ExitStack() as stack:
-            filter_ = stack.enter_context(
-                unittest.mock.patch.object(self.aps.status, "filter")
-            )
-
-            filter_().__next__.side_effect = StopIteration()
-            filter_.mock_calls.clear()
-
-            with self.assertRaises(KeyError):
-                self.aps.get_status_for_locale(range_)
-
-        self.assertSequenceEqual(
-            filter_.mock_calls,
-            [
-                unittest.mock.call(lang=range_),
-                unittest.mock.call().__next__()
-            ]
-        )
-
-    def test_get_status_for_locale_try_None(self):
-        def filter_mock(original, *args, lang=None, **kwargs):
-            result = original(*args, lang=lang, **kwargs)
-            if lang is not None:
-                result.__next__.side_effect = StopIteration()
-            else:
-                result.__next__.side_effect = None
-            return result
-
-        range_ = object()
-        base = unittest.mock.MagicMock()
-        with contextlib.ExitStack() as stack:
-            stack.enter_context(unittest.mock.patch.object(
-                self.aps.status, "filter",
-                new=functools.partial(filter_mock, base.filter)
-            ))
-
-            result = self.aps.get_status_for_locale(range_, try_none=True)
-
-        self.assertSequenceEqual(
-            base.mock_calls,
-            [
-                unittest.mock.call.filter(lang=range_),
-                unittest.mock.call.filter().__next__(),
-                unittest.mock.call.filter(attrs={"lang": None}, lang=None),
-                unittest.mock.call.filter().__next__()
-            ]
-        )
-
-    def test_get_status_for_locale_try_None_raises_KeyError_on_failure(self):
-        range_ = object()
-        with contextlib.ExitStack() as stack:
-            filter_ = stack.enter_context(
-                unittest.mock.patch.object(self.aps.status, "filter")
-            )
-
-            filter_().__next__.side_effect = StopIteration()
-            filter_.mock_calls.clear()
-
-            with self.assertRaises(KeyError):
-                self.aps.get_status_for_locale(range_, try_none=True)
-
-        self.assertSequenceEqual(
-            filter_.mock_calls,
-            [
-                unittest.mock.call(lang=range_),
-                unittest.mock.call().__next__(),
-                unittest.mock.call(attrs={"lang": None}),
-                unittest.mock.call().__next__()
-            ]
-        )
-
 
 class TestComplexPresenceState(unittest.TestCase):
     def test_is_xso(self):
@@ -547,7 +456,7 @@ class TestComplexPresenceState(unittest.TestCase):
     def test_status(self):
         self.assertIsInstance(
             client.ComplexPresenceState.status,
-            xso.ChildList
+            xso.ChildTextMap
         )
         self.assertSetEqual(
             client.ComplexPresenceState.status._classes,
@@ -598,25 +507,25 @@ class TestComplexPresenceState(unittest.TestCase):
         self.assertEqual(len(cps.status), 0)
         self.assertEqual(len(cps.overrides), 0)
 
-    def test_init_args_status_list(self):
-        status_list = [
-            stanza.Status("foo"),
-            stanza.Status("de", lang=structs.LanguageTag.fromstr("de-DE"))
-        ]
+    def test_init_args_status_dict(self):
+        status = {
+            None: "foo",
+            structs.LanguageTag.fromstr("de-DE"): "de",
+        }
 
         cps = client.ComplexPresenceState(
             state=structs.PresenceState(available=True,
                                         show="chat"),
-            status=status_list
+            status=status
         )
 
         self.assertEqual(
             cps.state,
             structs.PresenceState(available=True, show="chat")
         )
-        self.assertSequenceEqual(
+        self.assertDictEqual(
             cps.status,
-            status_list
+            status
         )
         self.assertEqual(
             cps._available,
@@ -643,9 +552,9 @@ class TestComplexPresenceState(unittest.TestCase):
     def test_get_presence_for_jid_defaulting(self):
         self.cps.state = structs.PresenceState(available=True,
                                                show="dnd")
-        self.cps.status[:] = [
-            stanza.Status("foo")
-        ]
+        self.cps.status.update({
+            None: "foo"
+        })
         result = self.cps.get_presence_for_jid(TEST_JID)
 
         self.assertEqual(self.cps.state, result.state)
@@ -668,98 +577,6 @@ class TestComplexPresenceState(unittest.TestCase):
         self.assertIs(
             self.cps.get_presence_for_jid(TEST_JID.replace(localpart="foo")),
             foo_override
-        )
-
-    def test_get_status_for_locale(self):
-        range_ = object()
-        with contextlib.ExitStack() as stack:
-            filter_ = stack.enter_context(
-                unittest.mock.patch.object(self.cps.status, "filter")
-            )
-
-            result = self.cps.get_status_for_locale(range_)
-
-        self.assertSequenceEqual(
-            filter_.mock_calls,
-            [
-                unittest.mock.call(lang=range_),
-                unittest.mock.call().__next__()
-            ]
-        )
-
-        self.assertEqual(result, next(filter_()))
-
-    def test_get_status_for_locale_raise_KeyError_if_none_found(self):
-        range_ = object()
-        with contextlib.ExitStack() as stack:
-            filter_ = stack.enter_context(
-                unittest.mock.patch.object(self.cps.status, "filter")
-            )
-
-            filter_().__next__.side_effect = StopIteration()
-            filter_.mock_calls.clear()
-
-            with self.assertRaises(KeyError):
-                self.cps.get_status_for_locale(range_)
-
-        self.assertSequenceEqual(
-            filter_.mock_calls,
-            [
-                unittest.mock.call(lang=range_),
-                unittest.mock.call().__next__()
-            ]
-        )
-
-    def test_get_status_for_locale_try_None(self):
-        def filter_mock(original, *args, lang=None, **kwargs):
-            result = original(*args, lang=lang, **kwargs)
-            if lang is not None:
-                result.__next__.side_effect = StopIteration()
-            else:
-                result.__next__.side_effect = None
-            return result
-
-        range_ = object()
-        base = unittest.mock.MagicMock()
-        with contextlib.ExitStack() as stack:
-            stack.enter_context(unittest.mock.patch.object(
-                self.cps.status, "filter",
-                new=functools.partial(filter_mock, base.filter)
-            ))
-
-            result = self.cps.get_status_for_locale(range_, try_none=True)
-
-        self.assertSequenceEqual(
-            base.mock_calls,
-            [
-                unittest.mock.call.filter(lang=range_),
-                unittest.mock.call.filter().__next__(),
-                unittest.mock.call.filter(attrs={"lang": None}, lang=None),
-                unittest.mock.call.filter().__next__()
-            ]
-        )
-
-    def test_get_status_for_locale_try_None_raises_KeyError_on_failure(self):
-        range_ = object()
-        with contextlib.ExitStack() as stack:
-            filter_ = stack.enter_context(
-                unittest.mock.patch.object(self.cps.status, "filter")
-            )
-
-            filter_().__next__.side_effect = StopIteration()
-            filter_.mock_calls.clear()
-
-            with self.assertRaises(KeyError):
-                self.cps.get_status_for_locale(range_, try_none=True)
-
-        self.assertSequenceEqual(
-            filter_.mock_calls,
-            [
-                unittest.mock.call(lang=range_),
-                unittest.mock.call().__next__(),
-                unittest.mock.call(attrs={"lang": None}),
-                unittest.mock.call().__next__()
-            ]
         )
 
 
@@ -794,14 +611,12 @@ class TestFundamentalPresenceState(unittest.TestCase):
         self.assertEqual(self.fps.status, ())
 
 
-
 class Test_ComplexPresenceList(unittest.TestCase):
     def test_is_xso(self):
         self.assertTrue(issubclass(
             client._ComplexPresenceList,
             xso.XSO
         ))
-
 
     def test_declare_namespace(self):
         self.assertDictEqual(
@@ -879,7 +694,7 @@ class TestAccountManager(unittest.TestCase):
         self.keyring.priority = 1
         self.manager = client.AccountManager(
             loop=self.loop,
-            use_keyring=self.keyring
+             use_keyring=self.keyring
         )
 
     def test_jidlist_is_model_list(self):

@@ -98,17 +98,17 @@ class _AbstractPresence(xso.XSO):
         default=None
     )
 
-    status = xso.ChildList(
-        [aioxmpp.stanza.Status]
+    status = xso.ChildTextMap(
+        aioxmpp.stanza.Status
     )
 
     def __init__(self, state=structs.PresenceState(True), status=()):
         super().__init__()
         self.state = state
         if isinstance(status, str):
-            self.status.append(aioxmpp.stanza.Status(status))
-        elif isinstance(status, collections.abc.Iterable):
-            self.status[:] = status
+            self.status[None] = status
+        elif isinstance(status, collections.abc.Mapping):
+            self.status.update(status)
 
     @property
     def state(self):
@@ -118,17 +118,6 @@ class _AbstractPresence(xso.XSO):
     def state(self, state):
         self._available = state.available
         self._show = state.show
-
-    def get_status_for_locale(self, lang, *, try_none=False):
-        try:
-            return next(self.status.filter(lang=lang))
-        except StopIteration:
-            if try_none:
-                try:
-                    return next(self.status.filter(attrs={"lang": None}))
-                except StopIteration:
-                    pass
-            raise KeyError() from None
 
 
 class SinglePresenceState(_AbstractPresence):
