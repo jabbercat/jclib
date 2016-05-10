@@ -16,9 +16,9 @@ import aioxmpp.stanza as stanza
 import aioxmpp.structs as structs
 import aioxmpp.xso as xso
 
+import mlxc.instrumentable_list as instrumentable_list
 import mlxc.roster as roster
 import mlxc.utils as utils
-import mlxc.instrumentable_list as instrumentable_list
 
 from mlxc.utils import mlxc_namespaces
 
