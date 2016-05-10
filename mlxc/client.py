@@ -502,9 +502,11 @@ class Client:
         self._states[account] = node
 
     def _on_account_disabled(self, account, reason):
+        state = self._states[account]
         self.on_account_disabling(account,
                                   self._states[account],
                                   reason=reason)
+        state.stop()
         del self._states[account]
 
     def _make_certificate_verifier(self, account):

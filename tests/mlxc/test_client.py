@@ -1703,6 +1703,20 @@ class TestClient(unittest.TestCase):
 
         mock.assert_called_with(acc, state, reason=reason)
 
+    def test_disable_account_stops_state(self):
+        mock = unittest.mock.Mock()
+        self.c.on_account_disabling.connect(mock)
+        reason = object()
+
+        acc = self.c.accounts.new_account(TEST_JID)
+        self.c.accounts.set_account_enabled(TEST_JID, True)
+        state = self.c.account_state(acc)
+
+        with unittest.mock.patch.object(state, "stop") as stop:
+            self.c.accounts.set_account_enabled(TEST_JID, False)
+
+        stop.assert_called_with()
+
     def test_account_state_raises_KeyError_for_disabled_account(self):
         acc = self.c.accounts.new_account(TEST_JID)
 
