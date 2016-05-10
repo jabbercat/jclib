@@ -799,7 +799,7 @@ class TestAccountManager(unittest.TestCase):
                     None,
                     keyring.get_password,
                     client.AccountManager.KEYRING_SERVICE_NAME,
-                    "xmpp:{!s}".format(TEST_JID.bare)
+                    "xmpp:{!s}".format(TEST_JID.bare())
                 )
             ],
         )
@@ -838,7 +838,7 @@ class TestAccountManager(unittest.TestCase):
                     None,
                     keyring.set_password,
                     client.AccountManager.KEYRING_SERVICE_NAME,
-                    "xmpp:{!s}".format(TEST_JID.bare),
+                    "xmpp:{!s}".format(TEST_JID.bare()),
                     "foobar"
                 )
             ]
@@ -877,7 +877,7 @@ class TestAccountManager(unittest.TestCase):
                     None,
                     keyring.delete_password,
                     client.AccountManager.KEYRING_SERVICE_NAME,
-                    "xmpp:{!s}".format(TEST_JID.bare),
+                    "xmpp:{!s}".format(TEST_JID.bare()),
                 )
             ]
         )
@@ -903,7 +903,7 @@ class TestAccountManager(unittest.TestCase):
                     None,
                     keyring.delete_password,
                     client.AccountManager.KEYRING_SERVICE_NAME,
-                    "xmpp:{!s}".format(TEST_JID.bare),
+                    "xmpp:{!s}".format(TEST_JID.bare()),
                 )
             ]
         )

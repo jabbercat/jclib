@@ -259,7 +259,7 @@ class AccountManager:
             keyring.get_password,
             self.KEYRING_SERVICE_NAME,
             self.KEYRING_JID_FORMAT.format(
-                bare=jid.bare
+                bare=jid.bare()
             )
         ))
 
@@ -275,7 +275,7 @@ class AccountManager:
                     keyring.delete_password,
                     self.KEYRING_SERVICE_NAME,
                     self.KEYRING_JID_FORMAT.format(
-                        bare=jid.bare
+                        bare=jid.bare()
                     ),
                 )
             except keyring.errors.PasswordDeleteError:
@@ -286,7 +286,7 @@ class AccountManager:
                 keyring.set_password,
                 self.KEYRING_SERVICE_NAME,
                 self.KEYRING_JID_FORMAT.format(
-                    bare=jid.bare
+                    bare=jid.bare()
                 ),
                 password
             )
