@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-import codecs
 import os.path
 
-from setuptools import setup
+from setuptools import setup, find_packages
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -11,7 +10,7 @@ with open(os.path.join(here, "README.rst"), encoding="utf-8") as f:
 
 setup(
     name="mlxc",
-    version="0.0.1",
+    version="0.1.0",
     description="My little XMPP client, an XMPP client based on aioxmpp",
     long_description=long_description,
     url="https://github.com/horazont/mlxc",
@@ -21,7 +20,8 @@ setup(
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: End Users/Desktop",
-        "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+        "License :: OSI Approved :: "
+        "GNU General Public License v3 or later (GPLv3+)",
         "Operating System :: POSIX",
         "Programming Language :: Python :: 3 :: Only",
         "Programming Language :: Python :: 3.3",
@@ -29,5 +29,5 @@ setup(
         "Topic :: Communications :: Chat",
     ],
     keywords="asyncio xmpp client qt",
-    packages=["mlxc"],
+    packages=find_packages(exclude=["tests"]),
 )

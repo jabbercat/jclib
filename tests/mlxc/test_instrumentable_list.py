@@ -9,6 +9,9 @@ from mlxc.instrumentable_list import (
     IList,
     ModelList,
     ModelListView,
+    ModelTree,
+    ModelTreeNode,
+    ModelTreeNodeHolder,
 )
 
 
@@ -303,6 +306,16 @@ class TestModelList(unittest.TestCase):
 
         self.mock.register_item.return_value = False
         self.mock.unregister_item.return_value = False
+
+        self.mock.begin_insert_rows.return_value = False
+        self.mock.end_insert_rows.return_value = False
+
+        self.mock.begin_remove_rows.return_value = False
+        self.mock.end_remove_rows.return_value = False
+
+        self.mock.begin_move_rows.return_value = False
+        self.mock.end_move_rows.return_value = False
+
         self.mlist.on_register_item.connect(
             self.mock.register_item
         )
@@ -310,12 +323,12 @@ class TestModelList(unittest.TestCase):
             self.mock.unregister_item
         )
 
-        self.mlist.begin_insert_rows = self.mock.begin_insert_rows
-        self.mlist.end_insert_rows = self.mock.end_insert_rows
-        self.mlist.begin_remove_rows = self.mock.begin_remove_rows
-        self.mlist.end_remove_rows = self.mock.end_remove_rows
-        self.mlist.begin_move_rows = self.mock.begin_move_rows
-        self.mlist.end_move_rows = self.mock.end_move_rows
+        self.mlist.begin_insert_rows.connect(self.mock.begin_insert_rows)
+        self.mlist.end_insert_rows.connect(self.mock.end_insert_rows)
+        self.mlist.begin_remove_rows.connect(self.mock.begin_remove_rows)
+        self.mlist.end_remove_rows.connect(self.mock.end_remove_rows)
+        self.mlist.begin_move_rows.connect(self.mock.begin_move_rows)
+        self.mlist.end_move_rows.connect(self.mock.end_move_rows)
 
     def test_init_bare(self):
         mlist = ModelList()
@@ -323,12 +336,18 @@ class TestModelList(unittest.TestCase):
                               aioxmpp.callbacks.AdHocSignal)
         self.assertIsInstance(mlist.on_unregister_item,
                               aioxmpp.callbacks.AdHocSignal)
-        self.assertIsNone(mlist.begin_insert_rows)
-        self.assertIsNone(mlist.end_insert_rows)
-        self.assertIsNone(mlist.begin_remove_rows)
-        self.assertIsNone(mlist.end_remove_rows)
-        self.assertIsNone(mlist.begin_move_rows)
-        self.assertIsNone(mlist.end_move_rows)
+        self.assertIsInstance(mlist.begin_insert_rows,
+                              aioxmpp.callbacks.AdHocSignal)
+        self.assertIsInstance(mlist.end_insert_rows,
+                              aioxmpp.callbacks.AdHocSignal)
+        self.assertIsInstance(mlist.begin_remove_rows,
+                              aioxmpp.callbacks.AdHocSignal)
+        self.assertIsInstance(mlist.end_remove_rows,
+                              aioxmpp.callbacks.AdHocSignal)
+        self.assertIsInstance(mlist.begin_move_rows,
+                              aioxmpp.callbacks.AdHocSignal)
+        self.assertIsInstance(mlist.end_move_rows,
+                              aioxmpp.callbacks.AdHocSignal)
 
     def test_init_with_items(self):
         def generator():
@@ -354,13 +373,13 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(1),
+                unittest.mock.call.register_item(1, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(2),
+                unittest.mock.call.register_item(2, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 1),
-                unittest.mock.call.register_item(3),
+                unittest.mock.call.register_item(3, 1),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -381,13 +400,13 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(1),
+                unittest.mock.call.register_item(1, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(2),
+                unittest.mock.call.register_item(2, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 2, 2),
-                unittest.mock.call.register_item(3),
+                unittest.mock.call.register_item(3, 2),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -408,13 +427,13 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(1),
+                unittest.mock.call.register_item(1, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(2),
+                unittest.mock.call.register_item(2, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 1),
-                unittest.mock.call.register_item(3),
+                unittest.mock.call.register_item(3, 1),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -435,13 +454,13 @@ class TestModelList(unittest.TestCase):
             self.mock.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(1),
+                unittest.mock.call.register_item(1, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(2),
+                unittest.mock.call.register_item(2, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(3),
+                unittest.mock.call.register_item(3, 0),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -661,8 +680,44 @@ class TestModelList(unittest.TestCase):
                 unittest.mock.call.unregister_item(3),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 1),
-                unittest.mock.call.register_item(10),
+                unittest.mock.call.register_item(10, 1),
                 unittest.mock.call.end_insert_rows(),
+            ]
+        )
+
+    def test_setitem_as_bulk_insert_does_not_generate_removal(self):
+        self.mlist.extend([1, 2, 3])
+        self.mock.mock_calls.clear()
+
+        self.mlist[1:1] = [10, 20, 30]
+
+        self.assertSequenceEqual(list(self.mlist), [1, 10, 20, 30, 2, 3])
+
+        self.assertSequenceEqual(
+            self.mock.mock_calls,
+            [
+                unittest.mock.call.begin_insert_rows(None, 1, 3),
+                unittest.mock.call.register_item(10, 1),
+                unittest.mock.call.register_item(20, 2),
+                unittest.mock.call.register_item(30, 3),
+                unittest.mock.call.end_insert_rows(),
+            ]
+        )
+
+    def test_setitem_reject_mismatching_size_of_ext_slices(self):
+        self.mlist.extend([1, 2, 3])
+        self.mock.mock_calls.clear()
+
+        with self.assertRaisesRegex(
+                ValueError,
+                r"attempt to assign sequence of size \d+ to extended slice of size \d+"):
+            self.mlist[1:1:-1] = [10, 20, 30]
+
+        self.assertSequenceEqual(list(self.mlist), [1, 2, 3])
+
+        self.assertSequenceEqual(
+            self.mock.mock_calls,
+            [
             ]
         )
 
@@ -684,7 +739,7 @@ class TestModelList(unittest.TestCase):
                 unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 2, 2),
-                unittest.mock.call.register_item(10),
+                unittest.mock.call.register_item(10, 2),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -729,9 +784,9 @@ class TestModelList(unittest.TestCase):
                 unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 3),
-                unittest.mock.call.register_item(10),
-                unittest.mock.call.register_item(11),
-                unittest.mock.call.register_item(12),
+                unittest.mock.call.register_item(10, 1),
+                unittest.mock.call.register_item(11, 2),
+                unittest.mock.call.register_item(12, 3),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -754,9 +809,9 @@ class TestModelList(unittest.TestCase):
                 unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 2, 4),
-                unittest.mock.call.register_item(10),
-                unittest.mock.call.register_item(11),
-                unittest.mock.call.register_item(12),
+                unittest.mock.call.register_item(10, 2),
+                unittest.mock.call.register_item(11, 3),
+                unittest.mock.call.register_item(12, 4),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -781,9 +836,9 @@ class TestModelList(unittest.TestCase):
                 unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 2),
-                unittest.mock.call.register_item(10),
-                unittest.mock.call.register_item(11),
-                unittest.mock.call.register_item(12),
+                unittest.mock.call.register_item(10, 0),
+                unittest.mock.call.register_item(11, 1),
+                unittest.mock.call.register_item(12, 2),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -795,9 +850,9 @@ class TestModelList(unittest.TestCase):
 
         self.mock.mock_calls.clear()
 
-        self.mlist[2:0:-1] = [10, 11, 12]
+        self.mlist[2:0:-1] = [10, 11]
 
-        self.assertSequenceEqual(list(self.mlist), [2, 10, 11, 12])
+        self.assertSequenceEqual(list(self.mlist), [2, 10, 11])
 
         self.assertSequenceEqual(
             self.mock.mock_calls,
@@ -806,10 +861,9 @@ class TestModelList(unittest.TestCase):
                 unittest.mock.call.unregister_item(3),
                 unittest.mock.call.unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
-                unittest.mock.call.begin_insert_rows(None, 1, 3),
-                unittest.mock.call.register_item(10),
-                unittest.mock.call.register_item(11),
-                unittest.mock.call.register_item(12),
+                unittest.mock.call.begin_insert_rows(None, 1, 2),
+                unittest.mock.call.register_item(10, 1),
+                unittest.mock.call.register_item(11, 2),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -1154,7 +1208,6 @@ class TestModelList(unittest.TestCase):
             ]
         )
 
-
     def test_clear(self):
         self.mlist[:] = [1, 2, 3]
         self.mock.mock_calls.clear()
@@ -1195,9 +1248,9 @@ class TestModelList(unittest.TestCase):
         self.assertSequenceEqual(
             on_register_item.mock_calls,
             [
-                unittest.mock.call(1),
-                unittest.mock.call(3),
-                unittest.mock.call(2),
+                unittest.mock.call(1, 0),
+                unittest.mock.call(3, 1),
+                unittest.mock.call(2, 2),
             ]
         )
 
@@ -1225,32 +1278,30 @@ class TestModelListView(unittest.TestCase):
         self.backend = ModelList()
         self.view = ModelListView(self.backend)
 
-        self.view.begin_insert_rows = self.mock.begin_insert_rows
-        self.view.end_insert_rows = self.mock.end_insert_rows
-        self.view.begin_remove_rows = self.mock.begin_remove_rows
-        self.view.end_remove_rows = self.mock.end_remove_rows
-        self.view.begin_move_rows = self.mock.begin_move_rows
-        self.view.end_move_rows = self.mock.end_move_rows
+        self.view.begin_insert_rows.connect(self.mock.begin_insert_rows)
+        self.view.end_insert_rows.connect(self.mock.end_insert_rows)
+        self.view.begin_remove_rows.connect(self.mock.begin_remove_rows)
+        self.view.end_remove_rows.connect(self.mock.end_remove_rows)
+        self.view.begin_move_rows.connect(self.mock.begin_move_rows)
+        self.view.end_move_rows.connect(self.mock.end_move_rows)
 
     def test_init(self):
         backend = ModelList()
-        view = ModelListView(self.backend)
+        view = ModelListView(backend)
 
-        self.assertIsNone(view.begin_insert_rows)
-        self.assertIsNone(view.begin_move_rows)
-        self.assertIsNone(view.begin_remove_rows)
+        self.assertIsInstance(view.begin_insert_rows,
+                              aioxmpp.callbacks.AdHocSignal)
+        self.assertIsInstance(view.begin_move_rows,
+                              aioxmpp.callbacks.AdHocSignal)
+        self.assertIsInstance(view.begin_remove_rows,
+                              aioxmpp.callbacks.AdHocSignal)
 
-        self.assertIsNone(view.end_insert_rows)
-        self.assertIsNone(view.end_move_rows)
-        self.assertIsNone(view.end_remove_rows)
-
-        view._begin_insert_rows(object(), object(), object())
-        view._begin_move_rows(object(), object(), object(), object(), object())
-        view._begin_remove_rows(object(), object(), object())
-
-        view._end_insert_rows()
-        view._end_move_rows()
-        view._end_remove_rows()
+        self.assertIsInstance(view.end_insert_rows,
+                              aioxmpp.callbacks.AdHocSignal)
+        self.assertIsInstance(view.end_move_rows,
+                              aioxmpp.callbacks.AdHocSignal)
+        self.assertIsInstance(view.end_remove_rows,
+                              aioxmpp.callbacks.AdHocSignal)
 
     def test_is_sequence(self):
         self.assertTrue(issubclass(
@@ -1265,45 +1316,32 @@ class TestModelListView(unittest.TestCase):
         ))
 
     def test_attaches_to_backend(self):
-        self.assertEqual(self.backend.begin_insert_rows,
-                         self.view._begin_insert_rows)
-        self.assertEqual(self.backend.begin_move_rows,
-                         self.view._begin_move_rows)
-        self.assertEqual(self.backend.begin_remove_rows,
-                         self.view._begin_remove_rows)
-        self.assertEqual(self.backend.end_insert_rows,
-                         self.view._end_insert_rows)
-        self.assertEqual(self.backend.end_move_rows,
-                         self.view._end_move_rows)
-        self.assertEqual(self.backend.end_remove_rows,
-                         self.view._end_remove_rows)
+        backend = unittest.mock.Mock()
+        view = ModelListView(backend)
 
-    def test__begin_insert_rows(self):
-        a, b, c = object(), object(), object()
-        self.view._begin_insert_rows(a, b, c)
-        self.mock.begin_insert_rows.assert_called_with(a, b, c)
+        backend.begin_insert_rows.connect.assert_called_with(
+            view.begin_insert_rows
+        )
 
-    def test__begin_move_rows(self):
-        a, b, c, d, e = object(), object(), object(), object(), object()
-        self.view._begin_move_rows(a, b, c, d, e)
-        self.mock.begin_move_rows.assert_called_with(a, b, c, d, e)
+        backend.begin_remove_rows.connect.assert_called_with(
+            view.begin_remove_rows
+        )
 
-    def test__begin_remove_rows(self):
-        a, b, c = object(), object(), object()
-        self.view._begin_remove_rows(a, b, c)
-        self.mock.begin_remove_rows.assert_called_with(a, b, c)
+        backend.begin_move_rows.connect.assert_called_with(
+            view.begin_move_rows
+        )
 
-    def test__end_insert_rows(self):
-        self.view._end_insert_rows()
-        self.mock.end_insert_rows.assert_called_with()
+        backend.end_insert_rows.connect.assert_called_with(
+            view.end_insert_rows
+        )
 
-    def test__end_move_rows(self):
-        self.view._end_move_rows()
-        self.mock.end_move_rows.assert_called_with()
+        backend.end_remove_rows.connect.assert_called_with(
+            view.end_remove_rows
+        )
 
-    def test__end_remove_rows(self):
-        self.view._end_remove_rows()
-        self.mock.end_remove_rows.assert_called_with()
+        backend.end_move_rows.connect.assert_called_with(
+            view.end_move_rows
+        )
 
     def test___getitem__forwards_to_backend(self):
         with unittest.mock.patch.object(
@@ -1370,3 +1408,912 @@ class TestModelListView(unittest.TestCase):
     def tearDown(self):
         del self.view
         del self.backend
+
+
+class TestModelTreeNode(unittest.TestCase):
+    def setUp(self):
+        self.tree = unittest.mock.Mock()
+        self.root = ModelTreeNode(self.tree)
+        self.nodes = [
+            ModelTreeNode(self.tree)
+            for i in range(5)
+        ]
+
+    def tearDown(self):
+        for i, node in enumerate(self.root):
+            self.assertIs(node.parent, self.root, i)
+            self.assertEqual(node.parent_index, i)
+
+        del self.root
+        del self.tree
+        del self.nodes
+
+    def test_is_mutable_sequence(self):
+        self.assertIsInstance(
+            self.root,
+            collections.abc.MutableSequence,
+        )
+
+    def test_insert_getitem_len(self):
+        self.root.insert(0, self.nodes[0])
+
+        self.assertEqual(len(self.root), 1)
+
+        self.assertIs(
+            self.root[0],
+            self.nodes[0]
+        )
+
+    def test_insert_notifies_tree(self):
+        self.root.insert(0, self.nodes[0])
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_insert_rows(self.root, 0, 0),
+                unittest.mock.call._node_end_insert_rows(self.root),
+            ]
+        )
+
+    def test_insert_emits_correct_index_for_negative_arguments(self):
+        self.root.extend(self.nodes[:2])
+        self.tree.mock_calls.clear()
+
+        self.root.insert(-1, self.nodes[2])
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_insert_rows(self.root, 1, 1),
+                unittest.mock.call._node_end_insert_rows(self.root),
+            ]
+        )
+
+    def test_insert_emits_correct_index_for_len_argument(self):
+        self.root.extend(self.nodes[:2])
+        self.tree.mock_calls.clear()
+
+        self.root.insert(len(self.root), self.nodes[2])
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_insert_rows(self.root, 2, 2),
+                unittest.mock.call._node_end_insert_rows(self.root),
+            ]
+        )
+
+    def test_extend_is_efficient(self):
+        self.root.extend(self.nodes)
+
+        self.assertSequenceEqual(
+            self.root,
+            self.nodes,
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_insert_rows(self.root, 0, 4),
+                unittest.mock.call._node_end_insert_rows(self.root),
+            ]
+        )
+
+    def test_delitem_single(self):
+        self.root.extend(self.nodes)
+        self.tree.mock_calls.clear()
+
+        del self.root[2]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[1],
+                self.nodes[3],
+                self.nodes[4],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 2, 2),
+                unittest.mock.call._node_end_remove_rows(self.root),
+            ]
+        )
+
+    def test_delitem_empty(self):
+        self.root.extend(self.nodes)
+        self.tree.mock_calls.clear()
+
+        del self.root[2:2]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[1],
+                self.nodes[2],
+                self.nodes[3],
+                self.nodes[4],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+            ]
+        )
+
+    def test_delitem_single_negative_index(self):
+        self.root.extend(self.nodes)
+        self.tree.mock_calls.clear()
+
+        del self.root[-2]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[1],
+                self.nodes[2],
+                self.nodes[4],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 3, 3),
+                unittest.mock.call._node_end_remove_rows(self.root),
+            ]
+        )
+
+    def test_delitem_contiguous_slice(self):
+        self.root.extend(self.nodes)
+        self.tree.mock_calls.clear()
+
+        del self.root[1:4]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[4],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 1, 3),
+                unittest.mock.call._node_end_remove_rows(self.root),
+            ]
+        )
+
+    def test_delitem_contiguous_reverse_slice(self):
+        self.root.extend(self.nodes)
+        self.tree.mock_calls.clear()
+
+        del self.root[3:0:-1]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[4],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 1, 3),
+                unittest.mock.call._node_end_remove_rows(self.root),
+            ]
+        )
+
+    def test_delitem_non_contiguous_slice(self):
+        self.root.extend(self.nodes)
+        self.tree.mock_calls.clear()
+
+        del self.root[1:4:2]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[2],
+                self.nodes[4],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 1, 1),
+                unittest.mock.call._node_end_remove_rows(self.root),
+                unittest.mock.call._node_begin_remove_rows(self.root, 2, 2),
+                unittest.mock.call._node_end_remove_rows(self.root),
+            ]
+        )
+
+    def test_delitem_non_contiguous_reverse_slice(self):
+        self.root.extend(self.nodes)
+        self.tree.mock_calls.clear()
+
+        del self.root[3:0:-2]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[2],
+                self.nodes[4],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 3, 3),
+                unittest.mock.call._node_end_remove_rows(self.root),
+                unittest.mock.call._node_begin_remove_rows(self.root, 1, 1),
+                unittest.mock.call._node_end_remove_rows(self.root),
+            ]
+        )
+
+    def test_setitem_single(self):
+        self.root.extend(self.nodes[:3])
+        self.tree.mock_calls.clear()
+
+        self.root[1] = self.nodes[3]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[3],
+                self.nodes[2],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 1, 1),
+                unittest.mock.call._node_end_remove_rows(self.root),
+                unittest.mock.call._node_begin_insert_rows(self.root, 1, 1),
+                unittest.mock.call._node_end_insert_rows(self.root),
+            ]
+        )
+
+    def test_setitem_single_negative_index(self):
+        self.root.extend(self.nodes[:3])
+        self.tree.mock_calls.clear()
+
+        self.root[-1] = self.nodes[3]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[1],
+                self.nodes[3],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 2, 2),
+                unittest.mock.call._node_end_remove_rows(self.root),
+                unittest.mock.call._node_begin_insert_rows(self.root, 2, 2),
+                unittest.mock.call._node_end_insert_rows(self.root),
+            ]
+        )
+
+    def test_setitem_contigiuous_equal_number(self):
+        self.root.extend(self.nodes[:3])
+        self.tree.mock_calls.clear()
+
+        self.root[0:2] = self.nodes[3:]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[3],
+                self.nodes[4],
+                self.nodes[2],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 0, 1),
+                unittest.mock.call._node_end_remove_rows(self.root),
+                unittest.mock.call._node_begin_insert_rows(self.root, 0, 1),
+                unittest.mock.call._node_end_insert_rows(self.root),
+            ]
+        )
+
+    def test_setitem_contiguous_nonequal_number(self):
+        self.root.extend(self.nodes[:3])
+        self.tree.mock_calls.clear()
+
+        self.root[0:1] = self.nodes[3:]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[3],
+                self.nodes[4],
+                self.nodes[1],
+                self.nodes[2],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 0, 0),
+                unittest.mock.call._node_end_remove_rows(self.root),
+                unittest.mock.call._node_begin_insert_rows(self.root, 0, 1),
+                unittest.mock.call._node_end_insert_rows(self.root),
+            ]
+        )
+
+    def test_setitem_contiguous_reverse_equal_number(self):
+        self.root.extend(self.nodes[:3])
+        self.tree.mock_calls.clear()
+
+        self.root[2:0:-1] = self.nodes[3:]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[4],
+                self.nodes[3],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 1, 2),
+                unittest.mock.call._node_end_remove_rows(self.root),
+                unittest.mock.call._node_begin_insert_rows(self.root, 1, 2),
+                unittest.mock.call._node_end_insert_rows(self.root),
+            ]
+        )
+
+    def test_setitem_contiguous_reverse_non_equal_number(self):
+        self.root.extend(self.nodes[:3])
+        self.tree.mock_calls.clear()
+
+        with self.assertRaisesRegex(
+                ValueError,
+                r"attempt to assign sequence of size \d+ to extended "
+                "slice of size \d+"):
+            self.root[3:0:-1] = self.nodes[4:]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[1],
+                self.nodes[2],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+            ]
+        )
+
+    def test_setitem_non_contiguous_equal_number(self):
+        self.root.extend(self.nodes[:3])
+        self.tree.mock_calls.clear()
+
+        with self.assertRaisesRegex(
+                ValueError,
+                "non-contiguous assignments not supported"):
+            self.root[0:3:2] = self.nodes[3:]
+
+        self.assertSequenceEqual(
+            self.root,
+            [
+                self.nodes[0],
+                self.nodes[1],
+                self.nodes[2],
+            ]
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+            ]
+        )
+
+    def test_setitem_as_replace(self):
+        self.root.extend(self.nodes)
+        self.tree.mock_calls.clear()
+
+        self.root[:] = self.nodes
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 0, 4),
+                unittest.mock.call._node_end_remove_rows(self.root),
+                unittest.mock.call._node_begin_insert_rows(self.root, 0, 4),
+                unittest.mock.call._node_end_insert_rows(self.root),
+            ]
+        )
+
+    def test_setitem_does_not_emit_remove_if_noop(self):
+        self.root[:] = self.nodes
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_insert_rows(self.root, 0, 4),
+                unittest.mock.call._node_end_insert_rows(self.root),
+            ]
+        )
+
+    def test_setitem_does_not_emit_insert_if_noop(self):
+        self.root.extend(self.nodes)
+        self.tree.mock_calls.clear()
+
+        self.root[:] = []
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 0, 4),
+                unittest.mock.call._node_end_remove_rows(self.root),
+            ]
+        )
+
+    def test_reverse_setitem_does_not_emit_insert_or_remove_if_noop(self):
+        self.root[::-1] = []
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+            ]
+        )
+
+    def test_clear_is_efficient(self):
+        self.root.extend(self.nodes)
+        self.tree.mock_calls.clear()
+
+        self.root.clear()
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_begin_remove_rows(self.root, 0, 4),
+                unittest.mock.call._node_end_remove_rows(self.root),
+            ]
+        )
+
+    def test_insertion_updates_parent_and_index(self):
+        self.root.insert(0, self.nodes[0])
+        self.root.append(self.nodes[1])
+        self.root.extend(self.nodes[2:])
+
+        self.assertSequenceEqual(
+            self.root,
+            self.nodes,
+        )
+
+        for i, node in enumerate(self.root):
+            self.assertIs(node.parent, self.root, i)
+            self.assertEqual(node.parent_index, i)
+
+    def test_setitem_single_updates_parent_and_index_on_item(self):
+        self.root[:] = self.nodes[:4]
+
+        self.root[0] = self.nodes[4]
+
+        for i, node in enumerate(self.root):
+            self.assertIs(node.parent, self.root, i)
+            self.assertEqual(node.parent_index, i)
+
+        self.assertIsNone(self.nodes[0].parent)
+        self.assertIsNone(self.nodes[0].parent_index)
+
+    def test_setitem_contiguous_updates_parent_and_index_on_new_items(self):
+        self.root[:] = self.nodes
+
+        self.assertSequenceEqual(
+            self.root,
+            self.nodes,
+        )
+
+        for i, node in enumerate(self.root):
+            self.assertIs(node.parent, self.root, i)
+            self.assertEqual(node.parent_index, i)
+
+    def test_setitem_contiguous_updates_parent_and_index_released_items(self):
+        self.root.extend(self.nodes)
+
+        self.root[:] = []
+
+        for i, node in enumerate(self.root):
+            self.assertIs(node.parent, self.root, i)
+            self.assertEqual(node.parent_index, i)
+
+        for node in self.nodes:
+            self.assertIsNone(node.parent)
+            self.assertIsNone(node.parent_index)
+
+    def test_setitem_contiguous_reverse_updates_parent_and_index_on_items(
+            self):
+        self.root[:] = self.nodes[:2]
+        self.root[::-1] = self.nodes[3:]
+
+        for i, node in enumerate(self.root):
+            self.assertIs(node.parent, self.root, i)
+            self.assertEqual(node.parent_index, i)
+
+        for node in self.nodes[:2]:
+            self.assertIsNone(node.parent)
+            self.assertIsNone(node.parent_index)
+
+    def test_insert_shifts_indices(self):
+        self.root[:] = self.nodes[:4]
+        self.root.insert(0, self.nodes[4])
+
+        for i, node in enumerate(self.root):
+            self.assertIs(node.parent, self.root, i)
+            self.assertEqual(node.parent_index, i)
+
+    def test_setitem_with_non_equal_length_shifts_indices(self):
+        self.root[:] = self.nodes[:2]
+        self.root[0:1] = self.nodes[2:]
+
+        for i, node in enumerate(self.root):
+            self.assertIs(node.parent, self.root, i)
+            self.assertEqual(node.parent_index, i)
+
+    def test_delitem_single_sets_parent_on_deleted(self):
+        self.root[:] = self.nodes
+        del self.root[0]
+
+        self.assertIsNone(self.nodes[0].parent)
+        self.assertIsNone(self.nodes[0].parent_index)
+
+    def test_delitem_single_shifts_indices(self):
+        self.root[:] = self.nodes
+        del self.root[0]
+
+        for i, node in enumerate(self.root):
+            self.assertIs(node.parent, self.root, i)
+            self.assertEqual(node.parent_index, i)
+
+    def test_delitem_contiguous_sets_parent_on_deleted(self):
+        self.root[:] = self.nodes
+        del self.root[:2]
+
+        for i, node in enumerate(self.nodes[:2]):
+            self.assertIsNone(node.parent, i)
+            self.assertIsNone(node.parent_index, i)
+
+    def test_delitem_contiguous_shifts_indices(self):
+        self.root[:] = self.nodes
+        del self.root[:2]
+
+        for i, node in enumerate(self.nodes[:2]):
+            self.assertIsNone(node.parent, i)
+            self.assertIsNone(node.parent_index, i)
+
+    def test_delitem_reverse_contiguous_shifts_indices(self):
+        self.root[:] = self.nodes
+        del self.root[2::-1]
+
+        for i, node in enumerate(self.nodes[:2]):
+            self.assertIsNone(node.parent, i)
+            self.assertIsNone(node.parent_index, i)
+
+    def test__insert_moved_nodes_inserts(self):
+        self.root[:] = [self.nodes[0], ] + self.nodes[3:]
+
+        self.root._insert_moved_nodes(self.nodes[1:3], 1)
+
+        self.assertSequenceEqual(
+            self.root,
+            self.nodes
+        )
+
+    def test__insert_moved_nodes_inserts_sets_parent_on_items(self):
+        self.root._insert_moved_nodes(self.nodes, 0)
+
+        self.assertSequenceEqual(
+            self.root,
+            self.nodes
+        )
+
+    def test__insert_moved_nodes_inserts_does_not_emit_events(self):
+        self.root._insert_moved_nodes(self.nodes, 0)
+
+        self.assertSequenceEqual(self.tree.mock_calls, [])
+
+    def test__insert_moved_nodes_shifts_indices(self):
+        self.root[:] = [self.nodes[0], ] + self.nodes[3:]
+
+        self.root._insert_moved_nodes(self.nodes[1:3], 1)
+
+        self.assertSequenceEqual(
+            self.root,
+            self.nodes
+        )
+
+    def test__extract_moving_nodes_removes_nodes(self):
+        self.root[:] = self.nodes
+
+        extracted = self.root._extract_moving_nodes(slice(1, 3))
+        self.assertSequenceEqual(
+            extracted,
+            self.nodes[1:3]
+        )
+
+        self.assertSequenceEqual(
+            self.root,
+            [self.nodes[0], ] + self.nodes[3:]
+        )
+
+    def test__extract_moving_nodes_sets_parent_on_removed(self):
+        self.root[:] = self.nodes
+
+        extracted = self.root._extract_moving_nodes(slice(1, 3))
+        for node in extracted:
+            self.assertIsNone(node.parent)
+            self.assertIsNone(node.parent_index)
+
+    def test__extract_moving_nodes_shifts_indices(self):
+        self.root[:] = self.nodes
+
+        self.root._extract_moving_nodes(slice(1, 3))
+
+        for i, node in enumerate(self.root):
+            self.assertIs(node.parent, self.root, i)
+            self.assertEqual(node.parent_index, i)
+
+    def test__extract_moving_nodes_does_not_emit_events(self):
+        self.root[:] = self.nodes
+        self.tree.mock_calls.clear()
+
+        self.root._extract_moving_nodes(slice(1, 3))
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            []
+        )
+
+    def test__extract_rejects_non_forward_unity_slice(self):
+        self.root[:] = self.nodes
+
+        with self.assertRaises(ValueError):
+            self.root._extract_moving_nodes(slice(1, 3, -1))
+
+        with self.assertRaises(ValueError):
+            self.root._extract_moving_nodes(slice(1, 3, 2))
+
+    def test_refresh_data(self):
+        self.root[:] = self.nodes
+        self.tree.mock_calls.clear()
+
+        self.root.refresh_data(
+            slice(1, 3)
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_data_changed(
+                    self.root,
+                    1, 2,
+                    0, 0,
+                    None
+                )
+            ]
+        )
+
+    def test_refresh_data_checks_column_range(self):
+        self.root[:] = self.nodes
+        self.tree.mock_calls.clear()
+
+        with self.assertRaisesRegex(
+                ValueError,
+                "end column must be greater than or equal to start column"):
+            self.root.refresh_data(
+                slice(1, 3),
+                3, 1
+            )
+
+    def test_refresh_data_rejects_non_unity_non_forward_slice(self):
+        self.root[:] = self.nodes
+        self.tree.mock_calls.clear()
+
+        with self.assertRaisesRegex(
+                ValueError,
+                "slice must have stride 1"):
+            self.root.refresh_data(
+                slice(1, 3, -1),
+            )
+
+        with self.assertRaisesRegex(
+                ValueError,
+                "slice must have stride 1"):
+            self.root.refresh_data(
+                slice(1, 3, 2),
+            )
+
+
+class TestModelTreeNodeHolder(unittest.TestCase):
+    class Holder(ModelTreeNodeHolder):
+        def __init__(self):
+            self.node = None
+
+        @property
+        def _node(self):
+            return self.node
+
+    def setUp(self):
+        self.tree = ModelTree()
+        self.mtnh = self.Holder()
+        self.mtnh.node = ModelTreeNode(self.tree)
+
+    def tearDown(self):
+        del self.mtnh
+        del self.tree
+
+    def test_can_be_inserted(self):
+        mtn = ModelTreeNode(self.tree)
+        mtn.append(self.mtnh)
+
+        self.assertIn(self.mtnh, mtn)
+
+        self.assertIs(self.mtnh.parent, mtn)
+        self.assertIs(self.mtnh.node.parent, mtn)
+
+    def test_can_be_removed(self):
+        mtn = ModelTreeNode(self.tree)
+        mtn.append(self.mtnh)
+        mtn.remove(self.mtnh)
+
+        self.assertNotIn(self.mtnh, mtn)
+
+        self.assertIsNone(self.mtnh.parent)
+        self.assertIsNone(self.mtnh.node.parent)
+
+    def test_can_work_with_existing(self):
+        self.mtnh2 = self.Holder()
+        self.mtnh2.node = ModelTreeNode(self.tree)
+
+        mtn = ModelTreeNode(self.tree)
+        mtn.append(self.mtnh)
+        mtn.append(self.mtnh2)
+        mtn.remove(self.mtnh)
+
+        self.assertNotIn(self.mtnh, mtn)
+
+        self.assertIsNone(self.mtnh.parent)
+        self.assertIsNone(self.mtnh.node.parent)
+
+
+class TestModelTree(unittest.TestCase):
+    def setUp(self):
+        self.tree = ModelTree()
+        self.root = self.tree.root
+
+        self.mock = unittest.mock.Mock()
+        for name in ["begin_insert_rows",
+                     "end_insert_rows",
+                     "begin_move_rows",
+                     "end_move_rows",
+                     "begin_remove_rows",
+                     "end_remove_rows",
+                     "data_changed"]:
+            m = getattr(self.mock, name)
+            m.return_value = None
+            getattr(self.tree, name).connect(m)
+
+    def tearDown(self):
+        del self.root
+        del self.tree
+        del self.mock
+
+    def test_root(self):
+        self.assertIsInstance(self.root, ModelTreeNode)
+
+    def test__node_begin_insert_rows(self):
+        self.tree._node_begin_insert_rows(
+            self.root,
+            unittest.mock.sentinel.index1,
+            unittest.mock.sentinel.index2,
+        )
+
+        self.assertSequenceEqual(
+            self.mock.mock_calls,
+            [
+                unittest.mock.call.begin_insert_rows(
+                    self.root,
+                    unittest.mock.sentinel.index1,
+                    unittest.mock.sentinel.index2,
+                )
+            ]
+        )
+
+    def test__node_end_insert_rows(self):
+        self.tree._node_end_insert_rows(
+            self.root,
+        )
+
+        self.assertSequenceEqual(
+            self.mock.mock_calls,
+            [
+                unittest.mock.call.end_insert_rows()
+            ]
+        )
+
+    def test__node_begin_remove_rows(self):
+        self.tree._node_begin_remove_rows(
+            self.root,
+            unittest.mock.sentinel.index1,
+            unittest.mock.sentinel.index2,
+        )
+
+        self.assertSequenceEqual(
+            self.mock.mock_calls,
+            [
+                unittest.mock.call.begin_remove_rows(
+                    self.root,
+                    unittest.mock.sentinel.index1,
+                    unittest.mock.sentinel.index2,
+                )
+            ]
+        )
+
+    def test__node_end_remove_rows(self):
+        self.tree._node_end_remove_rows(
+            self.root,
+        )
+
+        self.assertSequenceEqual(
+            self.mock.mock_calls,
+            [
+                unittest.mock.call.end_remove_rows()
+            ]
+        )
+
+    def test__node_data_changed(self):
+        self.tree._node_data_changed(
+            self.root,
+            unittest.mock.sentinel.index1,
+            unittest.mock.sentinel.index2,
+            unittest.mock.sentinel.column1,
+            unittest.mock.sentinel.column2,
+            unittest.mock.sentinel.roles
+        )
+
+        self.assertSequenceEqual(
+            self.mock.mock_calls,
+            [
+                unittest.mock.call.data_changed(
+                    self.root,
+                    (unittest.mock.sentinel.index1,
+                     unittest.mock.sentinel.column1),
+                    (unittest.mock.sentinel.index2,
+                     unittest.mock.sentinel.column2),
+                    unittest.mock.sentinel.roles
+                )
+            ]
+        )

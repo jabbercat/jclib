@@ -1,5 +1,7 @@
+import abc
 import collections.abc
 import contextlib
+import weakref
 
 import aioxmpp.callbacks
 
@@ -168,7 +170,7 @@ class ModelList(collections.abc.MutableSequence):
     implementation. In addition, signals having an identical function to those
     found in :class:`IList` are found:
 
-    .. method:: on_register_item(item)
+    .. method:: on_register_item(item, index)
 
        A :class:`aioxmpp.callbacks.Signal` which is called whenever an entry is
        newly added to the list. It is called after the item has been added to
@@ -211,18 +213,18 @@ class ModelList(collections.abc.MutableSequence):
     on_register_item = aioxmpp.callbacks.Signal()
     on_unregister_item = aioxmpp.callbacks.Signal()
 
-    begin_insert_rows = None
-    end_insert_rows = None
-    begin_remove_rows = None
-    end_remove_rows = None
-    begin_move_rows = None
-    end_move_rows = None
+    begin_insert_rows = aioxmpp.callbacks.Signal()
+    end_insert_rows = aioxmpp.callbacks.Signal()
+    begin_remove_rows = aioxmpp.callbacks.Signal()
+    end_remove_rows = aioxmpp.callbacks.Signal()
+    begin_move_rows = aioxmpp.callbacks.Signal()
+    end_move_rows = aioxmpp.callbacks.Signal()
 
     def __init__(self, initial=(), **kwargs):
         super().__init__(**kwargs)
         items = list(initial)
         self._storage = items
-        self._register_items(items)
+        self._register_items(items, 0)
 
     def _check_and_normalize_index(self, index):
         if abs(index) > len(self._storage) or index == len(self._storage):
@@ -231,38 +233,32 @@ class ModelList(collections.abc.MutableSequence):
             return index % len(self._storage)
         return index
 
-    def _register_items(self, items):
-        for item in items:
-            self.on_register_item(item)
+    def _register_items(self, items, base_index):
+        for i, item in enumerate(items):
+            self.on_register_item(item, base_index+i)
 
     def _unregister_items(self, items):
         for item in items:
             self.on_unregister_item(item)
 
     def _begin_insert_rows(self, index1, index2):
-        if self.begin_insert_rows is not None:
-            self.begin_insert_rows(None, index1, index2)
+        self.begin_insert_rows(None, index1, index2)
 
     def _end_insert_rows(self):
-        if self.end_insert_rows is not None:
-            self.end_insert_rows()
+        self.end_insert_rows()
 
     def _begin_remove_rows(self, index1, index2):
-        if self.begin_remove_rows is not None:
-            self.begin_remove_rows(None, index1, index2)
+        self.begin_remove_rows(None, index1, index2)
 
     def _end_remove_rows(self):
-        if self.end_remove_rows is not None:
-            self.end_remove_rows()
+        self.end_remove_rows()
 
     def _begin_move_rows(self, index1, index2, destindex):
-        if self.begin_move_rows is not None:
-            self.begin_move_rows(None, index1, index2,
-                                 None, destindex)
+        self.begin_move_rows(None, index1, index2,
+                             None, destindex)
 
     def _end_move_rows(self):
-        if self.end_move_rows is not None:
-            self.end_move_rows()
+        self.end_move_rows()
 
     def __len__(self):
         return len(self._storage)
@@ -304,22 +300,31 @@ class ModelList(collections.abc.MutableSequence):
             items = list(item)
             start, end, stride = index.indices(len(self._storage))
             if stride == 1:
-                self._begin_remove_rows(start, end-1)
-                self._unregister_items(self._storage[index])
-                del self._storage[index]
-                self._end_remove_rows()
+                if start != end:
+                    self._begin_remove_rows(start, end-1)
+                    self._unregister_items(self._storage[index])
+                    del self._storage[index]
+                    self._end_remove_rows()
                 self._begin_insert_rows(start, len(items)+start-1)
                 self._storage[start:start] = items
-                self._register_items(items)
+                self._register_items(items, start)
                 self._end_insert_rows()
             elif stride == -1:
+                if start - end != len(items):
+                    raise ValueError(
+                        "attempt to assign sequence of size {}"
+                        " to extended slice of size {}".format(
+                            len(items),
+                            start - end
+                        )
+                    )
                 self._begin_remove_rows(end+1, start)
                 self._unregister_items(reversed(self._storage[index]))
                 del self._storage[index]
                 self._end_remove_rows()
                 self._begin_insert_rows(end+1, len(items)+end)
                 self._storage[end+1:end+1] = items
-                self._register_items(items)
+                self._register_items(items, end+1)
                 self._end_insert_rows()
             else:
                 raise IndexError("non-unity strides not supported")
@@ -332,7 +337,7 @@ class ModelList(collections.abc.MutableSequence):
         self._end_remove_rows()
         self._begin_insert_rows(index, index)
         self._storage.insert(index, item)
-        self._register_items([item])
+        self._register_items([item], index)
         self._end_insert_rows()
 
     def insert(self, index, item):
@@ -346,7 +351,7 @@ class ModelList(collections.abc.MutableSequence):
 
         self._begin_insert_rows(index, index)
         self._storage.insert(index, item)
-        self._register_items([item])
+        self._register_items([item], index)
         self._end_insert_rows()
 
     def move(self, index1, index2):
@@ -400,50 +405,22 @@ class ModelList(collections.abc.MutableSequence):
 
 
 class ModelListView(collections.abc.Sequence):
-    begin_insert_rows = None
-    end_insert_rows = None
-    begin_remove_rows = None
-    end_remove_rows = None
-    begin_move_rows = None
-    end_move_rows = None
+    begin_insert_rows = aioxmpp.callbacks.Signal()
+    end_insert_rows = aioxmpp.callbacks.Signal()
+    begin_remove_rows = aioxmpp.callbacks.Signal()
+    end_remove_rows = aioxmpp.callbacks.Signal()
+    begin_move_rows = aioxmpp.callbacks.Signal()
+    end_move_rows = aioxmpp.callbacks.Signal()
 
     def __init__(self, backend):
         super().__init__()
         self._backend = backend
-        self._backend.begin_insert_rows = self._begin_insert_rows
-        self._backend.begin_move_rows = self._begin_move_rows
-        self._backend.begin_remove_rows = self._begin_remove_rows
-        self._backend.end_insert_rows = self._end_insert_rows
-        self._backend.end_move_rows = self._end_move_rows
-        self._backend.end_remove_rows = self._end_remove_rows
-
-    def _begin_insert_rows(self, parent, index1, index2):
-        if self.begin_insert_rows is not None:
-            self.begin_insert_rows(parent, index1, index2)
-
-    def _begin_move_rows(self,
-                         srcparent, srcindex1, srcindex2,
-                         destparent, destindex):
-        if self.begin_move_rows is not None:
-            self.begin_move_rows(srcparent, srcindex1, srcindex2,
-                                 destparent, destindex)
-
-    def _begin_remove_rows(self, parent, index1, index2):
-        if self.begin_remove_rows is not None:
-            self.begin_remove_rows(parent, index1, index2)
-
-    def _end_insert_rows(self):
-        if self.end_insert_rows is not None:
-            self.end_insert_rows()
-
-    def _end_move_rows(self):
-        if self.end_move_rows is not None:
-            self.end_move_rows()
-
-
-    def _end_remove_rows(self):
-        if self.end_remove_rows is not None:
-            self.end_remove_rows()
+        self._backend.begin_insert_rows.connect(self.begin_insert_rows)
+        self._backend.begin_move_rows.connect(self.begin_move_rows)
+        self._backend.begin_remove_rows.connect(self.begin_remove_rows)
+        self._backend.end_insert_rows.connect(self.end_insert_rows)
+        self._backend.end_move_rows.connect(self.end_move_rows)
+        self._backend.end_remove_rows.connect(self.end_remove_rows)
 
     def __getitem__(self, index):
         return self._backend[index]
@@ -465,3 +442,362 @@ class ModelListView(collections.abc.Sequence):
 
     def count(self, item):
         return self._backend.count(item)
+
+
+class ModelTreeNode(collections.abc.MutableSequence):
+    def __init__(self, tree):
+        super().__init__()
+        self._items = []
+        self._tree = tree
+        self._parent = None
+        self._parent_index = None
+
+    @property
+    def parent(self):
+        return self._parent
+
+    @property
+    def parent_index(self):
+        return self._parent_index
+
+    def _set_parent(self, new_parent, new_parent_index):
+        assert new_parent is None or new_parent._tree is self._tree
+        self._parent = new_parent
+        self._parent_index = new_parent_index
+
+    def _adopt_items(self, items, base_index, stride):
+        for i, item in enumerate(items):
+            assert item.parent is None
+            item._set_parent(self, base_index + i*stride)
+
+    def _release_items(self, items):
+        for item in items:
+            assert item.parent is self
+            item._set_parent(None, None)
+
+    def _shift_indices(self, slice_, offset):
+        assert isinstance(slice_, slice)
+        for item in self._items[slice_]:
+            item._parent_index += offset
+
+    def _insert_moved_nodes(self, nodes, indexdest):
+        if not hasattr(nodes, "__len__"):
+            nodes = list(nodes)
+
+        self._items[indexdest:indexdest] = nodes
+        self._adopt_items(
+            self._items[indexdest:indexdest+len(nodes)],
+            indexdest,
+            1,
+        )
+        self._shift_indices(
+            slice(indexdest+len(nodes), None),
+            len(nodes)
+        )
+
+    def _extract_moving_nodes(self, slice_):
+        start, stop, step = slice_.indices(len(self._items))
+        if step != 1:
+            raise ValueError("non-unity non-forward slices not supported")
+
+        result = self._items[slice_]
+        self._release_items(result)
+        self._shift_indices(slice(stop, None), start - stop)
+        del self._items[slice_]
+        return result
+
+    def _check_and_normalize_index(self, index):
+        if abs(index) > len(self._items) or index == len(self._items):
+            raise IndexError("list index out of bounds")
+        if index < 0:
+            return index % len(self._items)
+        return index
+
+    def __delitem__(self, slice_):
+        if isinstance(slice_, slice):
+            start, stop, step = slice_.indices(len(self._items))
+            if start == stop:
+                return
+
+            if step == -1:
+                start, stop = stop+1, start+1
+                step = 1
+
+            if step != 1 and step > 0:
+                ndeleted = 0
+                for index in range(*slice_.indices(len(self._items))):
+                    del self[index-ndeleted]
+                    ndeleted += 1
+                return
+            elif step < 0:
+                for index in range(*slice_.indices(len(self._items))):
+                    del self[index]
+                return
+
+            self._tree._node_begin_remove_rows(
+                self,
+                start,
+                stop-1)
+            self._release_items(self._items[slice_])
+            self._shift_indices(slice(stop, None), start - stop)
+            del self._items[slice_]
+            self._tree._node_end_remove_rows(self)
+            return
+
+        index = self._check_and_normalize_index(slice_)
+        self._tree._node_begin_remove_rows(self, index, index)
+        self._release_items([self._items[index]])
+        self._shift_indices(slice(index+1, None), -1)
+        del self._items[index]
+        self._tree._node_end_remove_rows(self)
+
+    def __getitem__(self, slice_):
+        return self._items[slice_]
+
+    def __setitem__(self, slice_, items):
+        if isinstance(slice_, slice):
+            items = list(items)
+            start, stop, step = slice_.indices(len(self._items))
+
+            if step == 1:
+                if start != stop:
+                    self._tree._node_begin_remove_rows(self, start, stop-1)
+                    self._release_items(self._items[slice_])
+                    self._shift_indices(slice(stop, None), -(stop - start))
+                    del self._items[slice_]
+                    self._tree._node_end_remove_rows(self)
+                if items:
+                    self._tree._node_begin_insert_rows(self,
+                                                       start,
+                                                       start+len(items)-1)
+                    self._items[start:start] = items
+                    self._adopt_items(
+                        self._items[start:start+len(items)],
+                        start,
+                        1
+                    )
+                    self._shift_indices(slice(start+len(items), None),
+                                        len(items))
+                    self._tree._node_end_insert_rows(self)
+            elif step == -1:
+                if start - stop != len(items):
+                    raise ValueError(
+                        "attempt to assign sequence of size {}"
+                        " to extended slice of size {}".format(
+                            len(items),
+                            start - stop
+                        )
+                    )
+
+                if start == stop:
+                    return
+
+                start, stop = stop+1, start+1
+                step = 1
+                self._tree._node_begin_remove_rows(self, start, stop-1)
+                self._release_items(self._items[slice_])
+                del self._items[slice_]
+                self._tree._node_end_remove_rows(self)
+                self._tree._node_begin_insert_rows(self,
+                                                   start,
+                                                   start+len(items)-1)
+                self._items[start:start] = reversed(items)
+                self._adopt_items(
+                    self._items[start:start+len(items)],
+                    start,
+                    1
+                )
+                self._tree._node_end_insert_rows(self)
+            else:
+                raise ValueError(
+                    "non-contiguous assignments not supported"
+                )
+
+            return
+
+        index = self._check_and_normalize_index(slice_)
+        self._tree._node_begin_remove_rows(self, index, index)
+        self._release_items([self._items[index]])
+        self._shift_indices(slice(index+1, None), -1)
+        del self._items[index]
+        self._tree._node_end_remove_rows(self)
+        self._tree._node_begin_insert_rows(self, index, index)
+        self._items.insert(index, items)
+        self._adopt_items([items], index, 1)
+        self._shift_indices(slice(index+1, None), 1)
+        self._tree._node_end_insert_rows(self)
+
+    def __len__(self):
+        return len(self._items)
+
+    def insert(self, index, item):
+        if index != len(self):
+            index = self._check_and_normalize_index(index)
+
+        self._tree._node_begin_insert_rows(self, index, index)
+        self._items.insert(index, item)
+        self._shift_indices(slice(index+1, None), 1)
+        self._adopt_items([item], index, 1)
+        self._tree._node_end_insert_rows(self)
+
+    def extend(self, items):
+        if not hasattr(items, "__len__"):
+            items = list(items)
+
+        start = len(self._items)
+
+        self._tree._node_begin_insert_rows(
+            self,
+            start,
+            start+len(items)-1
+        )
+        self._items.extend(items)
+        self._adopt_items(self._items[start:], start, 1)
+        self._tree._node_end_insert_rows(self)
+
+    def clear(self):
+        del self[:]
+
+    def __repr__(self):
+        return "<{}.{} in {} with {!r} at 0x{:x}>".format(
+            type(self).__module__,
+            type(self).__name__,
+            self._tree,
+            self._items,
+            id(self)
+        )
+
+    def refresh_data(self, slice_, column1=0, column2=0, roles=None):
+        if column2 < column1:
+            raise ValueError(
+                "end column must be greater than or equal to start column"
+            )
+
+        start, stop, step = slice_.indices(len(self._items))
+        if step != 1:
+            raise ValueError("slice must have stride 1")
+
+        self._tree._node_data_changed(
+            self, start, stop-1,
+            column1,
+            column2,
+            roles,
+        )
+
+
+class ModelTreeNodeHolder(metaclass=abc.ABCMeta):
+    """
+    :class:`ModelTreeNodeHolder` can be used as mix-in in situations where
+    tree-node like functionality is desired, but it is not desirable to inherit
+    from :class:`ModelTreeNode`.
+
+    To use :class:`ModelTreeNodeHolder`, a class must provide the :attr:`_node`
+    property implementation. It must provide access to the
+    :class:`ModelTreeNode` which represents the position of the object in the
+    tree. Even though the :attr:`_node` may be :data:`None` on construction, it
+    is required that the :attr:`_node` is properly initialised with a
+    :class:`ModelTreeNode` when an object of a class inheriting from
+    :class:`ModelTreeNodeHolder` is inserted into the tree.
+
+    .. automethod:: _set_parent
+
+    .. autoattribute:: _node
+
+    .. autoattribute:: parent
+
+    .. autoattribute:: _parent_index
+    """
+
+    @abc.abstractproperty
+    def _node(self):
+        """
+        This property must be provided by subclasses. It must return the
+        :class:`ModelTreeNode` instance of the object.
+
+        Write access is not required.
+        """
+
+    @property
+    def parent(self):
+        """
+        The parent of the :attr:`_node`. This is part of the interface required
+        to mimic a :class:`ModelTreeNode`.
+        """
+        return self._node.parent
+
+    @property
+    def _parent_index(self):
+        """
+        The index of the :attr:`_node` in its parent. This is part of the
+        interface required to mimic a :class:`ModelTreeNode` and should be
+        considered an implementation detail.
+        """
+        return self._node._parent_index
+
+    @_parent_index.setter
+    def _parent_index(self, value):
+        self._node._parent_index = value
+
+    def _set_parent(self, new_parent, new_index):
+        """
+        This method is required to mimic a :class:`ModelTreeNode` and must not
+        be called directly by user code or overriden in subclasses.
+
+        Its arguments and behaviour are an implementation detail.
+        """
+        self._node._set_parent(new_parent, new_index)
+
+
+class ModelTree:
+    begin_insert_rows = aioxmpp.callbacks.Signal()
+    end_insert_rows = aioxmpp.callbacks.Signal()
+    begin_remove_rows = aioxmpp.callbacks.Signal()
+    end_remove_rows = aioxmpp.callbacks.Signal()
+    begin_move_rows = aioxmpp.callbacks.Signal()
+    end_move_rows = aioxmpp.callbacks.Signal()
+    data_changed = aioxmpp.callbacks.Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.root = self._make_root(self)
+
+    @classmethod
+    def _make_root(cls, instance):
+        return ModelTreeNode(instance)
+
+    def _node_begin_insert_rows(self, node, index1, index2):
+        self.begin_insert_rows(
+            node,
+            index1,
+            index2
+        )
+
+    def _node_begin_move_rows(self, index1, index2, indexdest):
+        pass
+
+    def _node_begin_remove_rows(self, node, index1, index2):
+        self.begin_remove_rows(
+            node,
+            index1,
+            index2
+        )
+
+    def _node_end_insert_rows(self, node):
+        self.end_insert_rows()
+
+    def _node_end_move_rows(self, node):
+        pass
+
+    def _node_end_remove_rows(self, node):
+        self.end_remove_rows()
+
+    def _node_data_changed(self, node,
+                           index1, index2,
+                           column1, column2,
+                           roles):
+        self.data_changed(
+            node,
+            (index1, column1),
+            (index2, column2),
+            roles
+        )

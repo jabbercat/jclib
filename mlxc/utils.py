@@ -1,8 +1,12 @@
 import asyncio
 import functools
+import hashlib
 import logging
+import math
 import os.path
+import struct
 import types
+import unicodedata
 import xml.sax.handler
 
 import xdg.BaseDirectory
@@ -18,9 +22,12 @@ mlxc_namespaces = types.SimpleNamespace()
 mlxc_namespaces.roster = "https://xmlns.zombofant.net/mlxc/core/roster/1.0"
 mlxc_namespaces.account = "https://xmlns.zombofant.net/mlxc/core/account/1.0"
 mlxc_namespaces.presence = "https://xmlns.zombofant.net/mlxc/core/presence/1.0"
+mlxc_namespaces.identity = "https://xmlns.zombofant.net/mlxc/core/identity/1.0"
 
 mlxc_uid = "dns:mlxc.zombofant.net"
 
+KEYRING_SERVICE_NAME = "net.zombofant.mlxc"
+KEYRING_JID_FORMAT = "xmpp:{bare!s}"
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +173,7 @@ def _logged_task_done(task, name):
         logger.exception("task %s failed", name)
     else:
         logger.info("task %s returned a value: %r",
-                    name, task.result())
+                    name, value)
 
 
 def logged_async(coro, *, loop=None, name=None):
@@ -195,3 +202,152 @@ def logged_async(coro, *, loop=None, name=None):
         _logged_task_done,
         name=name or task))
     return task
+
+
+
+
+@functools.lru_cache()
+def normalise_text_for_hash(text):
+    return " ".join(unicodedata.normalize("NFKC", text).split()).casefold()
+
+
+def hsva_to_rgba(h, s, v, a):
+    if s == 0:
+        return v, v, v, a
+
+    h = h % (math.pi*2)
+
+    indexf = h / (math.pi*2 / 6)
+    index = math.floor(indexf)
+    fractional = indexf - index
+
+    p = v * (1.0 - s)
+    q = v * (1.0 - (s * fractional))
+    t = v * (1.0 - (s * (1.0 - fractional)))
+
+    return [
+        (v, t, p),
+        (q, v, p),
+        (p, v, t),
+        (p, q, v),
+        (t, p, v),
+        (v, p, q)
+    ][index] + (a, )
+
+
+def rgba_to_hsva(r, g, b, a):
+    deg_60 = math.pi / 3
+
+    Cmin = min(r, g, b)
+    Cmax = max(r, g, b)
+    delta = Cmax - Cmin
+
+    if r >= g and r >= b:
+        h = (g-b)/delta
+    elif g >= r and g >= b:
+        h = (b-r)/delta + 2
+    else:
+        h = (r-g)/delta + 4
+
+    h *= deg_60
+
+    if Cmax == 0:
+        s = 0
+    else:
+        s = delta / Cmax
+
+    return h, s, Cmax, a
+
+
+def luminance(r, g, b):
+    return r*0.2126 + g*0.7152 + b*0.0722
+
+
+def colour_distance_hsv(hsv_a, hsv_b):
+    h_a, s_a, v_a = hsv_a
+    h_b, s_b, v_b = hsv_b
+
+    r_a, g_a, b_a, _ = hsva_to_rgba(h_a, s_a, v_a, 0)
+    r_b, g_b, b_b, _ = hsva_to_rgba(h_b, s_b, v_b, 0)
+
+    if r_a > 0.5:
+        return math.sqrt(
+            3*(r_a-r_b)**2 +
+            4*(g_a-g_b)**2 +
+            2*(b_a-b_b)**2
+        )
+    else:
+        return math.sqrt(
+            2*(r_a-r_b)**2 +
+            4*(g_a-g_b)**2 +
+            3*(b_a-b_b)**2
+        )
+
+    # lum_a = luminance(r_a, g_a, b_a)
+    # lum_b = luminance(r_b, g_b, b_b)
+
+    # h_dist = min(abs(h_a-h_b), abs(h_b-h_a))
+
+    # return h_dist * abs(lum_a-lum_b) + abs(s_a-s_b) * abs(lum_a-lum_b)
+    # return abs(lum_a-lum_b)
+
+    return math.sqrt(
+        (r_a-r_b)**2 +
+        (g_a-g_b)**2 +
+        (b_a-b_b)**2
+    )
+
+
+@functools.lru_cache()
+def text_to_colour(text, in_contrast_with):
+    hash_ = hashlib.sha1()
+    hash_.update(text.encode("utf-8"))
+    # lets take four bytes of entropy
+    data = hash_.digest()
+
+    # first attempt, simply mix with the inverse of in_contrast_with
+    # initial_color = Qt.QColor(*struct.unpack("<BBB", data), 255)
+    # contrast_inverse = Qt.QColor(
+    #     255 - in_contrast_with[0],
+    #     255 - in_contrast_with[1],
+    #     255 - in_contrast_with[2],
+    #     255,
+    # )
+    # FACTOR = 0.4
+    # INV_FACTOR = 1-FACTOR
+
+    # return Qt.QColor(
+    #     INV_FACTOR*initial_color.red() + FACTOR*contrast_inverse.red(),
+    #     INV_FACTOR*initial_color.green() + FACTOR*contrast_inverse.green(),
+    #     INV_FACTOR*initial_color.blue() + FACTOR*contrast_inverse.blue(),
+    #     255,
+    # )
+
+    if in_contrast_with is not None:
+        *back, _ = rgba_to_hsva(*in_contrast_with, 1.0)
+    else:
+        back = None
+
+    while len(data) > 3:
+        h, s, v = struct.unpack("<BBB", data[:3])
+        data = data[1:]
+        h = h/255 * math.pi*2
+        s = (s//64 + 4) / 7
+        v_int = (v//128 + 6)
+        if back is None:
+            v = v_int/7
+            break
+
+        for v_base in [v_int, v_int ^ 1]:
+            v = v_base/7
+            dist = colour_distance_hsv((h, s, v), back)
+            if dist >= 0.4:
+                break
+        else:
+            continue
+        break
+    else:
+        print("out of options for", text)
+
+    r, g, b, _ = hsva_to_rgba(h, s, v, 1)
+    return r, g, b

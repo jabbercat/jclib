@@ -11,6 +11,8 @@ import xdg.BaseDirectory
 
 import mlxc.config
 
+from . import identity, client, conversation
+
 
 logger = logging.getLogger(__spec__.name)
 
@@ -116,9 +118,14 @@ def get_singleton_impl(loop):
 
 
 class Main:
+    Identities = identity.Identities
+    Client = client.Client
+
     def __init__(self, loop):
         super().__init__()
         self.loop = loop
+        self.identities = self.Identities()
+        self.client = self.Client(self.identities)
 
         self._terminated_at = None
 
