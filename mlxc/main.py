@@ -11,7 +11,7 @@ import xdg.BaseDirectory
 
 import mlxc.config
 
-from . import identity, client, conversation
+from . import identity, client, conversation, utils
 
 
 logger = logging.getLogger(__spec__.name)
@@ -152,7 +152,7 @@ class Main:
         self.main_future.set_result(0)
 
     def handle_sigint_sigterm(self):
-        if     (self._terminated_at is not None and
+        if (self._terminated_at is not None and
                 (time.monotonic() - self._terminated_at >= 3)):
             self.loop.stop()
             return
@@ -201,9 +201,12 @@ class Main:
                 returncode = 1
                 return returncode
 
+            self.identities.load()
+
             try:
                 returncode = yield from self.run_core()
             finally:
+                mlxc.config.config_manager.writeback()
                 if singleton is not None:
                     yield from singleton.stop()
         except Exception as exc:

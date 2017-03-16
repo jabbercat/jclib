@@ -1,5 +1,9 @@
-import itertools
+import abc
+import contextlib
+import logging
+import os
 import pathlib
+import tempfile
 import urllib.parse
 
 import aioxmpp.callbacks
@@ -8,6 +12,9 @@ import mlxc.utils as utils
 
 
 UNIX_APPNAME = "mlxc.zombofant.net"
+
+
+logger = logging.getLogger(__name__)
 
 
 def escape_dirname(path):
@@ -24,6 +31,61 @@ def mkdir_exist_ok(path):
     except FileExistsError:
         if not path.is_dir():
             raise
+
+
+@contextlib.contextmanager
+def safe_writer(destpath, mode="wb"):
+    destpath = pathlib.Path(destpath)
+    with tempfile.NamedTemporaryFile(
+            mode=mode,
+            dir=str(destpath.parent),
+            delete=False) as tmpfile:
+        try:
+            yield tmpfile
+        except:
+            os.unlink(tmpfile.name)
+            raise
+        else:
+            os.replace(tmpfile.name, str(destpath))
+
+
+class SimpleConfigurable(metaclass=abc.ABCMeta):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        config_manager.on_writeback.connect(self.save)
+
+    @abc.abstractmethod
+    def _do_load(self, f):
+        pass
+
+    @abc.abstractmethod
+    def _do_save(self, f):
+        pass
+
+    def load(self):
+        try:
+            with config_manager.open_single(
+                    self.UID,
+                    self.FILENAME) as f:
+                self._do_load(f)
+        except OSError:
+            logger.info(
+                "failed to load data for %s.%s",
+                type(self).__module__,
+                type(self).__name__,
+            )
+
+    def save(self):
+        logger.info(
+            "saving data for %s.%s",
+            type(self).__module__,
+            type(self).__name__,
+        )
+        user_path, _ = config_manager.get_config_paths(
+            self.UID, self.FILENAME
+        )
+        with safe_writer(user_path) as f:
+            self._do_save(f)
 
 
 class ConfigManager:
@@ -111,3 +173,6 @@ def make_config_manager():
     except ImportError:
         raise RuntimeError("no path provider for platform") from None
     return ConfigManager(provider)
+
+
+config_manager = make_config_manager()

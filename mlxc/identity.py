@@ -1,11 +1,14 @@
 import typing
 
 import aioxmpp.callbacks
-
-import mlxc.instrumentable_list
-import mlxc.xso
+import aioxmpp.xml
 
 from aioxmpp import JID
+
+import mlxc.config
+import mlxc.instrumentable_list
+import mlxc.utils
+import mlxc.xso
 
 
 class Account(mlxc.instrumentable_list.ModelTreeNodeHolder):
@@ -14,7 +17,6 @@ class Account(mlxc.instrumentable_list.ModelTreeNodeHolder):
         self.__node = node
         self.__node.object_ = self
         self._jid = jid
-        self.resource = None
         self.enabled = True
         self.allow_unencrypted = False
         self.stashed_xml = []
@@ -31,7 +33,6 @@ class Account(mlxc.instrumentable_list.ModelTreeNodeHolder):
     def to_xso(self):
         result = mlxc.xso.AccountSettings(self._jid)
         result.disabled = not self.enabled
-        result.resource = self.resource
         result.allow_unencrypted = self.allow_unencrypted
         result.colour = " ".join(map(str, self.colour))
         result._[:] = self.stashed_xml
@@ -41,7 +42,6 @@ class Account(mlxc.instrumentable_list.ModelTreeNodeHolder):
     def from_xso(cls, object_, node):
         colour = tuple(map(int, object_.colour.split()))
         result = cls(node, object_.jid, colour)
-        result.resource = object_.resource
         result.enabled = not object_.disabled
         result.allow_unencrypted = bool(object_.allow_unencrypted)
         result.stashed_xml = list(object_._)
@@ -63,7 +63,14 @@ class Identity(mlxc.instrumentable_list.ModelTreeNodeHolder):
         return self.accounts
 
     def to_xso(self):
-        pass
+        result = mlxc.xso.IdentitySettings()
+        result.name = self.name
+        result.accounts[:] = [
+            account.to_xso() for account in self.accounts
+        ]
+        result.disabled = not self.enabled
+        result._[:] = self.stashed_xml
+        return result
 
     @classmethod
     def from_xso(cls, object_, node):
@@ -84,7 +91,11 @@ class Identity(mlxc.instrumentable_list.ModelTreeNodeHolder):
         return result
 
 
-class Identities(mlxc.instrumentable_list.ModelTreeNodeHolder):
+class Identities(mlxc.config.SimpleConfigurable,
+                 mlxc.instrumentable_list.ModelTreeNodeHolder):
+    UID = mlxc.utils.mlxc_uid
+    FILENAME = "identities.xml"
+
     on_account_enabled = aioxmpp.callbacks.Signal()
     on_account_disabled = aioxmpp.callbacks.Signal()
 
@@ -184,3 +195,29 @@ class Identities(mlxc.instrumentable_list.ModelTreeNodeHolder):
 
     def set_identity_presence(self, identity: Identity, presence):
         pass
+
+    def _do_save(self, f):
+        xso = mlxc.xso.IdentitiesSettings()
+        xso.identities[:] = [
+            identity.to_xso() for identity in self.identities
+        ]
+        aioxmpp.xml.write_single_xso(xso, f)
+
+    def _do_load(self, f):
+        assert not self.identities
+        xso = aioxmpp.xml.read_single_xso(
+            f,
+            mlxc.xso.IdentitiesSettings
+        )
+
+        for identity_xso in xso.identities:
+            node = mlxc.instrumentable_list.ModelTreeNode(self._tree)
+            identity = Identity.from_xso(identity_xso, node)
+            self.identities.append(identity)
+            self.on_identity_added(identity)
+            if identity.enabled:
+                self.on_identity_enabled(identity)
+            for account in identity.accounts:
+                self.on_account_added(account)
+                if account.enabled and identity.enabled:
+                    self.on_account_enabled(account)

@@ -18,13 +18,6 @@ class AccountSettings(xso.XSO):
         default=False,
     )
 
-    resource = xso.Attr(
-        "resource",
-        type_=xso.String(
-            prepfunc=aioxmpp.stringprep.resourceprep
-        )
-    )
-
     allow_unencrypted = xso.Attr(
         "allow-unencrypted",
         type_=xso.Bool(),
@@ -102,3 +95,9 @@ class IdentitySettings(xso.XSO):
     )
 
     _ = xso.Collector()
+
+
+class IdentitiesSettings(xso.XSO):
+    TAG = (mlxc_namespaces.identity, "identities")
+
+    identities = xso.ChildList([IdentitySettings])
