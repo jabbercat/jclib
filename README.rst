@@ -1,10 +1,10 @@
-My Little XMPP Client (MLXC)
-############################
+My Little XMPP Client (working title)
+#####################################
 
-This is an XMPP client, based on my own XMPP library, `aioxmpp`_. The design
-aims for a replacable front-end, to allow for Qt (in ``mlxcqt``) and `urwid`_
-front-ends. The back-end (``mlxc``) is developed in test-driven development
-style.
+The XMPP client of the future!
 
-.. _aioxmpp: https://github.com/horazont/aioxmpp/
-.. _urwid: https://github.com/wardi/urwid/
+If you are intrigued by modern, non-XMPP and/or non-free chat applications, this
+is for you. We aim to provide Conversations-like chat experience based on XMPP
+for everyone.
+
+.. image:: docs/screenshot1.png
