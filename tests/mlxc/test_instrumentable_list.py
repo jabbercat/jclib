@@ -2138,6 +2138,48 @@ class TestModelTreeNode(unittest.TestCase):
                 3, 1
             )
 
+    def test_refresh_data_allows_None_columns(self):
+        self.root[:] = self.nodes
+        self.tree.mock_calls.clear()
+
+        self.root.refresh_data(
+            slice(1, 3),
+            None, None,
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_data_changed(
+                    self.root,
+                    1, 2,
+                    None, None,
+                    None
+                )
+            ]
+        )
+
+    def test_refresh_data_sets_colmun2_to_None_if_column1_is_None(self):
+        self.root[:] = self.nodes
+        self.tree.mock_calls.clear()
+
+        self.root.refresh_data(
+            slice(1, 3),
+            None,
+        )
+
+        self.assertSequenceEqual(
+            self.tree.mock_calls,
+            [
+                unittest.mock.call._node_data_changed(
+                    self.root,
+                    1, 2,
+                    None, None,
+                    None
+                )
+            ]
+        )
+
     def test_refresh_data_rejects_non_unity_non_forward_slice(self):
         self.root[:] = self.nodes
         self.tree.mock_calls.clear()
@@ -2155,6 +2197,39 @@ class TestModelTreeNode(unittest.TestCase):
             self.root.refresh_data(
                 slice(1, 3, 2),
             )
+
+    def test_refresh_self_uses_refresh_from_parent(self):
+        self.root[:] = self.nodes
+        self.tree.mock_calls.clear()
+
+        with unittest.mock.patch.object(
+                self.root, "refresh_data") as refresh_data:
+            self.root[1].refresh_self(
+                unittest.mock.sentinel.column1,
+                unittest.mock.sentinel.column2,
+                unittest.mock.sentinel.roles,
+            )
+
+        refresh_data.assert_called_once_with(
+            slice(self.root[1].parent_index, self.root[1].parent_index+1),
+            unittest.mock.sentinel.column1,
+            unittest.mock.sentinel.column2,
+            unittest.mock.sentinel.roles,
+        )
+
+    def test_refresh_self_defaults(self):
+        self.root[:] = self.nodes
+        self.tree.mock_calls.clear()
+
+        with unittest.mock.patch.object(
+                self.root, "refresh_data") as refresh_data:
+            self.root[1].refresh_self()
+
+        refresh_data.assert_called_once_with(
+            slice(self.root[1].parent_index, self.root[1].parent_index+1),
+            0, 0,
+            None,
+        )
 
 
 class TestModelTreeNodeHolder(unittest.TestCase):

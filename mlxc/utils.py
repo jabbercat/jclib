@@ -1,4 +1,5 @@
 import asyncio
+import binascii
 import functools
 import hashlib
 import logging
@@ -298,12 +299,48 @@ def colour_distance_hsv(hsv_a, hsv_b):
     )
 
 
+K_R = 0.299
+K_G = 0.587
+# K_R = 0.0593
+# K_G = 0.2627
+K_B = 1-K_R-K_G
+
+
+def ycbcr_to_rgb(y, cb, cr):
+    r = 2*(1 - K_R)*cr + y
+    b = 2*(1 - K_B)*cb + y
+    g = (y - K_R*r - K_B*b)/K_G
+    return r, g, b
+
+
+def clip_rgb(r, g, b):
+    return (
+        min(max(r, 0), 1),
+        min(max(g, 0), 1),
+        min(max(b, 0), 1),
+    )
+
+
+def angle_to_cbcr_edge(angle):
+    cr = math.sin(angle)
+    cb = math.cos(angle)
+    if abs(cr) > abs(cb):
+        factor = 0.5 / abs(cr)
+    else:
+        factor = 0.5 / abs(cb)
+    return cb*factor, cr*factor
+
+
 @functools.lru_cache()
-def text_to_colour(text, in_contrast_with):
-    hash_ = hashlib.sha1()
-    hash_.update(text.encode("utf-8"))
-    # lets take four bytes of entropy
-    data = hash_.digest()
+def text_to_colour(text):
+    # hash_ = hashlib.sha1()
+    # hash_.update(text.encode("utf-8"))
+    # # lets take four bytes of entropy
+    # data = hash_.digest()
+    # hue, = struct.unpack("<H", data[:2])
+
+    data = binascii.crc32(text.encode("utf-8"))
+    hue = data & 0xffff
 
     # first attempt, simply mix with the inverse of in_contrast_with
     # initial_color = Qt.QColor(*struct.unpack("<BBB", data), 255)
@@ -323,31 +360,35 @@ def text_to_colour(text, in_contrast_with):
     #     255,
     # )
 
-    if in_contrast_with is not None:
-        *back, _ = rgba_to_hsva(*in_contrast_with, 1.0)
-    else:
-        back = None
+    # if in_contrast_with is not None:
+    #     *back, _ = rgba_to_hsva(*in_contrast_with, 1.0)
+    # else:
+    #     back = None
 
-    while len(data) > 3:
-        h, s, v = struct.unpack("<BBB", data[:3])
-        data = data[1:]
-        h = h/255 * math.pi*2
-        s = (s//64 + 4) / 7
-        v_int = (v//128 + 6)
-        if back is None:
-            v = v_int/7
-            break
+    # while len(data) > 3:
+    #     h, s, v = struct.unpack("<BBB", data[:3])
+    #     data = data[1:]
+    #     h = h/255 * math.pi*2
+    #     s = (s//64 + 4) / 7
+    #     v_int = (v//128 + 6)
+    #     if back is None:
+    #         v = v_int/7
+    #         break
 
-        for v_base in [v_int, v_int ^ 1]:
-            v = v_base/7
-            dist = colour_distance_hsv((h, s, v), back)
-            if dist >= 0.4:
-                break
-        else:
-            continue
-        break
-    else:
-        print("out of options for", text)
+    #     for v_base in [v_int, v_int ^ 1]:
+    #         v = v_base/7
+    #         dist = colour_distance_hsv((h, s, v), back)
+    #         if dist >= 0.4:
+    #             break
+    #     else:
+    #         continue
+    #     break
+    # else:
+    #     print("out of options for", text)
 
-    r, g, b, _ = hsva_to_rgba(h, s, v, 1)
+    # r, g, b, _ = hsva_to_rgba(h, s, v, 1)
+    # return r, g, b
+
+    cb, cr = angle_to_cbcr_edge(hue / 65535 * math.pi * 2)
+    r, g, b = clip_rgb(*ycbcr_to_rgb(0.5**0.45, cb, cr))
     return r, g, b

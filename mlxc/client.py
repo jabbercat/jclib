@@ -43,6 +43,9 @@ class Client:
         self.keyring_is_safe = self.keyring.priority >= 1
         self.clients = {}
 
+    def client_by_account(self, account):
+        return self.clients[account]
+
     @asyncio.coroutine
     def get_stored_password(self, jid):
         if self.keyring.priority < 1:

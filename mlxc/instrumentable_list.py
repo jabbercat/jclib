@@ -668,7 +668,10 @@ class ModelTreeNode(collections.abc.MutableSequence):
         )
 
     def refresh_data(self, slice_, column1=0, column2=0, roles=None):
-        if column2 < column1:
+        if column1 is None and column2 == 0:
+            column2 = None
+
+        if column1 is not None and column2 is not None and column2 < column1:
             raise ValueError(
                 "end column must be greater than or equal to start column"
             )
@@ -681,6 +684,13 @@ class ModelTreeNode(collections.abc.MutableSequence):
             self, start, stop-1,
             column1,
             column2,
+            roles,
+        )
+
+    def refresh_self(self, column1=0, column2=0, roles=None):
+        self.parent.refresh_data(
+            slice(self.parent_index, self.parent_index+1),
+            column1, column2,
             roles,
         )
 

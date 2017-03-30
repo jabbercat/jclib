@@ -30,7 +30,6 @@ class TestAccount(unittest.TestCase):
     def test_init(self):
         self.assertIs(self.a._node, self.node)
         self.assertEqual(self.a.jid, TEST_JID)
-        self.assertIsNone(self.a.resource)
         self.assertTrue(self.a.enabled)
         self.assertFalse(self.a.allow_unencrypted)
         self.assertSequenceEqual(self.a.stashed_xml, [])
@@ -43,7 +42,6 @@ class TestAccount(unittest.TestCase):
     def test_from_xso(self):
         x = mlxc.xso.AccountSettings(TEST_JID)
         x.disabled = True
-        x.resource = "foobar"
         x.allow_unencrypted = True
         x.colour = "127 127 127"
         x._ = [unittest.mock.sentinel.foo, unittest.mock.sentinel.bar]
@@ -52,14 +50,12 @@ class TestAccount(unittest.TestCase):
         self.assertIs(a._node, self.node)
         self.assertEqual(a.jid, x.jid)
         self.assertEqual(a.enabled, not x.disabled)
-        self.assertEqual(a.resource, x.resource)
         self.assertEqual(a.allow_unencrypted, x.allow_unencrypted)
         self.assertEqual(a.colour, (127, 127, 127))
         self.assertIsNot(a.stashed_xml, x._)
         self.assertSequenceEqual(a.stashed_xml, x._)
 
     def test_to_xso(self):
-        self.a.resource = "baz"
         self.a.disabled = True
         self.a.allow_unencrypted = True
         self.a.stashed_xml = [unittest.mock.sentinel.foo,
@@ -70,7 +66,6 @@ class TestAccount(unittest.TestCase):
         self.assertIsInstance(x, mlxc.xso.AccountSettings)
         self.assertEqual(x.jid, self.a.jid)
         self.assertEqual(x.disabled, not self.a.enabled)
-        self.assertEqual(x.resource, self.a.resource)
         self.assertEqual(x.allow_unencrypted,
                          self.a.allow_unencrypted)
         self.assertEqual(x.colour, "123 456 789")
@@ -195,6 +190,11 @@ class TestIdentities(unittest.TestCase):
             cb.return_value = None
             getattr(self.c, "on_{}".format(name)).connect(cb)
 
+        def link_model_ev(name):
+            cb = getattr(self.cbs, name)
+            cb.return_value = None
+            getattr(self.c._tree, name).connect(cb)
+
         link_cb("account_enabled")
         link_cb("account_disabled")
 
@@ -209,6 +209,8 @@ class TestIdentities(unittest.TestCase):
         link_cb("identity_removed")
         link_cb("identity_enabled")
         link_cb("identity_disabled")
+
+        link_model_ev("data_changed")
 
     def tearDown(self):
         del self.c
@@ -558,6 +560,18 @@ class TestIdentities(unittest.TestCase):
             [
                 unittest.mock.call.account_disabled(acc12),
                 unittest.mock.call.identity_disabled(identity1),
+                unittest.mock.call.data_changed(
+                    self.c.identities,
+                    (identity1._parent_index, None),
+                    (identity1._parent_index, None),
+                    None,
+                ),
+                unittest.mock.call.data_changed(
+                    identity1._node,
+                    (0, None),
+                    (len(identity1.accounts)-1, None),
+                    None,
+                ),
             ]
         )
 
@@ -582,6 +596,18 @@ class TestIdentities(unittest.TestCase):
             [
                 unittest.mock.call.identity_enabled(identity1),
                 unittest.mock.call.account_enabled(acc12),
+                unittest.mock.call.data_changed(
+                    self.c.identities,
+                    (identity1._parent_index, None),
+                    (identity1._parent_index, None),
+                    None,
+                ),
+                unittest.mock.call.data_changed(
+                    identity1._node,
+                    (0, None),
+                    (len(identity1.accounts)-1, None),
+                    None,
+                ),
             ]
         )
 
@@ -601,4 +627,80 @@ class TestIdentities(unittest.TestCase):
 
         self.c.set_account_enabled(acc11, True)
 
-        self.assertFalse(self.cbs.mock_calls)
+        self.assertSequenceEqual(
+            self.cbs.mock_calls,
+            [
+                unittest.mock.call.data_changed(
+                    identity1._node,
+                    (acc11._parent_index, None),
+                    (acc11._parent_index, None),
+                    None,
+                ),
+            ]
+        )
+
+    def test_save_and_load_works(self):
+        tmp = identity.Identities()
+
+        identity1 = tmp.new_identity("foobar")
+        acc11 = tmp.new_account(identity1,
+                                TEST_JID.replace(localpart="acc1"),
+                                (100, 200, 300))
+        tmp.new_account(identity1,
+                        TEST_JID.replace(localpart="acc2"),
+                        (100, 200, 300))
+
+        tmp.set_account_enabled(acc11, False)
+
+        data = tmp._do_save_xso()
+        self.c._do_load_xso(data)
+
+        self.assertEqual(len(self.c.identities), 1)
+        identity1_new = self.c.identities[0]
+
+        self.assertTrue(identity1_new.enabled)
+        self.assertEqual(len(identity1_new.accounts), 2)
+
+        acc11_new = identity1_new.accounts[0]
+        acc12_new = identity1_new.accounts[1]
+
+        self.assertEqual(
+            acc11_new.jid,
+            TEST_JID.replace(localpart="acc1"),
+        )
+        self.assertFalse(acc11_new.enabled)
+
+        self.assertEqual(
+            acc12_new.jid,
+            TEST_JID.replace(localpart="acc2"),
+        )
+        self.assertTrue(acc12_new.enabled)
+
+        self.assertSequenceEqual(
+            self.cbs.mock_calls,
+            [
+                unittest.mock.call.identity_added(identity1_new),
+                unittest.mock.call.identity_enabled(identity1_new),
+                unittest.mock.call.account_added(acc11_new),
+                unittest.mock.call.account_added(acc12_new),
+                unittest.mock.call.account_enabled(acc12_new),
+            ]
+        )
+
+        self.assertIs(
+            self.c.lookup_account_identity(acc11_new),
+            identity1_new,
+        )
+        self.assertIs(
+            self.c.lookup_account_identity(acc12_new),
+            identity1_new,
+        )
+
+        self.assertEqual(
+            self.c.lookup_jid(acc11_new.jid),
+            (identity1_new, acc11_new),
+        )
+        self.assertEqual(
+            self.c.lookup_jid(acc12_new.jid),
+            (identity1_new, acc12_new),
+        )

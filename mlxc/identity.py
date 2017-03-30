@@ -178,6 +178,7 @@ class Identities(mlxc.config.SimpleConfigurable,
             self.on_account_enabled(account)
         elif not enabled and identity.enabled:
             self.on_account_disabled(account)
+        account._node.refresh_self(None)
 
     def set_identity_enabled(self, identity: Identity, enabled: bool):
         if bool(identity.enabled) == bool(enabled):
@@ -192,24 +193,24 @@ class Identities(mlxc.config.SimpleConfigurable,
                 self.on_account_enabled(account)
         if not enabled:
             self.on_identity_disabled(identity)
+        identity._node.refresh_self(None)
+        identity._node.refresh_data(slice(0, len(identity.accounts)), None)
 
     def set_identity_presence(self, identity: Identity, presence):
         pass
 
-    def _do_save(self, f):
+    def _do_save_xso(self):
         xso = mlxc.xso.IdentitiesSettings()
         xso.identities[:] = [
             identity.to_xso() for identity in self.identities
         ]
+        return xso
+
+    def _do_save(self, f):
+        xso = self._do_save_xso()
         aioxmpp.xml.write_single_xso(xso, f)
 
-    def _do_load(self, f):
-        assert not self.identities
-        xso = aioxmpp.xml.read_single_xso(
-            f,
-            mlxc.xso.IdentitiesSettings
-        )
-
+    def _do_load_xso(self, xso):
         for identity_xso in xso.identities:
             node = mlxc.instrumentable_list.ModelTreeNode(self._tree)
             identity = Identity.from_xso(identity_xso, node)
@@ -218,6 +219,16 @@ class Identities(mlxc.config.SimpleConfigurable,
             if identity.enabled:
                 self.on_identity_enabled(identity)
             for account in identity.accounts:
+                self._jidmap[account.jid] = (identity, account)
                 self.on_account_added(account)
                 if account.enabled and identity.enabled:
                     self.on_account_enabled(account)
+
+
+    def _do_load(self, f):
+        assert not self.identities
+        xso = aioxmpp.xml.read_single_xso(
+            f,
+            mlxc.xso.IdentitiesSettings
+        )
+        self._do_load_xso(xso)
