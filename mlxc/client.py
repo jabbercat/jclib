@@ -110,6 +110,7 @@ class Client:
         result.summon(aioxmpp.AdHocClient)
         result.summon(aioxmpp.PresenceClient)
         result.summon(aioxmpp.RosterClient)
+        result.summon(aioxmpp.im.p2p.Service)
         self.on_client_prepare(account, result)
         return result
 
