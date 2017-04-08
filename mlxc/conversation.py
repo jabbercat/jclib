@@ -70,6 +70,9 @@ class ConversationManager:
         self.__identitymap = {}
         self.__clientmap = {}
 
+    def get_identity_wrapper(self, identity):
+        return self.__identitymap[identity]
+
     def handle_identity_added(self, identity):
         """
         Must be called when a new identity is added.
