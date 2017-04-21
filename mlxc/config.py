@@ -152,6 +152,9 @@ class XDGProvider:
         self._impl = xdg.BaseDirectory
         self.appname = appname
 
+    def cache_dir(self):
+        return pathlib.Path(self._impl.xdg_cache_home) / self.appname
+
     def user_config_dir(self):
         return pathlib.Path(self._impl.xdg_config_home) / self.appname
 

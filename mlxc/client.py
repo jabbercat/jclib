@@ -6,7 +6,7 @@ import keyring
 
 import aioxmpp
 
-from . import identity, utils
+from . import identity, utils, instrumentable_list
 
 
 class PasswordStoreIsUnsafe(RuntimeError):
@@ -23,6 +23,22 @@ def dbus_aware_keyring_wrapper(method, *args):
         import dbus.mainloop.glib
         dbus.set_default_main_loop(dbus.mainloop.glib.DBusGMainLoop())
     return method(*args)
+
+
+class RosterGroups(aioxmpp.service.Service):
+    ORDER_AFTER = [aioxmpp.RosterClient]
+
+    def __init__(self, client, **kwargs):
+        super().__init__(client, **kwargs)
+        self.groups = instrumentable_list.ModelList()
+
+    @aioxmpp.service.depsignal(aioxmpp.RosterClient, "on_group_added")
+    def handle_group_added(self, group):
+        self.groups.append(group)
+
+    @aioxmpp.service.depsignal(aioxmpp.RosterClient, "on_group_removed")
+    def handle_group_removed(self, group):
+        self.groups.remove(group)
 
 
 class Client:
@@ -110,6 +126,7 @@ class Client:
         result.summon(aioxmpp.AdHocClient)
         result.summon(aioxmpp.PresenceClient)
         result.summon(aioxmpp.RosterClient)
+        result.summon(RosterGroups)
         result.summon(aioxmpp.im.p2p.Service)
         self.on_client_prepare(account, result)
         return result

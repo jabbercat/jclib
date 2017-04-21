@@ -26,6 +26,7 @@ mlxc_namespaces.presence = "https://xmlns.zombofant.net/mlxc/core/presence/1.0"
 mlxc_namespaces.identity = "https://xmlns.zombofant.net/mlxc/core/identity/1.0"
 
 mlxc_uid = "dns:mlxc.zombofant.net"
+mlxc_avatars_uid = "avatars"
 
 KEYRING_SERVICE_NAME = "net.zombofant.mlxc"
 KEYRING_JID_FORMAT = "xmpp:{bare!s}"
@@ -205,8 +206,6 @@ def logged_async(coro, *, loop=None, name=None):
     return task
 
 
-
-
 @functools.lru_cache()
 def normalise_text_for_hash(text):
     return " ".join(unicodedata.normalize("NFKC", text).split()).casefold()
@@ -340,6 +339,7 @@ def text_to_colour(text):
     # hue, = struct.unpack("<H", data[:2])
 
     data = binascii.crc32(text.encode("utf-8"))
+    # hue = (data & 0xffff) ^ (data >> 16)
     hue = data & 0xffff
 
     # first attempt, simply mix with the inverse of in_contrast_with
