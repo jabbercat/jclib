@@ -26,6 +26,38 @@ class TestSmallBlob(unittest.TestCase):
         self.assertIsInstance(blob, account_model.SmallBlob)
         self.assertEqual(blob.account, descriptor.account)
 
+    def test_filter_selects_by_primary_key(self):
+        descriptor = mlxc.storage.frontends.AccountLevel(
+            self.account,
+        )
+
+        with session_scope(self.db) as session:
+            blob = account_model.SmallBlob.from_level_descriptor(descriptor)
+            blob.data = b"foo"
+            blob.name = "name"
+            session.add(blob)
+            session.commit()
+
+            q_base = session.query(account_model.SmallBlob)
+            q = account_model.SmallBlob.filter_by(q_base, descriptor, "name")
+            otherblob = q.one()
+            self.assertEqual(otherblob.data, b"foo")
+
+            q = account_model.SmallBlob.filter_by(q_base, descriptor,
+                                                  "other name")
+            with self.assertRaises(sqlalchemy.orm.exc.NoResultFound):
+                q.one()
+
+            q = account_model.SmallBlob.filter_by(
+                q_base,
+                mlxc.storage.frontends.AccountLevel(
+                    aioxmpp.JID.fromstr("juliet@capulet.lit"),
+                ),
+                "other name"
+            )
+            with self.assertRaises(sqlalchemy.orm.exc.NoResultFound):
+                q.one()
+
     def test_get_finds_by_primary_key(self):
         descriptor = mlxc.storage.frontends.AccountLevel(
             self.account,

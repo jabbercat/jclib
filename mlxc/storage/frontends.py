@@ -220,7 +220,7 @@ class FileLikeFrontend(metaclass=abc.ABCMeta):
             be there may be missing with some implementations.
         """
 
-    # @abc.abstractmethod
+    @abc.abstractmethod
     async def unlink(self, type_, level, namespace, name):
         """
         Delete an object.
@@ -342,6 +342,36 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
         with common.session_scope(sessionmaker) as session:
             return blob_type.get(session, level, name, query)
 
+    async def _load_in_executor(self, type_, level, namespace, name, query):
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self._load_blob,
+            type_, level, namespace, name,
+            query,
+        )
+
+    def _unlink_blob(self, type_, level, namespace, name):
+        sessionmaker = self._get_sessionmaker(
+            type_,
+            level.level,
+            namespace)
+
+        _, blob_type, *_ = self.LEVEL_INFO[level.level]
+
+        with common.session_scope(sessionmaker) as session:
+            return blob_type.filter_by(
+                session.query(blob_type), level, name
+            ).delete()
+
+    async def _unlink_in_executor(self, type_, level, namespace, name):
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self._unlink_blob,
+            type_, level, namespace, name,
+        )
+
     async def store(self, type_, level, namespace, name, data):
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
@@ -352,15 +382,6 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
             namespace,
             name,
             data,
-        )
-
-    async def _load_in_executor(self, type_, level, namespace, name, query):
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None,
-            self._load_blob,
-            type_, level, namespace, name,
-            query,
         )
 
     async def load(self, type_, level, namespace, name):
@@ -431,6 +452,17 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
             st_mtime=(modified - epoch).total_seconds(),
             st_size=size,
         )
+
+    async def unlink(self, type_, level, namespace, name):
+        deleted = await self._unlink_in_executor(type_, level, namespace, name)
+        if deleted == 0:
+            raise FileNotFoundError(
+                "{!r} does not exist in namespace {!r} for {}".format(
+                    name,
+                    namespace,
+                    level,
+                )
+            )
 
 
 class _PerLevelKeyFileMixin:

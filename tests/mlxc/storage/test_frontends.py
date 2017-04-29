@@ -870,10 +870,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
     def test__load_blob_peer_level(self):
-        attrs = unittest.mock.Mock()
-        attrs.a1 = unittest.mock.Mock(["__get__"])
-        attrs.a2 = unittest.mock.Mock(["__get__"])
-
         with contextlib.ExitStack() as stack:
             _get_sessionmaker = stack.enter_context(
                 unittest.mock.patch.object(self.f, "_get_sessionmaker")
@@ -1067,6 +1063,217 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.namespace,
                 unittest.mock.sentinel.name,
                 unittest.mock.sentinel.query,
+            )
+
+            self.assertEqual(result, unittest.mock.sentinel.data)
+
+    def test__unlink_blob_peer_level(self):
+        with contextlib.ExitStack() as stack:
+            _get_sessionmaker = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_sessionmaker")
+            )
+
+            session_scope = unittest.mock.MagicMock()
+            session_scope.side_effect = mlxc.storage.common.session_scope
+            stack.enter_context(
+                unittest.mock.patch(
+                    "mlxc.storage.common.session_scope",
+                    new=session_scope
+                )
+            )
+
+            filter_by = stack.enter_context(
+                unittest.mock.patch.object(
+                    mlxc.storage.peer_model.SmallBlob,
+                    "filter_by",
+                )
+            )
+
+            level = frontends.PeerLevel(
+                unittest.mock.sentinel.identity,
+                unittest.mock.sentinel.peer,
+            )
+
+            result = self.f._unlink_blob(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+            )
+
+            _get_sessionmaker.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                mlxc.storage.common.StorageLevel.PEER,
+                unittest.mock.sentinel.namespace,
+            )
+
+            session_scope.assert_called_once_with(
+                _get_sessionmaker(),
+            )
+
+            session = _get_sessionmaker()()
+            session.query.assert_called_once_with(
+                mlxc.storage.peer_model.SmallBlob,
+            )
+            filter_by.assert_called_once_with(
+                session.query(),
+                level,
+                unittest.mock.sentinel.name,
+            )
+            filter_by().delete.assert_called_once_with()
+
+            self.assertEqual(
+                result,
+                filter_by().delete()
+            )
+
+    def test__unlink_blob_identity_level(self):
+        with contextlib.ExitStack() as stack:
+            _get_sessionmaker = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_sessionmaker")
+            )
+
+            session_scope = unittest.mock.MagicMock()
+            session_scope.side_effect = mlxc.storage.common.session_scope
+            stack.enter_context(
+                unittest.mock.patch(
+                    "mlxc.storage.common.session_scope",
+                    new=session_scope
+                )
+            )
+
+            filter_by = stack.enter_context(
+                unittest.mock.patch.object(
+                    mlxc.storage.identity_model.SmallBlob,
+                    "filter_by",
+                )
+            )
+
+            level = frontends.IdentityLevel(
+                unittest.mock.sentinel.identity,
+            )
+
+            result = self.f._unlink_blob(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+            )
+
+            _get_sessionmaker.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                mlxc.storage.common.StorageLevel.IDENTITY,
+                unittest.mock.sentinel.namespace,
+            )
+
+            session_scope.assert_called_once_with(
+                _get_sessionmaker(),
+            )
+
+            session = _get_sessionmaker()()
+            session.query.assert_called_once_with(
+                mlxc.storage.identity_model.SmallBlob,
+            )
+            filter_by.assert_called_once_with(
+                session.query(),
+                level,
+                unittest.mock.sentinel.name,
+            )
+            filter_by().delete.assert_called_once_with()
+
+            self.assertEqual(
+                result,
+                filter_by().delete()
+            )
+
+    def test__unlink_blob_account_level(self):
+        with contextlib.ExitStack() as stack:
+            _get_sessionmaker = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_sessionmaker")
+            )
+
+            session_scope = unittest.mock.MagicMock()
+            session_scope.side_effect = mlxc.storage.common.session_scope
+            stack.enter_context(
+                unittest.mock.patch(
+                    "mlxc.storage.common.session_scope",
+                    new=session_scope
+                )
+            )
+
+            filter_by = stack.enter_context(
+                unittest.mock.patch.object(
+                    mlxc.storage.account_model.SmallBlob,
+                    "filter_by",
+                )
+            )
+
+            level = frontends.AccountLevel(
+                unittest.mock.sentinel.account,
+            )
+
+            result = self.f._unlink_blob(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+            )
+
+            _get_sessionmaker.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                mlxc.storage.common.StorageLevel.ACCOUNT,
+                unittest.mock.sentinel.namespace,
+            )
+
+            session_scope.assert_called_once_with(
+                _get_sessionmaker(),
+            )
+
+            session = _get_sessionmaker()()
+            session.query.assert_called_once_with(
+                mlxc.storage.account_model.SmallBlob,
+            )
+            filter_by.assert_called_once_with(
+                session.query(),
+                level,
+                unittest.mock.sentinel.name,
+            )
+            filter_by().delete.assert_called_once_with()
+
+            self.assertEqual(
+                result,
+                filter_by().delete()
+            )
+
+    def test__unlink_in_executor_uses__unlink_blob(self):
+        with contextlib.ExitStack() as stack:
+            _unlink_blob = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_unlink_blob")
+            )
+
+            run_in_executor = stack.enter_context(
+                unittest.mock.patch.object(
+                    asyncio.get_event_loop(),
+                    "run_in_executor",
+                    new=CoroutineMock(),
+                )
+            )
+            run_in_executor.return_value = unittest.mock.sentinel.data
+
+            result = run_coroutine(self.f._unlink_in_executor(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+            ))
+
+            run_in_executor.assert_called_once_with(
+                None,
+                _unlink_blob,
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
             )
 
             self.assertEqual(result, unittest.mock.sentinel.data)
@@ -1402,67 +1609,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.len_,
             )
 
-    def test_unlink(self):
-        EPOCH = datetime(1970, 1, 1)
-
-        accessed = datetime(2017, 4, 29, 15, 23, 0)
-        created = datetime(2017, 4, 29, 15, 20, 0)
-        modified = datetime(2017, 4, 29, 15, 21, 0)
-
-        with contextlib.ExitStack() as stack:
-            _load_in_executor = stack.enter_context(
-                unittest.mock.patch.object(
-                    self.f, "_load_in_executor",
-                    new=CoroutineMock()
-                )
-            )
-            _load_in_executor.return_value = (
-                accessed,
-                created,
-                modified,
-                unittest.mock.sentinel.len_,
-            )
-
-            result = run_coroutine(self.f.stat(
-                unittest.mock.sentinel.type_,
-                unittest.mock.sentinel.level,
-                unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
-            ))
-
-            _load_in_executor.assert_called_once_with(
-                unittest.mock.sentinel.type_,
-                unittest.mock.sentinel.level,
-                unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
-                [
-                    mlxc.storage.common.SmallBlobMixin.accessed,
-                    mlxc.storage.common.SmallBlobMixin.created,
-                    mlxc.storage.common.SmallBlobMixin.modified,
-                    unittest.mock.ANY,
-                ]
-            )
-
-            self.assertEqual(
-                result.st_atime,
-                (accessed - EPOCH).total_seconds()
-            )
-
-            self.assertEqual(
-                result.st_birthtime,
-                (created - EPOCH).total_seconds()
-            )
-
-            self.assertEqual(
-                result.st_mtime,
-                (modified - EPOCH).total_seconds()
-            )
-
-            self.assertEqual(
-                result.st_size,
-                unittest.mock.sentinel.len_,
-            )
-
     def test_stat_raises_FileNotFoundError_when__load_blob_raises_KeyError(self):  # NOQA
         exc = KeyError()
 
@@ -1478,8 +1624,8 @@ class TestSmallBlobFrontend(unittest.TestCase):
             ctx = stack.enter_context(
                 self.assertRaisesRegexp(
                     FileNotFoundError,
-                        "sentinel\.name does not exist in namespace "
-                        "sentinel\.namespace for sentinel\.level"
+                    "sentinel\.name does not exist in namespace "
+                    "sentinel\.namespace for sentinel\.level"
                 )
             )
 
@@ -1506,6 +1652,64 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 mlxc.storage.common.SmallBlobMixin.modified,
                 unittest.mock.ANY,
             ]
+        )
+
+    def test_unlink_uses__unlink_in_executor(self):
+        with contextlib.ExitStack() as stack:
+            _unlink_in_executor = stack.enter_context(
+                unittest.mock.patch.object(
+                    self.f,
+                    "_unlink_in_executor",
+                    new=CoroutineMock(),
+                )
+            )
+            _unlink_in_executor.return_value = 1
+
+            run_coroutine(self.f.unlink(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+            ))
+
+            _unlink_in_executor.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+            )
+
+    def test_unlink_raises_FileNotFoundError_if_non_existant(self):
+        with contextlib.ExitStack() as stack:
+            _unlink_in_executor = stack.enter_context(
+                unittest.mock.patch.object(
+                    self.f,
+                    "_unlink_in_executor",
+                    new=CoroutineMock(),
+                )
+            )
+            _unlink_in_executor.return_value = 0
+
+            stack.enter_context(
+                self.assertRaisesRegexp(
+                    FileNotFoundError,
+                    "sentinel\.name does not exist in namespace "
+                    "sentinel\.namespace for sentinel\.level"
+                )
+            )
+
+            run_coroutine(self.f.unlink(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+            ))
+
+        _unlink_in_executor.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            unittest.mock.sentinel.level,
+            unittest.mock.sentinel.namespace,
+            unittest.mock.sentinel.name,
         )
 
     def test_store_load_cycle(self):
@@ -1543,6 +1747,55 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 )),
                 data1,
             )
+
+    def test_store_unlink_cycle(self):
+        account = uuid.uuid4()
+        peer = aioxmpp.JID.fromstr("romeo@montague.lit")
+        data1 = "∀x∈X: ∃y∈Y: x<y".encode("utf-8")
+
+        descriptor = frontends.PeerLevel(
+            account,
+            peer,
+        )
+
+        with contextlib.ExitStack() as stack:
+            _get_sessionmaker = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_sessionmaker")
+            )
+            _get_sessionmaker.return_value = inmemory_database(
+                mlxc.storage.peer_model.Base,
+            )
+
+            run_coroutine(self.f.store(
+                unittest.mock.sentinel.type_,
+                descriptor,
+                unittest.mock.sentinel.namespace,
+                "some name",
+                data1,
+            ))
+
+            run_coroutine(self.f.unlink(
+                unittest.mock.sentinel.type_,
+                descriptor,
+                unittest.mock.sentinel.namespace,
+                "some name",
+            ))
+
+            with self.assertRaises(KeyError):
+                run_coroutine(self.f.load(
+                    unittest.mock.sentinel.type_,
+                    descriptor,
+                    unittest.mock.sentinel.namespace,
+                    "some name",
+                ))
+
+            with self.assertRaises(FileNotFoundError):
+                run_coroutine(self.f.unlink(
+                    unittest.mock.sentinel.type_,
+                    descriptor,
+                    unittest.mock.sentinel.namespace,
+                    "some name",
+                ))
 
     def test_stat_calculates_length_properly(self):
         account = uuid.uuid4()

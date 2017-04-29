@@ -30,6 +30,51 @@ class TestSmallBlob(unittest.TestCase):
         self.assertEqual(blob.identity, descriptor.identity)
         self.assertEqual(blob.peer, descriptor.peer)
 
+    def test_filter_selects_by_primary_key(self):
+        descriptor = mlxc.storage.frontends.PeerLevel(
+            self.identity,
+            self.peer,
+        )
+
+        with session_scope(self.db) as session:
+            blob = peer_model.SmallBlob.from_level_descriptor(descriptor)
+            blob.data = b"foo"
+            blob.name = "name"
+            session.add(blob)
+            session.commit()
+
+            q_base = session.query(peer_model.SmallBlob)
+            q = peer_model.SmallBlob.filter_by(q_base, descriptor, "name")
+            otherblob = q.one()
+            self.assertEqual(otherblob.data, b"foo")
+
+            q = peer_model.SmallBlob.filter_by(q_base, descriptor,
+                                               "other name")
+            with self.assertRaises(sqlalchemy.orm.exc.NoResultFound):
+                q.one()
+
+            q = peer_model.SmallBlob.filter_by(
+                q_base,
+                mlxc.storage.frontends.PeerLevel(
+                    self.identity,
+                    aioxmpp.JID.fromstr("juliet@capulet.lit"),
+                ),
+                "other name"
+            )
+            with self.assertRaises(sqlalchemy.orm.exc.NoResultFound):
+                q.one()
+
+            q = peer_model.SmallBlob.filter_by(
+                q_base,
+                mlxc.storage.frontends.PeerLevel(
+                    uuid.uuid4(),
+                    self.peer,
+                ),
+                "other name"
+            )
+            with self.assertRaises(sqlalchemy.orm.exc.NoResultFound):
+                q.one()
+
     def test_get_finds_by_primary_key(self):
         descriptor = mlxc.storage.frontends.PeerLevel(
             self.identity,

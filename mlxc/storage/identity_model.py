@@ -30,12 +30,16 @@ class SmallBlob(SmallBlobMixin, Base):
         return instance
 
     @classmethod
+    def filter_by(cls, query, level, name):
+        return query.filter(
+            cls.identity == level.identity,
+            cls.name == name,
+        )
+
+    @classmethod
     def get(cls, session, level, name, which=None):
         which = which or [cls]
         try:
-            return session.query(*which).filter(
-                cls.identity == level.identity,
-                cls.name == name,
-            ).one()
+            return cls.filter_by(session.query(*which), level, name).one()
         except sqlalchemy.orm.exc.NoResultFound:
             raise KeyError(level) from None
