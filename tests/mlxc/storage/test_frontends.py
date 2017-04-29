@@ -312,6 +312,38 @@ class TestSmallBlobFrontend(unittest.TestCase):
             frontends.FileLikeFrontend,
         )
 
+    def test__get_path(self):
+        path_mock = unittest.mock.MagicMock()
+        level_type = unittest.mock.MagicMock()
+        self.backend.type_base_paths.return_value = [path_mock]
+
+        result = self.f._get_path(
+            unittest.mock.sentinel.type_,
+            level_type,
+            unittest.mock.sentinel.namespace,
+        )
+
+        path_mock.__truediv__.assert_called_once_with(
+            frontends.StorageLevel.GLOBAL.value
+        )
+        path_mock.__truediv__().__truediv__.assert_called_once_with(
+            unittest.mock.sentinel.namespace,
+        )
+        path_mock.__truediv__().__truediv__().__truediv__\
+            .assert_called_once_with(
+                "smallblobs"
+            )
+        level_type.value.__add__.assert_called_once_with(".sqlite")
+        path_mock.__truediv__().__truediv__().__truediv__().__truediv__\
+            .assert_called_once_with(
+                level_type.value.__add__()
+            )
+
+        self.assertEqual(
+            result,
+            path_mock.__truediv__().__truediv__().__truediv__().__truediv__()
+        )
+
     def test__get_engine(self):
         with contextlib.ExitStack() as stack:
             _get_path = stack.enter_context(
@@ -334,15 +366,12 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
             )
 
             _get_path.assert_called_once_with(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
-                "smallblobs",
-                unittest.mock.sentinel.name,
             )
 
             mkdir_exist_ok.assert_called_once_with(
@@ -558,14 +587,12 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
             )
 
             _get_engine.assert_called_once_with(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
             )
 
             _init_engine.assert_called_once_with(
@@ -613,7 +640,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 mlxc.storage.common.StorageLevel.PEER,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
             )
 
             session_scope.assert_called_once_with(
@@ -646,6 +672,11 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.data,
             )
 
+            self.assertEqual(
+                blob.name,
+                unittest.mock.sentinel.name,
+            )
+
     def test_store_account(self):
         with contextlib.ExitStack() as stack:
             _get_sessionmaker = stack.enter_context(
@@ -675,7 +706,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 mlxc.storage.common.StorageLevel.ACCOUNT,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
             )
 
             session_scope.assert_called_once_with(
@@ -701,6 +731,11 @@ class TestSmallBlobFrontend(unittest.TestCase):
             self.assertEqual(
                 blob.data,
                 unittest.mock.sentinel.data,
+            )
+
+            self.assertEqual(
+                blob.name,
+                unittest.mock.sentinel.name,
             )
 
     def test_store_identity(self):
@@ -732,7 +767,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 mlxc.storage.common.StorageLevel.IDENTITY,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
             )
 
             session_scope.assert_called_once_with(
@@ -758,6 +792,11 @@ class TestSmallBlobFrontend(unittest.TestCase):
             self.assertEqual(
                 blob.data,
                 unittest.mock.sentinel.data,
+            )
+
+            self.assertEqual(
+                blob.name,
+                unittest.mock.sentinel.name,
             )
 
     def test__load_blob_peer_level(self):
@@ -803,7 +842,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 mlxc.storage.common.StorageLevel.PEER,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
             )
 
             session_scope.assert_called_once_with(
@@ -813,6 +851,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
             get.assert_called_once_with(
                 _get_sessionmaker()(),
                 level,
+                unittest.mock.sentinel.name,
                 unittest.mock.sentinel.query,
             )
 
@@ -859,7 +898,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 mlxc.storage.common.StorageLevel.ACCOUNT,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
             )
 
             session_scope.assert_called_once_with(
@@ -869,6 +907,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
             get.assert_called_once_with(
                 _get_sessionmaker()(),
                 level,
+                unittest.mock.sentinel.name,
                 unittest.mock.sentinel.query,
             )
 
@@ -912,7 +951,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 mlxc.storage.common.StorageLevel.IDENTITY,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
             )
 
             session_scope.assert_called_once_with(
@@ -922,6 +960,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
             get.assert_called_once_with(
                 _get_sessionmaker()(),
                 level,
+                unittest.mock.sentinel.name,
                 unittest.mock.sentinel.query,
             )
 
@@ -1273,6 +1312,42 @@ class TestSmallBlobFrontend(unittest.TestCase):
             ]
         )
 
+    def test_store_load_cycle(self):
+        account = uuid.uuid4()
+        peer = aioxmpp.JID.fromstr("romeo@montague.lit")
+        data1 = "∀x∈X: ∃y∈Y: x<y".encode("utf-8")
+
+        descriptor = frontends.PeerLevel(
+            account,
+            peer,
+        )
+
+        with contextlib.ExitStack() as stack:
+            _get_sessionmaker = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_sessionmaker")
+            )
+            _get_sessionmaker.return_value = inmemory_database(
+                mlxc.storage.peer_model.Base,
+            )
+
+            self.f.store(
+                unittest.mock.sentinel.type_,
+                descriptor,
+                unittest.mock.sentinel.namespace,
+                "some name",
+                data1,
+            )
+
+            self.assertEqual(
+                self.f.load(
+                    unittest.mock.sentinel.type_,
+                    descriptor,
+                    unittest.mock.sentinel.namespace,
+                    "some name",
+                ),
+                data1,
+            )
+
     def test_stat_calculates_length_properly(self):
         account = uuid.uuid4()
         peer = aioxmpp.JID.fromstr("romeo@montague.lit")
@@ -1296,7 +1371,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 descriptor,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
+                "some name",
                 data1,
             )
 
@@ -1304,7 +1379,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 descriptor,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
+                "some name",
             )
 
             self.assertEqual(
@@ -1316,7 +1391,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 descriptor,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
+                "some name",
                 data2,
             )
 
@@ -1324,7 +1399,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 descriptor,
                 unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
+                "some name",
             )
 
             self.assertEqual(

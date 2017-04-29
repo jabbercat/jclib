@@ -39,10 +39,11 @@ class TestSmallBlob(unittest.TestCase):
         with session_scope(self.db) as session:
             blob = peer_model.SmallBlob.from_level_descriptor(descriptor)
             blob.data = b"foo"
+            blob.name = "name"
             session.add(blob)
             session.commit()
 
-            otherblob = peer_model.SmallBlob.get(session, descriptor)
+            otherblob = peer_model.SmallBlob.get(session, descriptor, "name")
             self.assertEqual(otherblob.data, b"foo")
 
     def test_get_allows_specification_of_query(self):
@@ -54,12 +55,14 @@ class TestSmallBlob(unittest.TestCase):
         with session_scope(self.db) as session:
             blob = peer_model.SmallBlob.from_level_descriptor(descriptor)
             blob.data = b"foo"
+            blob.name = "name"
             session.add(blob)
             session.commit()
 
             result = peer_model.SmallBlob.get(
                 session,
                 descriptor,
+                "name",
                 [
                     mlxc.storage.common.SmallBlobMixin.accessed,
                     sqlalchemy.sql.func.length(
@@ -85,6 +88,7 @@ class TestSmallBlob(unittest.TestCase):
         with session_scope(self.db) as session:
             blob = peer_model.SmallBlob.from_level_descriptor(descriptor)
             blob.data = b"foo"
+            blob.name = "foo"
             session.add(blob)
             session.commit()
 
@@ -94,5 +98,13 @@ class TestSmallBlob(unittest.TestCase):
                     mlxc.storage.frontends.PeerLevel(
                         self.identity,
                         aioxmpp.JID.fromstr("juliet@capulet.lit")
-                    )
+                    ),
+                    "name",
+                )
+
+            with self.assertRaises(KeyError):
+                peer_model.SmallBlob.get(
+                    session,
+                    descriptor,
+                    "othername"
                 )

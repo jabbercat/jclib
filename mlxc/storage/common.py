@@ -10,6 +10,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     LargeBinary,
+    Unicode,
 )
 
 import aioxmpp
@@ -65,6 +66,12 @@ class SmallBlobMixin(TimestampsMixin):
     data = Column(
         "data",
         LargeBinary()
+    )
+
+    name = Column(
+        "name",
+        Unicode(255),
+        primary_key=True,
     )
 
 

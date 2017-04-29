@@ -33,10 +33,13 @@ class TestSmallBlob(unittest.TestCase):
         with session_scope(self.db) as session:
             blob = identity_model.SmallBlob.from_level_descriptor(descriptor)
             blob.data = b"foo"
+            blob.name = "name"
             session.add(blob)
             session.commit()
 
-            otherblob = identity_model.SmallBlob.get(session, descriptor)
+            otherblob = identity_model.SmallBlob.get(
+                session, descriptor, "name"
+            )
             self.assertEqual(otherblob.data, b"foo")
 
     def test_get_allows_specification_of_query(self):
@@ -47,12 +50,14 @@ class TestSmallBlob(unittest.TestCase):
         with session_scope(self.db) as session:
             blob = identity_model.SmallBlob.from_level_descriptor(descriptor)
             blob.data = b"foo"
+            blob.name = "name"
             session.add(blob)
             session.commit()
 
             result = identity_model.SmallBlob.get(
                 session,
                 descriptor,
+                "name",
                 [
                     mlxc.storage.common.SmallBlobMixin.accessed,
                     sqlalchemy.sql.func.length(
@@ -77,6 +82,7 @@ class TestSmallBlob(unittest.TestCase):
         with session_scope(self.db) as session:
             blob = identity_model.SmallBlob.from_level_descriptor(descriptor)
             blob.data = b"foo"
+            blob.name = "foo"
             session.add(blob)
             session.commit()
 
@@ -85,5 +91,13 @@ class TestSmallBlob(unittest.TestCase):
                     session,
                     mlxc.storage.frontends.IdentityLevel(
                         uuid.uuid4(),
-                    )
+                    ),
+                    "name"
+                )
+
+            with self.assertRaises(KeyError):
+                identity_model.SmallBlob.get(
+                    session,
+                    descriptor,
+                    "othername"
                 )

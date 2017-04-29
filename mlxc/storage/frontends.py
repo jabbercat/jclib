@@ -196,7 +196,7 @@ class FileLikeFrontend(metaclass=abc.ABCMeta):
         """
 
 
-class SmallBlobFrontend(FileLikeFrontend, _PerLevelMixin, Frontend):
+class SmallBlobFrontend(FileLikeFrontend, Frontend):
     StatTuple = collections.namedtuple(
         "StatTuple",
         [
@@ -222,8 +222,15 @@ class SmallBlobFrontend(FileLikeFrontend, _PerLevelMixin, Frontend):
         ),
     }
 
-    def _get_engine(self, type_, level_type, namespace, name):
-        path = self._get_path(type_, level_type, namespace, "smallblobs", name)
+    def _get_path(self, type_, level_type, namespace):
+        return (self._backend.type_base_paths(type_, True)[0] /
+                StorageLevel.GLOBAL.value /
+                namespace /
+                "smallblobs" /
+                (level_type.value + ".sqlite"))
+
+    def _get_engine(self, type_, level_type, namespace):
+        path = self._get_path(type_, level_type, namespace)
         utils.mkdir_exist_ok(path.parent)
         engine = sqlalchemy.create_engine(
             "sqlite:///{}".format(path),
@@ -257,8 +264,8 @@ class SmallBlobFrontend(FileLikeFrontend, _PerLevelMixin, Frontend):
         base.metadata.create_all(engine)
 
     @functools.lru_cache(32)
-    def _get_sessionmaker(self, type_, level_type, namespace, name):
-        engine = self._get_engine(type_, level_type, namespace, name)
+    def _get_sessionmaker(self, type_, level_type, namespace):
+        engine = self._get_engine(type_, level_type, namespace)
         self._init_engine(engine, level_type)
         return sqlalchemy.orm.sessionmaker(bind=engine)
 
@@ -266,13 +273,13 @@ class SmallBlobFrontend(FileLikeFrontend, _PerLevelMixin, Frontend):
         sessionmaker = self._get_sessionmaker(
             type_,
             level.level,
-            namespace,
-            name)
+            namespace)
 
         _, blob_type, *_ = self.LEVEL_INFO[level.level]
 
         blob = blob_type.from_level_descriptor(level)
         blob.data = data
+        blob.name = name
 
         with common.session_scope(sessionmaker) as session:
             session.merge(blob)
@@ -281,13 +288,12 @@ class SmallBlobFrontend(FileLikeFrontend, _PerLevelMixin, Frontend):
         sessionmaker = self._get_sessionmaker(
             type_,
             level.level,
-            namespace,
-            name)
+            namespace)
 
         _, blob_type, *_ = self.LEVEL_INFO[level.level]
 
         with common.session_scope(sessionmaker) as session:
-            return blob_type.get(session, level, query)
+            return blob_type.get(session, level, name, query)
 
     def load(self, type_, level, namespace, name):
         data, = self._load_blob(
