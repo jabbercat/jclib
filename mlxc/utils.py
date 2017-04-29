@@ -392,3 +392,11 @@ def text_to_colour(text):
     cb, cr = angle_to_cbcr_edge(hue / 65535 * math.pi * 2)
     r, g, b = clip_rgb(*ycbcr_to_rgb(0.5**0.45, cb, cr))
     return r, g, b
+
+
+def mkdir_exist_ok(path):
+    try:
+        path.mkdir(parents=True)
+    except FileExistsError:
+        if not path.is_dir():
+            raise

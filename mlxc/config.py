@@ -25,14 +25,6 @@ def unescape_dirname(path):
     return urllib.parse.unquote(path)
 
 
-def mkdir_exist_ok(path):
-    try:
-        path.mkdir(parents=True)
-    except FileExistsError:
-        if not path.is_dir():
-            raise
-
-
 @contextlib.contextmanager
 def safe_writer(destpath, mode="wb"):
     destpath = pathlib.Path(destpath)
@@ -109,7 +101,7 @@ class ConfigManager:
     def open_single(self, uid, filename, *, mode="rb", **kwargs):
         user_path, site_paths = self.get_config_paths(uid, filename)
         if utils.is_write_mode(mode):
-            mkdir_exist_ok(user_path.parent)
+            utils.mkdir_exist_ok(user_path.parent)
             return user_path.open(mode, **kwargs)
 
         excs = []
