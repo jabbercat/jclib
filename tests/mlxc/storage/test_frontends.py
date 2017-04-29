@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import itertools
 import pathlib
@@ -14,6 +15,11 @@ import mlxc.storage.common
 import mlxc.storage.identity_model
 import mlxc.storage.peer_model
 import mlxc.storage.frontends as frontends
+
+from aioxmpp.testutils import (
+    run_coroutine,
+    CoroutineMock,
+)
 
 from mlxc.testutils import (
     inmemory_database,
@@ -172,7 +178,7 @@ class Test_PerLevelMixin(unittest.TestCase):
         )
 
 
-class LargeBlobFrontend(unittest.TestCase):
+class TestLargeBlobFrontend(unittest.TestCase):
     def setUp(self):
         self.backend = unittest.mock.Mock()
         self.f = frontends.LargeBlobFrontend(self.backend)
@@ -199,7 +205,8 @@ class LargeBlobFrontend(unittest.TestCase):
                 mkdir_exist_ok = stack.enter_context(
                     unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
                 )
-                result = self.f.open(
+
+                result = run_coroutine(self.f.open(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
                     unittest.mock.sentinel.namespace,
@@ -207,7 +214,8 @@ class LargeBlobFrontend(unittest.TestCase):
                     mode,
                     a=unittest.mock.sentinel.kwarg,
                     encoding=unittest.mock.sentinel.encoding,
-                )
+                ))
+
                 _get_path.assert_called_once_with(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
@@ -242,7 +250,7 @@ class LargeBlobFrontend(unittest.TestCase):
                     unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
                 )
 
-                result = self.f.open(
+                result = run_coroutine(self.f.open(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
                     unittest.mock.sentinel.namespace,
@@ -250,7 +258,8 @@ class LargeBlobFrontend(unittest.TestCase):
                     mode,
                     a=unittest.mock.sentinel.kwarg,
                     encoding=unittest.mock.sentinel.encoding,
-                )
+                ))
+
                 _get_path.assert_called_once_with(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
@@ -280,12 +289,13 @@ class LargeBlobFrontend(unittest.TestCase):
                 unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
             )
 
-            result = self.f.stat(
+            result = run_coroutine(self.f.stat(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
                 "filename",
-            )
+            ))
+
             _get_path.assert_called_once_with(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
@@ -297,6 +307,33 @@ class LargeBlobFrontend(unittest.TestCase):
                 result,
                 _get_path().stat()
             )
+
+            mkdir_exist_ok.assert_not_called()
+
+    def test_unlink(self):
+        with contextlib.ExitStack() as stack:
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_path")
+            )
+
+            mkdir_exist_ok = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+            )
+
+            run_coroutine(self.f.unlink(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                "filename",
+            ))
+
+            _get_path.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                pathlib.Path("largeblobs") / "filename",
+            )
+            _get_path().unlink.assert_called_once_with()
 
             mkdir_exist_ok.assert_not_called()
 
@@ -610,7 +647,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
     def test__get_sessionmaker_is_lru_cache(self):
         self.assertTrue(hasattr(type(self.f)._get_sessionmaker, "cache_info"))
 
-    def test_store_peer(self):
+    def test__store_blob_peer(self):
         with contextlib.ExitStack() as stack:
             _get_sessionmaker = stack.enter_context(
                 unittest.mock.patch.object(self.f, "_get_sessionmaker")
@@ -625,7 +662,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 )
             )
 
-            self.f.store(
+            self.f._store_blob(
                 unittest.mock.sentinel.type_,
                 frontends.PeerLevel(
                     unittest.mock.sentinel.identity,
@@ -677,7 +714,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.name,
             )
 
-    def test_store_account(self):
+    def test__store_blob_account(self):
         with contextlib.ExitStack() as stack:
             _get_sessionmaker = stack.enter_context(
                 unittest.mock.patch.object(self.f, "_get_sessionmaker")
@@ -692,7 +729,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 )
             )
 
-            self.f.store(
+            self.f._store_blob(
                 unittest.mock.sentinel.type_,
                 frontends.AccountLevel(
                     unittest.mock.sentinel.account,
@@ -738,7 +775,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.name,
             )
 
-    def test_store_identity(self):
+    def test__store_blob_identity(self):
         with contextlib.ExitStack() as stack:
             _get_sessionmaker = stack.enter_context(
                 unittest.mock.patch.object(self.f, "_get_sessionmaker")
@@ -753,7 +790,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 )
             )
 
-            self.f.store(
+            self.f._store_blob(
                 unittest.mock.sentinel.type_,
                 frontends.IdentityLevel(
                     unittest.mock.sentinel.identity,
@@ -797,6 +834,39 @@ class TestSmallBlobFrontend(unittest.TestCase):
             self.assertEqual(
                 blob.name,
                 unittest.mock.sentinel.name,
+            )
+
+    def test_store_uses__store_blob(self):
+        with contextlib.ExitStack() as stack:
+            _store_blob = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_store_blob")
+            )
+
+            run_in_executor = stack.enter_context(
+                unittest.mock.patch.object(
+                    asyncio.get_event_loop(),
+                    "run_in_executor",
+                    new=CoroutineMock(),
+                )
+            )
+            run_in_executor.return_value = None
+
+            run_coroutine(self.f.store(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+                unittest.mock.sentinel.data,
+            ))
+
+            run_in_executor.assert_called_once_with(
+                None,
+                _store_blob,
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+                unittest.mock.sentinel.data,
             )
 
     def test__load_blob_peer_level(self):
@@ -966,21 +1036,59 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             self.assertEqual(get(), result)
 
-    def test_load_uses__load_blob(self):
+    def test__load_in_executor_uses__load_blob(self):
         with contextlib.ExitStack() as stack:
             _load_blob = stack.enter_context(
                 unittest.mock.patch.object(self.f, "_load_blob")
             )
-            _load_blob.return_value = unittest.mock.sentinel.data,
 
-            result = self.f.load(
+            run_in_executor = stack.enter_context(
+                unittest.mock.patch.object(
+                    asyncio.get_event_loop(),
+                    "run_in_executor",
+                    new=CoroutineMock(),
+                )
+            )
+            run_in_executor.return_value = unittest.mock.sentinel.data
+
+            result = run_coroutine(self.f._load_in_executor(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
                 unittest.mock.sentinel.name,
+                unittest.mock.sentinel.query,
+            ))
+
+            run_in_executor.assert_called_once_with(
+                None,
+                _load_blob,
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+                unittest.mock.sentinel.query,
             )
 
-            _load_blob.assert_called_once_with(
+            self.assertEqual(result, unittest.mock.sentinel.data)
+
+    def test_load_uses__load_in_executor(self):
+        with contextlib.ExitStack() as stack:
+            _load_in_executor = stack.enter_context(
+                unittest.mock.patch.object(
+                    self.f, "_load_in_executor",
+                    new=CoroutineMock()
+                )
+            )
+            _load_in_executor.return_value = unittest.mock.sentinel.data,
+
+            result = run_coroutine(self.f.load(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+            ))
+
+            _load_in_executor.assert_called_once_with(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
@@ -1016,13 +1124,13 @@ class TestSmallBlobFrontend(unittest.TestCase):
                     ValueError,
                     "writable open modes are not supported by "
                     "SmallBlobFrontend"):
-                self.f.open(
+                run_coroutine(self.f.open(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
                     unittest.mock.sentinel.namespace,
                     unittest.mock.sentinel.name,
                     mode,
-                )
+                ))
 
     def test_open_uses_load_and_wraps_in_StringIO_for_text_modes(self):
         modes = [
@@ -1042,17 +1150,22 @@ class TestSmallBlobFrontend(unittest.TestCase):
                     unittest.mock.patch("io.StringIO")
                 )
 
+                raw = unittest.mock.Mock()
                 load = stack.enter_context(
-                    unittest.mock.patch.object(self.f, "load")
+                    unittest.mock.patch.object(
+                        self.f, "load",
+                        new=CoroutineMock()
+                    )
                 )
+                load.return_value = raw
 
-                result = self.f.open(
+                result = run_coroutine(self.f.open(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
                     unittest.mock.sentinel.namespace,
                     unittest.mock.sentinel.name,
                     mode,
-                )
+                ))
 
                 load.assert_called_once_with(
                     unittest.mock.sentinel.type_,
@@ -1061,11 +1174,11 @@ class TestSmallBlobFrontend(unittest.TestCase):
                     unittest.mock.sentinel.name,
                 )
 
-                load().decode.assert_called_once_with(
+                raw.decode.assert_called_once_with(
                     unittest.mock.sentinel.defaultencoding
                 )
 
-                StringIO.assert_called_once_with(load().decode())
+                StringIO.assert_called_once_with(raw.decode())
 
                 self.assertEqual(result, StringIO())
 
@@ -1087,18 +1200,23 @@ class TestSmallBlobFrontend(unittest.TestCase):
                     unittest.mock.patch("io.StringIO")
                 )
 
+                raw = unittest.mock.Mock()
                 load = stack.enter_context(
-                    unittest.mock.patch.object(self.f, "load")
+                    unittest.mock.patch.object(
+                        self.f, "load",
+                        new=CoroutineMock()
+                    )
                 )
+                load.return_value = raw
 
-                result = self.f.open(
+                result = run_coroutine(self.f.open(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
                     unittest.mock.sentinel.namespace,
                     unittest.mock.sentinel.name,
                     mode,
                     encoding=unittest.mock.sentinel.encoding,
-                )
+                ))
 
                 load.assert_called_once_with(
                     unittest.mock.sentinel.type_,
@@ -1107,11 +1225,11 @@ class TestSmallBlobFrontend(unittest.TestCase):
                     unittest.mock.sentinel.name,
                 )
 
-                load().decode.assert_called_once_with(
+                raw.decode.assert_called_once_with(
                     unittest.mock.sentinel.encoding
                 )
 
-                StringIO.assert_called_once_with(load().decode())
+                StringIO.assert_called_once_with(raw.decode())
 
                 self.assertEqual(result, StringIO())
 
@@ -1126,17 +1244,22 @@ class TestSmallBlobFrontend(unittest.TestCase):
                     unittest.mock.patch("io.BytesIO")
                 )
 
+                raw = unittest.mock.Mock()
                 load = stack.enter_context(
-                    unittest.mock.patch.object(self.f, "load")
+                    unittest.mock.patch.object(
+                        self.f, "load",
+                        new=CoroutineMock()
+                    )
                 )
+                load.return_value = raw
 
-                result = self.f.open(
+                result = run_coroutine(self.f.open(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
                     unittest.mock.sentinel.namespace,
                     unittest.mock.sentinel.name,
                     mode,
-                )
+                ))
 
                 load.assert_called_once_with(
                     unittest.mock.sentinel.type_,
@@ -1145,9 +1268,9 @@ class TestSmallBlobFrontend(unittest.TestCase):
                     unittest.mock.sentinel.name,
                 )
 
-                load().decode.assert_not_called()
+                raw.decode.assert_not_called()
 
-                BytesIO.assert_called_once_with(load())
+                BytesIO.assert_called_once_with(raw)
 
                 self.assertEqual(result, BytesIO())
 
@@ -1159,7 +1282,10 @@ class TestSmallBlobFrontend(unittest.TestCase):
         for mode in modes:
             with contextlib.ExitStack() as stack:
                 load = stack.enter_context(
-                    unittest.mock.patch.object(self.f, "load")
+                    unittest.mock.patch.object(
+                        self.f, "load",
+                        new=CoroutineMock()
+                    )
                 )
 
                 stack.enter_context(
@@ -1168,14 +1294,14 @@ class TestSmallBlobFrontend(unittest.TestCase):
                         "binary mode doesn't take an encoding argument")
                 )
 
-                self.f.open(
+                run_coroutine(self.f.open(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
                     unittest.mock.sentinel.namespace,
                     unittest.mock.sentinel.name,
                     mode,
                     encoding=unittest.mock.sentinel.encoding
-                )
+                ))
 
             load.assert_not_called()
 
@@ -1187,7 +1313,10 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             with contextlib.ExitStack() as stack:
                 load = stack.enter_context(
-                    unittest.mock.patch.object(self.f, "load")
+                    unittest.mock.patch.object(
+                        self.f, "load",
+                        new=CoroutineMock()
+                    )
                 )
                 load.side_effect = exc
 
@@ -1199,20 +1328,20 @@ class TestSmallBlobFrontend(unittest.TestCase):
                     )
                 )
 
-                self.f.open(
+                run_coroutine(self.f.open(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
                     unittest.mock.sentinel.namespace,
                     unittest.mock.sentinel.name,
                     mode,
-                )
+                ))
 
             self.assertEqual(
                 ctx.exception.__cause__,
                 exc,
             )
 
-    def test_stat_uses__load_blob(self):
+    def test_stat_uses__load_in_executor(self):
         EPOCH = datetime(1970, 1, 1)
 
         accessed = datetime(2017, 4, 29, 15, 23, 0)
@@ -1220,24 +1349,88 @@ class TestSmallBlobFrontend(unittest.TestCase):
         modified = datetime(2017, 4, 29, 15, 21, 0)
 
         with contextlib.ExitStack() as stack:
-            _load_blob = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_load_blob")
+            _load_in_executor = stack.enter_context(
+                unittest.mock.patch.object(
+                    self.f, "_load_in_executor",
+                    new=CoroutineMock()
+                )
             )
-            _load_blob.return_value = (
+            _load_in_executor.return_value = (
                 accessed,
                 created,
                 modified,
                 unittest.mock.sentinel.len_,
             )
 
-            result = self.f.stat(
+            result = run_coroutine(self.f.stat(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
                 unittest.mock.sentinel.name,
+            ))
+
+            _load_in_executor.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+                [
+                    mlxc.storage.common.SmallBlobMixin.accessed,
+                    mlxc.storage.common.SmallBlobMixin.created,
+                    mlxc.storage.common.SmallBlobMixin.modified,
+                    unittest.mock.ANY,
+                ]
             )
 
-            _load_blob.assert_called_once_with(
+            self.assertEqual(
+                result.st_atime,
+                (accessed - EPOCH).total_seconds()
+            )
+
+            self.assertEqual(
+                result.st_birthtime,
+                (created - EPOCH).total_seconds()
+            )
+
+            self.assertEqual(
+                result.st_mtime,
+                (modified - EPOCH).total_seconds()
+            )
+
+            self.assertEqual(
+                result.st_size,
+                unittest.mock.sentinel.len_,
+            )
+
+    def test_unlink(self):
+        EPOCH = datetime(1970, 1, 1)
+
+        accessed = datetime(2017, 4, 29, 15, 23, 0)
+        created = datetime(2017, 4, 29, 15, 20, 0)
+        modified = datetime(2017, 4, 29, 15, 21, 0)
+
+        with contextlib.ExitStack() as stack:
+            _load_in_executor = stack.enter_context(
+                unittest.mock.patch.object(
+                    self.f, "_load_in_executor",
+                    new=CoroutineMock()
+                )
+            )
+            _load_in_executor.return_value = (
+                accessed,
+                created,
+                modified,
+                unittest.mock.sentinel.len_,
+            )
+
+            result = run_coroutine(self.f.stat(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+            ))
+
+            _load_in_executor.assert_called_once_with(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
@@ -1274,10 +1467,13 @@ class TestSmallBlobFrontend(unittest.TestCase):
         exc = KeyError()
 
         with contextlib.ExitStack() as stack:
-            _load_blob = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_load_blob")
+            _load_in_executor = stack.enter_context(
+                unittest.mock.patch.object(
+                    self.f, "_load_in_executor",
+                    new=CoroutineMock()
+                )
             )
-            _load_blob.side_effect = exc
+            _load_in_executor.side_effect = exc
 
             ctx = stack.enter_context(
                 self.assertRaisesRegexp(
@@ -1287,19 +1483,19 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 )
             )
 
-            self.f.stat(
+            run_coroutine(self.f.stat(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
                 unittest.mock.sentinel.name,
-            )
+            ))
 
         self.assertEqual(
             ctx.exception.__cause__,
             exc,
         )
 
-        _load_blob.assert_called_once_with(
+        _load_in_executor.assert_called_once_with(
             unittest.mock.sentinel.type_,
             unittest.mock.sentinel.level,
             unittest.mock.sentinel.namespace,
@@ -1330,21 +1526,21 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 mlxc.storage.peer_model.Base,
             )
 
-            self.f.store(
+            run_coroutine(self.f.store(
                 unittest.mock.sentinel.type_,
                 descriptor,
                 unittest.mock.sentinel.namespace,
                 "some name",
                 data1,
-            )
+            ))
 
             self.assertEqual(
-                self.f.load(
+                run_coroutine(self.f.load(
                     unittest.mock.sentinel.type_,
                     descriptor,
                     unittest.mock.sentinel.namespace,
                     "some name",
-                ),
+                )),
                 data1,
             )
 
@@ -1367,40 +1563,40 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 mlxc.storage.peer_model.Base,
             )
 
-            self.f.store(
+            run_coroutine(self.f.store(
                 unittest.mock.sentinel.type_,
                 descriptor,
                 unittest.mock.sentinel.namespace,
                 "some name",
                 data1,
-            )
+            ))
 
-            result = self.f.stat(
+            result = run_coroutine(self.f.stat(
                 unittest.mock.sentinel.type_,
                 descriptor,
                 unittest.mock.sentinel.namespace,
                 "some name",
-            )
+            ))
 
             self.assertEqual(
                 result.st_size,
                 len(data1)
             )
 
-            self.f.store(
+            run_coroutine(self.f.store(
                 unittest.mock.sentinel.type_,
                 descriptor,
                 unittest.mock.sentinel.namespace,
                 "some name",
                 data2,
-            )
+            ))
 
-            result = self.f.stat(
+            result = run_coroutine(self.f.stat(
                 unittest.mock.sentinel.type_,
                 descriptor,
                 unittest.mock.sentinel.namespace,
                 "some name",
-            )
+            ))
 
             self.assertEqual(
                 result.st_size,

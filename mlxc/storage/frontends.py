@@ -1,4 +1,5 @@
 import abc
+import asyncio
 import base64
 import collections
 import functools
@@ -81,6 +82,30 @@ class Frontend:
         super().__init__()
         self._backend = backend
 
+    async def clear(self, level):
+        """
+        Delete all objects within the given level key, across all storage
+        types.
+
+        :param level: The level descriptor of the key to remove.
+        :type level: :class:`LevelDescriptor`
+        :raises NotImplementedError: if the frontend does not support such
+            deletion.
+        :raises OSError: if not all data could be deleted.
+
+        A common usecase is when an account/identity/peer has been removed.
+        Using the :class:`GlobalLevel` as `level` is not supported.
+
+        The deletion attempts to continue when the first error is encountered.
+        The first error is re-raised.
+
+        .. warning::
+
+            This is a *very* destructive operation, which may also take some
+            time.
+        """
+        raise NotImplementedError
+
 
 class DatabaseFrontend(Frontend):
     def connect(self, type_, namespace, name):
@@ -106,8 +131,8 @@ class _PerLevelMixin:
 
 class FileLikeFrontend(metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def open(self, type_, level, namespace, name, mode, *,
-             encoding=None):
+    async def open(self, type_, level, namespace, name, mode, *,
+                   encoding=None):
         """
         Return a file-like object.
 
@@ -147,7 +172,7 @@ class FileLikeFrontend(metaclass=abc.ABCMeta):
         """
 
     @abc.abstractmethod
-    def stat(self, type_, level, namespace, name):
+    async def stat(self, type_, level, namespace, name):
         """
         Return meta-information about an object.
 
@@ -193,6 +218,28 @@ class FileLikeFrontend(metaclass=abc.ABCMeta):
             The returned object is not fully compatible with
             :class:`os.stat_result`. Some attributes which are guaranteed to
             be there may be missing with some implementations.
+        """
+
+    # @abc.abstractmethod
+    async def unlink(self, type_, level, namespace, name):
+        """
+        Delete an object.
+
+        :param type_: The storage type of the object to delete.
+        :type type_: :class:`StorageType`
+        :param level: The information hierarchy level of the object to delete.
+        :type level: :class:`LevelDescriptor`
+        :param namespace: The namespace of the object.
+        :type namespace: :class:`str`
+        :param name: The name of the object.
+        :type name: :class:`str`
+        :raises OSError: if the object could not be deleted
+
+        The object is deleted from the storage. If the object could not be
+        deleted, the :class:`OSError` explaining the cause is (re-)raised.
+
+        Most notably, :class:`FileNotFoundError` is raised if the object does
+        not exist.
         """
 
 
@@ -269,7 +316,7 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
         self._init_engine(engine, level_type)
         return sqlalchemy.orm.sessionmaker(bind=engine)
 
-    def store(self, type_, level, namespace, name, data):
+    def _store_blob(self, type_, level, namespace, name, data):
         sessionmaker = self._get_sessionmaker(
             type_,
             level.level,
@@ -295,8 +342,29 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
         with common.session_scope(sessionmaker) as session:
             return blob_type.get(session, level, name, query)
 
-    def load(self, type_, level, namespace, name):
-        data, = self._load_blob(
+    async def store(self, type_, level, namespace, name, data):
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            self._store_blob,
+            type_,
+            level,
+            namespace,
+            name,
+            data,
+        )
+
+    async def _load_in_executor(self, type_, level, namespace, name, query):
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            self._load_blob,
+            type_, level, namespace, name,
+            query,
+        )
+
+    async def load(self, type_, level, namespace, name):
+        data, = await self._load_in_executor(
             type_, level, namespace, name,
             [
                 common.SmallBlobMixin.data,
@@ -304,8 +372,8 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
         )
         return data
 
-    def open(self, type_, level, namespace, name, mode, *,
-             encoding=None):
+    async def open(self, type_, level, namespace, name, mode, *,
+                   encoding=None):
         if utils.is_write_mode(mode):
             raise ValueError(
                 "writable open modes are not supported by SmallBlobFrontend"
@@ -318,7 +386,7 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
             )
 
         try:
-            raw = self.load(type_, level, namespace, name)
+            raw = await self.load(type_, level, namespace, name)
         except KeyError as exc:
             raise FileNotFoundError(
                 "{!r} does not exist in namespace {!r} for {}".format(
@@ -335,11 +403,11 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
             text = raw.decode(encoding)
             return io.StringIO(text)
 
-    def stat(self, type_, level, namespace, name):
+    async def stat(self, type_, level, namespace, name):
         epoch = datetime(1970, 1, 1)
 
         try:
-            accessed, created, modified, size = self._load_blob(
+            accessed, created, modified, size = await self._load_in_executor(
                 type_, level, namespace, name,
                 [
                     common.SmallBlobMixin.accessed,
@@ -375,7 +443,7 @@ class _PerLevelKeyFileMixin:
 
 
 class LargeBlobFrontend(_PerLevelKeyFileMixin, FileLikeFrontend, Frontend):
-    def open(self, type_, level, namespace, name, mode, **kwargs):
+    async def open(self, type_, level, namespace, name, mode, **kwargs):
         path = self._get_path(
             type_,
             level,
@@ -388,7 +456,7 @@ class LargeBlobFrontend(_PerLevelKeyFileMixin, FileLikeFrontend, Frontend):
 
         return path.open(mode, **kwargs)
 
-    def stat(self, type_, level, namespace, name):
+    async def stat(self, type_, level, namespace, name):
         path = self._get_path(
             type_,
             level,
@@ -396,6 +464,15 @@ class LargeBlobFrontend(_PerLevelKeyFileMixin, FileLikeFrontend, Frontend):
             pathlib.Path("largeblobs") / name,
         )
         return path.stat()
+
+    async def unlink(self, type_, level, namespace, name):
+        path = self._get_path(
+            type_,
+            level,
+            namespace,
+            pathlib.Path("largeblobs") / name,
+        )
+        return path.unlink()
 
 
 class AppendFrontend(_PerLevelKeyFileMixin, Frontend):
