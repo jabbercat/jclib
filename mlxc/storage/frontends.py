@@ -131,7 +131,7 @@ class _PerLevelMixin:
 
 class FileLikeFrontend(metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    async def open(self, type_, level, namespace, name, mode, *,
+    async def open(self, type_, level, namespace, name, mode="r", *,
                    encoding=None):
         """
         Return a file-like object.
@@ -393,7 +393,7 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
         )
         return data
 
-    async def open(self, type_, level, namespace, name, mode, *,
+    async def open(self, type_, level, namespace, name, mode="r", *,
                    encoding=None):
         if utils.is_write_mode(mode):
             raise ValueError(
@@ -475,7 +475,7 @@ class _PerLevelKeyFileMixin:
 
 
 class LargeBlobFrontend(_PerLevelKeyFileMixin, FileLikeFrontend, Frontend):
-    async def open(self, type_, level, namespace, name, mode, **kwargs):
+    async def open(self, type_, level, namespace, name, mode="r", **kwargs):
         path = self._get_path(
             type_,
             level,

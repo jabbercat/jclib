@@ -234,6 +234,43 @@ class TestLargeBlobFrontend(unittest.TestCase):
 
                 mkdir_exist_ok.assert_not_called()
 
+    def test_open_allows_omission_of_mode_argument(self):
+        with contextlib.ExitStack() as stack:
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_path")
+            )
+
+            mkdir_exist_ok = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+            )
+
+            result = run_coroutine(self.f.open(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                "filename",
+                a=unittest.mock.sentinel.kwarg,
+                encoding=unittest.mock.sentinel.encoding,
+            ))
+
+            _get_path.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                pathlib.Path("largeblobs") / "filename",
+            )
+            _get_path().open.assert_called_once_with(
+                "r",
+                a=unittest.mock.sentinel.kwarg,
+                encoding=unittest.mock.sentinel.encoding,
+            )
+            self.assertEqual(
+                result,
+                _get_path().open()
+            )
+
+            mkdir_exist_ok.assert_not_called()
+
     def test_open_writable(self):
         modes = ["r+", "w", "w+", "x", "x+", "a", "a+"]
         modes = [
@@ -1341,6 +1378,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
     def test_open_uses_load_and_wraps_in_StringIO_for_text_modes(self):
         modes = [
+            None,
             "r",
             "rt",
         ]
@@ -1366,12 +1404,17 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 )
                 load.return_value = raw
 
+                if mode is None:
+                    args = ()
+                else:
+                    args = (mode,)
+
                 result = run_coroutine(self.f.open(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
                     unittest.mock.sentinel.namespace,
                     unittest.mock.sentinel.name,
-                    mode,
+                    *args,
                 ))
 
                 load.assert_called_once_with(
@@ -1391,6 +1434,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
     def test_open_allows_custom_encoding_for_text_modes(self):
         modes = [
+            None,
             "r",
             "rt",
         ]
@@ -1416,12 +1460,17 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 )
                 load.return_value = raw
 
+                if mode is None:
+                    args = ()
+                else:
+                    args = (mode,)
+
                 result = run_coroutine(self.f.open(
                     unittest.mock.sentinel.type_,
                     unittest.mock.sentinel.level,
                     unittest.mock.sentinel.namespace,
                     unittest.mock.sentinel.name,
-                    mode,
+                    *args,
                     encoding=unittest.mock.sentinel.encoding,
                 ))
 
