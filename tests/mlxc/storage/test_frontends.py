@@ -92,6 +92,119 @@ class Testencode_jid(unittest.TestCase):
         )
 
 
+class Testencode_uuid(unittest.TestCase):
+    def test_encodes_uuid_as_base32(self):
+        uid = unittest.mock.Mock()
+
+        with contextlib.ExitStack() as stack:
+            b32encode = stack.enter_context(
+                unittest.mock.patch("base64.b32encode")
+            )
+
+            Path = stack.enter_context(
+                unittest.mock.patch("pathlib.Path")
+            )
+
+            result = frontends.encode_uuid(uid)
+
+            b32encode.assert_called_once_with(
+                uid.bytes,
+            )
+
+            b32encode().decode.assert_called_once_with("ascii")
+            b32encode().decode().rstrip.assert_called_once_with("=")
+            b32encode().decode().rstrip().lower.assert_called_once_with()
+
+            Path.assert_called_once_with(
+                b32encode().decode().rstrip().lower()
+            )
+
+            self.assertEqual(
+                result,
+                Path(),
+            )
+
+
+class TestIdentityLevel(unittest.TestCase):
+    def test_key_path(self):
+        il = frontends.IdentityLevel(
+            unittest.mock.sentinel.identity,
+        )
+
+        with contextlib.ExitStack() as stack:
+            encode_uuid = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.encode_uuid")
+            )
+
+            result = il.key_path
+
+            encode_uuid.assert_called_once_with(
+                unittest.mock.sentinel.identity,
+            )
+            self.assertEqual(
+                result,
+                encode_uuid()
+            )
+
+
+class TestAccountLevel(unittest.TestCase):
+    def test_key_path(self):
+        il = frontends.AccountLevel(
+            unittest.mock.sentinel.account,
+        )
+
+        with contextlib.ExitStack() as stack:
+            encode_jid = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.encode_jid")
+            )
+
+            result = il.key_path
+
+            encode_jid.assert_called_once_with(
+                unittest.mock.sentinel.account
+            )
+
+            self.assertEqual(
+                result,
+                encode_jid()
+            )
+
+
+class TestPeerLevel(unittest.TestCase):
+    def test_key_path(self):
+        il = frontends.PeerLevel(
+            unittest.mock.sentinel.identity,
+            unittest.mock.sentinel.peer,
+        )
+
+        with contextlib.ExitStack() as stack:
+            encode_uuid = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.encode_uuid")
+            )
+            encode_uuid.return_value = unittest.mock.MagicMock()
+
+            encode_jid = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.encode_jid")
+            )
+
+            result = il.key_path
+
+            encode_jid.assert_called_once_with(
+                unittest.mock.sentinel.peer
+            )
+
+            encode_uuid.assert_called_once_with(
+                unittest.mock.sentinel.identity
+            )
+
+            encode_uuid().__truediv__.assert_called_once_with(encode_jid())
+
+            self.assertEqual(
+                result,
+                encode_uuid().__truediv__()
+            )
+
+
 class Test_PerLevelKeyFileMixin(unittest.TestCase):
     class Frontend(frontends._PerLevelKeyFileMixin, frontends.Frontend):
         pass
@@ -2063,3 +2176,117 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 result.st_size,
                 len(data2)
             )
+
+
+class TestAppendFrontend(unittest.TestCase):
+    def setUp(self):
+        self.backend = unittest.mock.Mock()
+        self.f = frontends.AppendFrontend(self.backend)
+
+    def test_uses_per_level_key_file_mixin(self):
+        self.assertIsInstance(
+            self.f,
+            frontends._PerLevelKeyFileMixin
+        )
+
+    def test_submit_creates_directory_and_appends(self):
+        ts = unittest.mock.Mock()
+        ts.year = 1234
+        ts.month = 2
+        ts.day = 1
+
+        with contextlib.ExitStack() as stack:
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(
+                    self.f,
+                    "_get_path",
+                )
+            )
+            _get_path.return_value.open.return_value = unittest.mock.MagicMock(
+                ["__enter__", "__exit__"]
+            )
+            _get_path.return_value.open.return_value.__enter__.return_value = \
+                unittest.mock.Mock()
+
+            datetime = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.datetime")
+            )
+
+            mkdir_exist_ok = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+            )
+
+            self.f.submit(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                "filename",
+                unittest.mock.sentinel.data,
+                ts=ts,
+            )
+
+            datetime.utcnow.assert_not_called()
+
+            _get_path.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                pathlib.Path("append") / "1234" / "02-01" / "filename"
+            )
+
+            mkdir_exist_ok.assert_called_once_with(
+                _get_path().parent
+            )
+
+            _get_path().open.assert_called_once_with("ab")
+            _get_path().open().__enter__.assert_called_once_with()
+
+            f = _get_path().open().__enter__()
+            f.write.assert_called_once_with(unittest.mock.sentinel.data)
+
+    def test_submit_uses_current_datetime_if_ts_not_given(self):
+        ts = unittest.mock.Mock()
+        ts.year = 2345
+        ts.month = 12
+        ts.day = 2
+
+        with contextlib.ExitStack() as stack:
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(
+                    self.f,
+                    "_get_path",
+                )
+            )
+            _get_path.return_value.open.return_value = unittest.mock.MagicMock(
+                ["__enter__", "__exit__"]
+            )
+            _get_path.return_value.open.return_value.__enter__.return_value = \
+                unittest.mock.Mock()
+
+            datetime = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.datetime")
+            )
+            datetime.utcnow.return_value = ts
+
+            self.f.submit(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                "filename",
+                unittest.mock.sentinel.data,
+            )
+
+            datetime.utcnow.assert_called_once_with()
+
+            _get_path.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                pathlib.Path("append") / "2345" / "12-02" / "filename"
+            )
+
+            _get_path().open.assert_called_once_with("ab")
+            _get_path().open().__enter__.assert_called_once_with()
+
+            f = _get_path().open().__enter__()
+            f.write.assert_called_once_with(unittest.mock.sentinel.data)

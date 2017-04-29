@@ -39,6 +39,12 @@ def encode_jid(jid):
     return pathlib.Path(full_digest[:2]) / full_digest[2:4] / full_digest[4:]
 
 
+def encode_uuid(uid):
+    return pathlib.Path(
+        base64.b32encode(uid.bytes).decode("ascii").rstrip("=").lower()
+    )
+
+
 class LevelDescriptor(metaclass=abc.ABCMeta):
     @abc.abstractproperty
     def key_path(self):
@@ -58,7 +64,7 @@ class IdentityLevel(collections.namedtuple("IdentityLevel", ["identity"])):
 
     @property
     def key_path(self):
-        return pathlib.Path(self.identity)
+        return encode_uuid(self.identity)
 
 
 class AccountLevel(collections.namedtuple("AccountLevel", ["account"])):
@@ -66,7 +72,7 @@ class AccountLevel(collections.namedtuple("AccountLevel", ["account"])):
 
     @property
     def key_path(self):
-        return pathlib.Path(encode_jid(self.account))
+        return encode_jid(self.account)
 
 
 class PeerLevel(collections.namedtuple("PeerLevel", ["identity", "peer"])):
@@ -74,7 +80,7 @@ class PeerLevel(collections.namedtuple("PeerLevel", ["identity", "peer"])):
 
     @property
     def key_path(self):
-        return pathlib.Path(self.identity) / encode_jid(self.peer)
+        return encode_uuid(self.identity) / encode_jid(self.peer)
 
 
 class Frontend:
@@ -520,14 +526,17 @@ class LargeBlobFrontend(_PerLevelKeyFileMixin, FileLikeFrontend, Frontend):
 class AppendFrontend(_PerLevelKeyFileMixin, Frontend):
     def submit(self, type_, level, namespace, name, data, ts=None):
         now = ts or datetime.utcnow()
-        with self._get_path(
-                type_,
-                level,
-                namespace,
-                pathlib.Path("append") /
-                str(now.year) /
-                "{}-{}".format(now.month, now.day) /
-                name).open("ab") as f:
+        path = self._get_path(
+            type_,
+            level,
+            namespace,
+            pathlib.Path("append") /
+            str(now.year) /
+            "{:02d}-{:02d}".format(now.month, now.day) /
+            name,
+        )
+        utils.mkdir_exist_ok(path.parent)
+        with path.open("ab") as f:
             f.write(data)
 
 
