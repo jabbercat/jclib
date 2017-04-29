@@ -114,6 +114,11 @@ class Frontend:
 
 
 class DatabaseFrontend(Frontend):
+    """
+    Storage frontend for accessing :attr:`~.StorageLevel.GLOBAL` SQLite
+    databases.
+    """
+
     def connect(self, type_, namespace, name):
         """
         Return a SQLAlchemy sessionmaker for a database.
@@ -250,6 +255,43 @@ class FileLikeFrontend(metaclass=abc.ABCMeta):
 
 
 class SmallBlobFrontend(FileLikeFrontend, Frontend):
+    """
+    Storage frontend for storing a huge number of small pieces of data.
+
+    This frontend is intended to be used especially with
+    :attr:`~.StorageLevel.PEER` level data, i.e. where a high cardinality of
+    level keys and/or names exist. Usage with blobs whose average size is above
+    a few megabytes is discouraged.
+
+    The storage is backed by one SQLite database per namespace,
+    :class:`.StorageType` and :class:`.StorageLevel`. Within each namespace
+    and :class:`.StorageType` and :class:`.StorageLevel`, the database is
+    shared across all level keys and names.
+
+    This has the key advantage that only a single file is required per
+    namespace, :class:`.StorageType` and :class:`.StorageLevel`. In addition,
+    the database allows easy assessment of current use of space as well as
+    fast deletion of entries which haven’t been used for a long time.
+
+    The :class:`SmallBlobFrontend` supports the :class:`FileLikeFrontend`
+    interface, however, :meth:`open` can only be used for reading; to store
+    blobs, :meth:`store` must be used. :meth:`stat` supports the
+    :attr:`st_atime`, :attr:`st_mtime`, :attr:`st_birthtime`, and
+    :attr:`st_size` attributes.
+
+    .. automethod:: store
+
+    .. automethod:: load
+
+    Part of the file-like frontend interface:
+
+    .. automethod:: open
+
+    .. automethod:: stat
+
+    .. automethod:: unlink
+
+    """
     StatTuple = collections.namedtuple(
         "StatTuple",
         [
@@ -388,6 +430,25 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
         )
 
     async def store(self, type_, level, namespace, name, data):
+        """
+        Store `data` as a small blob.
+
+        :param type_: The storage type to use.
+        :type type_: :class:`~.StorageType`
+        :param level: The storage level to store the data in.
+        :type level: :class:`~.LevelDescriptor`
+        :param namespace: The namespace to store the data in.
+        :type namespace: :class:`str` (up to 255 UTF-8 bytes)
+        :param name: The name of the data.
+        :type name: :class:`str` (up to 255 codepoints)
+        :param data: Data to store.
+        :type data: :class:`bytes`
+
+        The `data` is stored at the specified location. If an object with the
+        same name in the same namespace, storage level and storage type exists,
+        it is silently overwritten.
+        """
+
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None,
@@ -400,6 +461,22 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
         )
 
     async def load(self, type_, level, namespace, name):
+        """
+        Load the data from a small blob.
+
+        :param type_: The storage type to use.
+        :type type_: :class:`~.StorageType`
+        :param level: The storage level to load the data from.
+        :type level: :class:`~.LevelDescriptor`
+        :param namespace: The namespace to load the data from.
+        :type namespace: :class:`str` (up to 255 UTF-8 bytes)
+        :param name: The name of the data.
+        :type name: :class:`str` (up to 255 codepoints)
+        :raises KeyError: if no data is found with the given parameters.
+        :rtype: :class:`bytes`
+        :return: The stored data.
+        """
+
         data, = await self._load_in_executor(
             type_, level, namespace, name,
             [
@@ -411,6 +488,15 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
 
     async def open(self, type_, level, namespace, name, mode="r", *,
                    encoding=None):
+        """
+        See :meth:`.FileLikeFrontend.open` for general documentation of the
+        :meth:`open` method.
+
+        The following limitations apply:
+
+        * `mode` must be one of ``r``, ``rb``, or ``rt``, otherwise
+          :class:`ValueError` is raised.
+        """
         if utils.is_write_mode(mode):
             raise ValueError(
                 "writable open modes are not supported by SmallBlobFrontend"
@@ -441,6 +527,19 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
             return io.StringIO(text)
 
     async def stat(self, type_, level, namespace, name):
+        """
+        See :meth:`.FileLikeFrontend.stat` for general documentation of the
+        :meth:`stat` method.
+
+        The following attributes are provided on the result object:
+
+        * ``st_atime`` (updated on each :meth:`load`/:meth:`open`)
+        * ``st_mtime`` (updated on each :meth:`store`)
+        * ``st_birthtime`` (set if it doesn’t exist when :meth:`store` is
+          called)
+        * ``st_size``
+        """
+
         epoch = datetime(1970, 1, 1)
 
         try:
@@ -470,6 +569,11 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
         )
 
     async def unlink(self, type_, level, namespace, name):
+        """
+        See :meth:`.FileLikeFrontend.unlink` for general documentation of the
+        :meth:`unlink` method.
+        """
+
         deleted = await self._unlink_in_executor(type_, level, namespace, name)
         if deleted == 0:
             raise FileNotFoundError(
@@ -491,7 +595,32 @@ class _PerLevelKeyFileMixin:
 
 
 class LargeBlobFrontend(_PerLevelKeyFileMixin, FileLikeFrontend, Frontend):
+    """
+    Storage frontend for storing few and large pieces of data.
+
+    This frontend is intended to be used especially with
+    non-:attr:`~.StorageLevel.PEER` level data, i.e. where only few numbers of
+    level keys and names exist. Usage with :attr:`~.StorageLevel.PEER` is
+    discouraged due to the high load it places on the file system.
+
+    Each blob is stored in its own file.
+
+    The :class:`LargeBlobFrontend` supports the :class:`FileLikeFrontend`
+    interface. :meth:`stat` supports all attributes :class:`os.stat_result`
+    supports.
+
+    .. automethod:: open
+
+    .. automethod:: stat
+
+    .. automethod:: unlink
+    """
+
     async def open(self, type_, level, namespace, name, mode="r", **kwargs):
+        """
+        See :meth:`~.FileLikeFrontend.open`.
+        """
+
         path = self._get_path(
             type_,
             level,
@@ -505,6 +634,10 @@ class LargeBlobFrontend(_PerLevelKeyFileMixin, FileLikeFrontend, Frontend):
         return path.open(mode, **kwargs)
 
     async def stat(self, type_, level, namespace, name):
+        """
+        See :meth:`~.FileLikeFrontend.stat`.
+        """
+
         path = self._get_path(
             type_,
             level,
@@ -514,6 +647,10 @@ class LargeBlobFrontend(_PerLevelKeyFileMixin, FileLikeFrontend, Frontend):
         return path.stat()
 
     async def unlink(self, type_, level, namespace, name):
+        """
+        See :meth:`~.FileLikeFrontend.unlink`.
+        """
+
         path = self._get_path(
             type_,
             level,
@@ -524,6 +661,11 @@ class LargeBlobFrontend(_PerLevelKeyFileMixin, FileLikeFrontend, Frontend):
 
 
 class AppendFrontend(_PerLevelKeyFileMixin, Frontend):
+    """
+    Storage frontend for data on which only append and read operations are
+    made.
+    """
+
     def submit(self, type_, level, namespace, name, data, ts=None):
         now = ts or datetime.utcnow()
         path = self._get_path(
