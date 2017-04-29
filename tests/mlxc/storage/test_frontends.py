@@ -699,6 +699,13 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 )
             )
 
+            touch_mtime = stack.enter_context(
+                unittest.mock.patch.object(
+                    mlxc.storage.peer_model.SmallBlob,
+                    "touch_mtime",
+                )
+            )
+
             self.f._store_blob(
                 unittest.mock.sentinel.type_,
                 frontends.PeerLevel(
@@ -725,6 +732,8 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             _, (blob, ), _ = _get_sessionmaker()().merge.mock_calls[0]
+
+            touch_mtime.assert_called_once_with()
 
             self.assertIsInstance(
                 blob,
@@ -766,6 +775,13 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 )
             )
 
+            touch_mtime = stack.enter_context(
+                unittest.mock.patch.object(
+                    mlxc.storage.account_model.SmallBlob,
+                    "touch_mtime",
+                )
+            )
+
             self.f._store_blob(
                 unittest.mock.sentinel.type_,
                 frontends.AccountLevel(
@@ -791,6 +807,8 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             _, (blob, ), _ = _get_sessionmaker()().merge.mock_calls[0]
+
+            touch_mtime.assert_called_once_with()
 
             self.assertIsInstance(
                 blob,
@@ -827,6 +845,13 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 )
             )
 
+            touch_mtime = stack.enter_context(
+                unittest.mock.patch.object(
+                    mlxc.storage.identity_model.SmallBlob,
+                    "touch_mtime",
+                )
+            )
+
             self.f._store_blob(
                 unittest.mock.sentinel.type_,
                 frontends.IdentityLevel(
@@ -852,6 +877,8 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             _, (blob, ), _ = _get_sessionmaker()().merge.mock_calls[0]
+
+            touch_mtime.assert_called_once_with()
 
             self.assertIsInstance(
                 blob,
@@ -958,9 +985,86 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.query,
             )
 
+            get().touch.assert_not_called()
+
             self.assertEqual(
                 result,
                 get(),
+            )
+
+    def test__load_blob_with_touch(self):
+        get_result = unittest.mock.Mock()
+
+        def generate_results():
+            for i in itertools.count():
+                yield getattr(get_result, "i{}".format(i))
+
+        with contextlib.ExitStack() as stack:
+            _get_sessionmaker = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_sessionmaker")
+            )
+
+            session_scope = unittest.mock.MagicMock()
+            session_scope.side_effect = mlxc.storage.common.session_scope
+            stack.enter_context(
+                unittest.mock.patch(
+                    "mlxc.storage.common.session_scope",
+                    new=session_scope
+                )
+            )
+
+            get = stack.enter_context(
+                unittest.mock.patch.object(
+                    mlxc.storage.peer_model.SmallBlob,
+                    "get",
+                )
+            )
+            get.side_effect = generate_results()
+
+            level = frontends.PeerLevel(
+                unittest.mock.sentinel.identity,
+                unittest.mock.sentinel.peer,
+            )
+
+            result = self.f._load_blob(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+                unittest.mock.sentinel.query,
+                touch=True,
+            )
+
+            _get_sessionmaker.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                mlxc.storage.common.StorageLevel.PEER,
+                unittest.mock.sentinel.namespace,
+            )
+
+            session_scope.assert_called_once_with(
+                _get_sessionmaker(),
+            )
+
+            self.assertSequenceEqual(
+                get.mock_calls,
+                [
+                    unittest.mock.call(
+                        _get_sessionmaker()(), level,
+                        unittest.mock.sentinel.name,
+                        unittest.mock.sentinel.query,
+                    ),
+                    unittest.mock.call(
+                        _get_sessionmaker()(), level,
+                        unittest.mock.sentinel.name,
+                    ),
+                ]
+            )
+
+            get_result.i1.touch_atime.assert_called_once_with()
+
+            self.assertEqual(
+                result,
+                get_result.i0,
             )
 
     def test__load_blob_account_level(self):
@@ -1090,16 +1194,70 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.namespace,
                 unittest.mock.sentinel.name,
                 unittest.mock.sentinel.query,
+                touch=unittest.mock.sentinel.touch,
             ))
 
             run_in_executor.assert_called_once_with(
                 None,
-                _load_blob,
+                unittest.mock.ANY,
+            )
+
+            _load_blob.assert_not_called()
+
+            _, (_, func), _ = run_in_executor.mock_calls[0]
+            func()
+
+            _load_blob.assert_called_once_with(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
                 unittest.mock.sentinel.name,
                 unittest.mock.sentinel.query,
+                touch=unittest.mock.sentinel.touch,
+            )
+
+            self.assertEqual(result, unittest.mock.sentinel.data)
+
+    def test__load_in_executor_defaults(self):
+        with contextlib.ExitStack() as stack:
+            _load_blob = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_load_blob")
+            )
+
+            run_in_executor = stack.enter_context(
+                unittest.mock.patch.object(
+                    asyncio.get_event_loop(),
+                    "run_in_executor",
+                    new=CoroutineMock(),
+                )
+            )
+            run_in_executor.return_value = unittest.mock.sentinel.data
+
+            result = run_coroutine(self.f._load_in_executor(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+                unittest.mock.sentinel.query,
+            ))
+
+            run_in_executor.assert_called_once_with(
+                None,
+                unittest.mock.ANY,
+            )
+
+            _load_blob.assert_not_called()
+
+            _, (_, func), _ = run_in_executor.mock_calls[0]
+            func()
+
+            _load_blob.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+                unittest.mock.sentinel.query,
+                touch=False,
             )
 
             self.assertEqual(result, unittest.mock.sentinel.data)
@@ -1339,7 +1497,8 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.name,
                 [
                     mlxc.storage.common.SmallBlobMixin.data,
-                ]
+                ],
+                touch=True,
             )
 
             self.assertEqual(result, unittest.mock.sentinel.data)

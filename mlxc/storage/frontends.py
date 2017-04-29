@@ -327,11 +327,13 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
         blob = blob_type.from_level_descriptor(level)
         blob.data = data
         blob.name = name
+        blob.touch_mtime()
 
         with common.session_scope(sessionmaker) as session:
             session.merge(blob)
 
-    def _load_blob(self, type_, level, namespace, name, query):
+    def _load_blob(self, type_, level, namespace, name, query, *,
+                   touch=False):
         sessionmaker = self._get_sessionmaker(
             type_,
             level.level,
@@ -340,15 +342,22 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
         _, blob_type, *_ = self.LEVEL_INFO[level.level]
 
         with common.session_scope(sessionmaker) as session:
-            return blob_type.get(session, level, name, query)
+            info = blob_type.get(session, level, name, query)
+            if touch:
+                blob_type.get(session, level, name).touch_atime()
+            return info
 
-    async def _load_in_executor(self, type_, level, namespace, name, query):
+    async def _load_in_executor(self, type_, level, namespace, name, query, *,
+                                touch=False):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None,
-            self._load_blob,
-            type_, level, namespace, name,
-            query,
+            functools.partial(
+                self._load_blob,
+                type_, level, namespace, name,
+                query,
+                touch=touch,
+            )
         )
 
     def _unlink_blob(self, type_, level, namespace, name):
@@ -389,7 +398,8 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
             type_, level, namespace, name,
             [
                 common.SmallBlobMixin.data,
-            ]
+            ],
+            touch=True,
         )
         return data
 

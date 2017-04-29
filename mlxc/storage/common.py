@@ -48,18 +48,19 @@ class TimestampsMixin:
         "st_mtime",
         DateTime(),
         default=datetime.utcnow,
-        onupdate=datetime.utcnow,
     )
 
     accessed = Column(
         "st_atime",
         DateTime(),
         default=datetime.utcnow,
-        onupdate=datetime.utcnow,
     )
 
-    def touch(self, now=None):
+    def touch_atime(self, now=None):
         self.accessed = now or datetime.utcnow()
+
+    def touch_mtime(self, now=None):
+        self.modified = now or datetime.utcnow()
 
 
 class SmallBlobMixin(TimestampsMixin):
