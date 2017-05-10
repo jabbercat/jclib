@@ -225,6 +225,11 @@ class Test_PerLevelKeyFileMixin(unittest.TestCase):
             unittest.mock.sentinel.name,
         )
 
+        self.backend.type_base_paths.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            True,
+        )
+
         path_mock.__truediv__.assert_called_once_with(level.level.value)
         path_mock.__truediv__().__truediv__.assert_called_once_with(
             level.key_path
@@ -265,6 +270,11 @@ class Test_PerLevelMixin(unittest.TestCase):
             unittest.mock.sentinel.name,
         )
 
+        self.backend.type_base_paths.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            True,
+        )
+
         path_mock.__truediv__.assert_called_once_with(
             frontends.StorageLevel.GLOBAL.value
         )
@@ -289,6 +299,130 @@ class Test_PerLevelMixin(unittest.TestCase):
             path_mock.__truediv__().__truediv__().__truediv__().__truediv__()
             .__truediv__()
         )
+
+
+class Test_get_engine(unittest.TestCase):
+    def test__get_engine(self):
+        path = unittest.mock.Mock()
+
+        with contextlib.ExitStack() as stack:
+            create_engine = stack.enter_context(
+                unittest.mock.patch("sqlalchemy.create_engine")
+            )
+
+            mkdir_exist_ok = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+            )
+
+            listens_for = stack.enter_context(
+                unittest.mock.patch("sqlalchemy.event.listens_for")
+            )
+
+            result = frontends._get_engine(
+                path,
+            )
+
+            mkdir_exist_ok.assert_called_once_with(
+                path.parent
+            )
+
+            create_engine.assert_called_once_with(
+                "sqlite:///{}".format(path),
+            )
+
+            self.assertSequenceEqual(
+                listens_for.mock_calls,
+                [
+                    unittest.mock.call(create_engine(), "connect"),
+                    unittest.mock.call()(unittest.mock.ANY),
+                    unittest.mock.call(create_engine(), "begin"),
+                    unittest.mock.call()(unittest.mock.ANY),
+                ]
+            )
+
+            self.assertEqual(result, create_engine())
+
+
+class TestDatabaseFrontend(unittest.TestCase):
+    def setUp(self):
+        self.backend = unittest.mock.Mock()
+        self.f = frontends.DatabaseFrontend(self.backend)
+
+    def test__get_path(self):
+        path_mock = unittest.mock.MagicMock()
+        self.backend.type_base_paths.return_value = [path_mock]
+
+        result = self.f._get_path(
+            unittest.mock.sentinel.type_,
+            unittest.mock.sentinel.namespace,
+            unittest.mock.sentinel.name,
+        )
+
+        self.backend.type_base_paths.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            True,
+        )
+
+        path_mock.__truediv__.assert_called_once_with(
+            frontends.StorageLevel.GLOBAL.value
+        )
+        path_mock.__truediv__().__truediv__.assert_called_once_with(
+            unittest.mock.sentinel.namespace,
+        )
+        path_mock.__truediv__().__truediv__().__truediv__\
+            .assert_called_once_with(
+                "db"
+            )
+        path_mock.__truediv__().__truediv__().__truediv__().__truediv__\
+            .assert_called_once_with(
+                unittest.mock.sentinel.name
+            )
+
+        self.assertEqual(
+            result,
+            path_mock.__truediv__().__truediv__().__truediv__().__truediv__()
+        )
+
+    def test_connect(self):
+        with contextlib.ExitStack() as stack:
+            _get_engine = stack.enter_context(
+                unittest.mock.patch(
+                    "mlxc.storage.frontends._get_engine"
+                )
+            )
+
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_path")
+            )
+
+            sessionmaker = stack.enter_context(
+                unittest.mock.patch("sqlalchemy.orm.sessionmaker")
+            )
+
+            result = self.f.connect(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+            )
+
+            _get_path.assert_called_once_with(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.namespace,
+            )
+
+            _get_engine.assert_called_once_with(_get_path())
+
+            sessionmaker.assert_called_once_with(bind=_get_engine())
+
+            self.assertEqual(
+                result,
+                sessionmaker()
+            )
+
+    def test_connect_is_lru_cache(self):
+        self.assertTrue(hasattr(type(self.f).connect, "cache_info"))
+
 
 
 class TestLargeBlobFrontend(unittest.TestCase):
@@ -510,6 +644,11 @@ class TestSmallBlobFrontend(unittest.TestCase):
             unittest.mock.sentinel.namespace,
         )
 
+        self.backend.type_base_paths.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            True,
+        )
+
         path_mock.__truediv__.assert_called_once_with(
             frontends.StorageLevel.GLOBAL.value
         )
@@ -530,56 +669,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
             result,
             path_mock.__truediv__().__truediv__().__truediv__().__truediv__()
         )
-
-    def test__get_engine(self):
-        with contextlib.ExitStack() as stack:
-            _get_path = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_get_path")
-            )
-
-            create_engine = stack.enter_context(
-                unittest.mock.patch("sqlalchemy.create_engine")
-            )
-
-            mkdir_exist_ok = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
-            )
-
-            listens_for = stack.enter_context(
-                unittest.mock.patch("sqlalchemy.event.listens_for")
-            )
-
-            result = self.f._get_engine(
-                unittest.mock.sentinel.type_,
-                unittest.mock.sentinel.level,
-                unittest.mock.sentinel.namespace,
-            )
-
-            _get_path.assert_called_once_with(
-                unittest.mock.sentinel.type_,
-                unittest.mock.sentinel.level,
-                unittest.mock.sentinel.namespace,
-            )
-
-            mkdir_exist_ok.assert_called_once_with(
-                _get_path().parent
-            )
-
-            create_engine.assert_called_once_with(
-                "sqlite:///{}".format(_get_path()),
-            )
-
-            self.assertSequenceEqual(
-                listens_for.mock_calls,
-                [
-                    unittest.mock.call(create_engine(), "connect"),
-                    unittest.mock.call()(unittest.mock.ANY),
-                    unittest.mock.call(create_engine(), "begin"),
-                    unittest.mock.call()(unittest.mock.ANY),
-                ]
-            )
-
-            self.assertEqual(result, create_engine())
 
     def test__init_engine_for_peer(self):
         with contextlib.ExitStack() as stack:
@@ -759,7 +848,13 @@ class TestSmallBlobFrontend(unittest.TestCase):
     def test__get_sessionmaker(self):
         with contextlib.ExitStack() as stack:
             _get_engine = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_get_engine")
+                unittest.mock.patch(
+                    "mlxc.storage.frontends._get_engine"
+                )
+            )
+
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_path")
             )
 
             _init_engine = stack.enter_context(
@@ -776,11 +871,13 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.namespace,
             )
 
-            _get_engine.assert_called_once_with(
+            _get_path.assert_called_once_with(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
             )
+
+            _get_engine.assert_called_once_with(_get_path())
 
             _init_engine.assert_called_once_with(
                 _get_engine(),

@@ -45,6 +45,27 @@ def encode_uuid(uid):
     )
 
 
+def _get_engine(path):
+    utils.mkdir_exist_ok(path.parent)
+    engine = sqlalchemy.create_engine(
+        "sqlite:///{}".format(path),
+    )
+
+    # https://stackoverflow.com/questions/1654857/
+    @sqlalchemy.event.listens_for(engine, "connect")
+    def do_connect(dbapi_connection, connection_record):
+        # disable pysqlite's emitting of the BEGIN statement entirely.
+        # also stops it from emitting COMMIT before any DDL.
+        dbapi_connection.isolation_level = None
+
+    @sqlalchemy.event.listens_for(engine, "begin")
+    def do_begin(conn):
+        # emit our own BEGIN
+        conn.execute("BEGIN")
+
+    return engine
+
+
 class LevelDescriptor(metaclass=abc.ABCMeta):
     @abc.abstractproperty
     def key_path(self):
@@ -113,23 +134,6 @@ class Frontend:
         raise NotImplementedError
 
 
-class DatabaseFrontend(Frontend):
-    """
-    Storage frontend for accessing :attr:`~.StorageLevel.GLOBAL` SQLite
-    databases.
-    """
-
-    def connect(self, type_, namespace, name):
-        """
-        Return a SQLAlchemy sessionmaker for a database.
-        """
-        path = (self._backend.type_base_path(type_) /
-                StorageLevel.GLOBAL.value /
-                namespace /
-                "db" /
-                name)
-
-
 class _PerLevelMixin:
     def _get_path(self, type_, level_type, namespace, frontend_name, name):
         return (self._backend.type_base_paths(type_, True)[0] /
@@ -138,6 +142,51 @@ class _PerLevelMixin:
                 frontend_name /
                 level_type.value /
                 name)
+
+
+class _PerLevelKeyFileMixin:
+    def _get_path(self, type_, level, namespace, name):
+        return (self._backend.type_base_paths(type_, True)[0] /
+                level.level.value /
+                level.key_path /
+                namespace /
+                name)
+
+
+class DatabaseFrontend(Frontend):
+    """
+    Storage frontend for accessing :attr:`~.StorageLevel.GLOBAL` SQLite
+    databases.
+
+    .. automethod:: connect
+    """
+
+    def _get_path(self, type_, namespace, name):
+        return (self._backend.type_base_paths(type_, True)[0] /
+                StorageLevel.GLOBAL.value /
+                namespace /
+                "db" /
+                name)
+
+    @functools.lru_cache(32)
+    def connect(self, type_, namespace, name):
+        """
+        Return a SQLAlchemy sessionmaker for a database.
+
+        :param type_: The storage type of the database.
+        :type type_: :class:`StorageType`
+        :param namespace: The namespace of the database.
+        :type namespace: :class:`str`
+        :param name: The name of the database.
+        :type name: :class:`str`
+        :rtype: :class:`sqlalchemy.orm.sessionmaker`
+        :return: A session maker for the given database.
+
+        The sessionmakers returned by this function may be cached and shared.
+        """
+        path = self._get_path(type_, namespace, name)
+        engine = _get_engine(path)
+        return sqlalchemy.orm.sessionmaker(bind=engine)
 
 
 class FileLikeFrontend(metaclass=abc.ABCMeta):
@@ -324,27 +373,6 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
                 "smallblobs" /
                 (level_type.value + ".sqlite"))
 
-    def _get_engine(self, type_, level_type, namespace):
-        path = self._get_path(type_, level_type, namespace)
-        utils.mkdir_exist_ok(path.parent)
-        engine = sqlalchemy.create_engine(
-            "sqlite:///{}".format(path),
-        )
-
-        # https://stackoverflow.com/questions/1654857/
-        @sqlalchemy.event.listens_for(engine, "connect")
-        def do_connect(dbapi_connection, connection_record):
-            # disable pysqlite's emitting of the BEGIN statement entirely.
-            # also stops it from emitting COMMIT before any DDL.
-            dbapi_connection.isolation_level = None
-
-        @sqlalchemy.event.listens_for(engine, "begin")
-        def do_begin(conn):
-            # emit our own BEGIN
-            conn.execute("BEGIN")
-
-        return engine
-
     def _init_engine(self, engine, level_type):
         if level_type == StorageLevel.GLOBAL:
             raise ValueError("GLOBAL level not supported")
@@ -360,7 +388,8 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
 
     @functools.lru_cache(32)
     def _get_sessionmaker(self, type_, level_type, namespace):
-        engine = self._get_engine(type_, level_type, namespace)
+        path = self._get_path(type_, level_type, namespace)
+        engine = _get_engine(path)
         self._init_engine(engine, level_type)
         return sqlalchemy.orm.sessionmaker(bind=engine)
 
@@ -585,15 +614,6 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
             )
 
 
-class _PerLevelKeyFileMixin:
-    def _get_path(self, type_, level, namespace, name):
-        return (self._backend.type_base_paths(type_, True)[0] /
-                level.level.value /
-                level.key_path /
-                namespace /
-                name)
-
-
 class LargeBlobFrontend(_PerLevelKeyFileMixin, FileLikeFrontend, Frontend):
     """
     Storage frontend for storing few and large pieces of data.
@@ -683,6 +703,13 @@ class AppendFrontend(_PerLevelKeyFileMixin, Frontend):
 
 
 class XMLFrontend(_PerLevelMixin):
+    """
+    Manage snippets of XSO-defined XML data.
+
+    The snippet XSO definitions need to be registered before they can be read
+    or written.
+    """
+
     def register(self, type_, level_type, xso_type):
         pass
 
