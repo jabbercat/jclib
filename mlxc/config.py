@@ -25,22 +25,6 @@ def unescape_dirname(path):
     return urllib.parse.unquote(path)
 
 
-@contextlib.contextmanager
-def safe_writer(destpath, mode="wb"):
-    destpath = pathlib.Path(destpath)
-    with tempfile.NamedTemporaryFile(
-            mode=mode,
-            dir=str(destpath.parent),
-            delete=False) as tmpfile:
-        try:
-            yield tmpfile
-        except:
-            os.unlink(tmpfile.name)
-            raise
-        else:
-            os.replace(tmpfile.name, str(destpath))
-
-
 class SimpleConfigurable(metaclass=abc.ABCMeta):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

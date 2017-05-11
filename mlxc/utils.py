@@ -1,11 +1,14 @@
 import asyncio
 import binascii
+import contextlib
 import functools
 import hashlib
 import logging
 import math
 import os.path
+import pathlib
 import struct
+import tempfile
 import types
 import unicodedata
 import xml.sax.handler
@@ -400,3 +403,19 @@ def mkdir_exist_ok(path):
     except FileExistsError:
         if not path.is_dir():
             raise
+
+
+@contextlib.contextmanager
+def safe_writer(destpath, mode="wb"):
+    destpath = pathlib.Path(destpath)
+    with tempfile.NamedTemporaryFile(
+            mode=mode,
+            dir=str(destpath.parent),
+            delete=False) as tmpfile:
+        try:
+            yield tmpfile
+        except:
+            os.unlink(tmpfile.name)
+            raise
+        else:
+            os.replace(tmpfile.name, str(destpath))
