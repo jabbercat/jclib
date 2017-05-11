@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import itertools
 import pathlib
+import tempfile
 import unittest
 import unittest.mock
 import uuid
@@ -24,6 +25,48 @@ from aioxmpp.testutils import (
 from mlxc.testutils import (
     inmemory_database,
 )
+
+
+NS = "https://xmlns.zombofant.net/test/mlxc.storage.frontends"
+
+
+class MockBackend(mlxc.storage.backends.Backend):
+    def __init__(self):
+        self.__tempdir = tempfile.TemporaryDirectory()
+        self.__dirname = None
+
+    def type_base_paths(self, type_, writable):
+        return [pathlib.Path(
+            self.__dirname,
+        ) / type_.value]
+
+    def __enter__(self):
+        self.__dirname = self.__tempdir.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_value, tb):
+        self.__dirname = None
+        self.__tempdir.__exit__(exc_type, exc_value, tb)
+
+
+class Data1(aioxmpp.xso.XSO):
+    TAG = (NS, "data1")
+
+    foo = aioxmpp.xso.Attr("foo")
+    bar = aioxmpp.xso.Text()
+
+
+class Data2(aioxmpp.xso.XSO):
+    TAG = (NS, "data2")
+
+    foo = aioxmpp.xso.Child([Data1])
+
+
+for level_type in frontends.StorageLevel:
+    if level_type == frontends.StorageLevel.GLOBAL:
+        continue
+    frontends.XMLFrontend.register(level_type, Data1)
+    frontends.XMLFrontend.register(level_type, Data2)
 
 
 class Testencode_jid(unittest.TestCase):
@@ -90,6 +133,25 @@ class Testencode_jid(unittest.TestCase):
             result,
             Path().__truediv__().__truediv__()
         )
+
+
+class Testescape_path_part(unittest.TestCase):
+    def test_urlencdoes_argument(self):
+        with contextlib.ExitStack() as stack:
+            quote = stack.enter_context(
+                unittest.mock.patch("urllib.parse.quote")
+            )
+
+            result = frontends.escape_path_part(
+                unittest.mock.sentinel.part
+            )
+
+        quote.assert_called_once_with(
+            unittest.mock.sentinel.part,
+            safe=" "
+        )
+
+        self.assertEqual(result, quote())
 
 
 class Testencode_uuid(unittest.TestCase):
@@ -205,50 +267,6 @@ class TestPeerLevel(unittest.TestCase):
             )
 
 
-class Test_PerLevelKeyFileMixin(unittest.TestCase):
-    class Frontend(frontends._PerLevelKeyFileMixin, frontends.Frontend):
-        pass
-
-    def setUp(self):
-        self.backend = unittest.mock.Mock()
-        self.f = self.Frontend(self.backend)
-
-    def test__get_path(self):
-        path_mock = unittest.mock.MagicMock()
-        level = unittest.mock.Mock()
-        self.backend.type_base_paths.return_value = [path_mock]
-
-        result = self.f._get_path(
-            unittest.mock.sentinel.type_,
-            level,
-            unittest.mock.sentinel.namespace,
-            unittest.mock.sentinel.name,
-        )
-
-        self.backend.type_base_paths.assert_called_once_with(
-            unittest.mock.sentinel.type_,
-            True,
-        )
-
-        path_mock.__truediv__.assert_called_once_with(level.level.value)
-        path_mock.__truediv__().__truediv__.assert_called_once_with(
-            level.key_path
-        )
-        path_mock.__truediv__().__truediv__().__truediv__\
-            .assert_called_once_with(
-                unittest.mock.sentinel.namespace,
-            )
-        path_mock.__truediv__().__truediv__().__truediv__().__truediv__\
-            .assert_called_once_with(
-                unittest.mock.sentinel.name,
-            )
-
-        self.assertEqual(
-            result,
-            path_mock.__truediv__().__truediv__().__truediv__().__truediv__()
-        )
-
-
 class Test_PerLevelMixin(unittest.TestCase):
     class Frontend(frontends._PerLevelMixin, frontends.Frontend):
         pass
@@ -262,24 +280,33 @@ class Test_PerLevelMixin(unittest.TestCase):
         level_type = unittest.mock.Mock()
         self.backend.type_base_paths.return_value = [path_mock]
 
-        result = self.f._get_path(
-            unittest.mock.sentinel.type_,
-            level_type,
-            unittest.mock.sentinel.namespace,
-            unittest.mock.sentinel.frontend_name,
-            unittest.mock.sentinel.name,
-        )
+        with contextlib.ExitStack() as stack:
+            escape_path_part = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.escape_path_part")
+            )
+
+            result = self.f._get_path(
+                unittest.mock.sentinel.type_,
+                level_type,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.frontend_name,
+                unittest.mock.sentinel.name,
+            )
 
         self.backend.type_base_paths.assert_called_once_with(
             unittest.mock.sentinel.type_,
             True,
         )
 
+        escape_path_part.assert_called_once_with(
+            unittest.mock.sentinel.namespace
+        )
+
         path_mock.__truediv__.assert_called_once_with(
             frontends.StorageLevel.GLOBAL.value
         )
         path_mock.__truediv__().__truediv__.assert_called_once_with(
-            unittest.mock.sentinel.namespace,
+            escape_path_part(),
         )
         path_mock.__truediv__().__truediv__().__truediv__\
             .assert_called_once_with(
@@ -298,6 +325,59 @@ class Test_PerLevelMixin(unittest.TestCase):
             result,
             path_mock.__truediv__().__truediv__().__truediv__().__truediv__()
             .__truediv__()
+        )
+
+
+class Test_PerLevelKeyFileMixin(unittest.TestCase):
+    class Frontend(frontends._PerLevelKeyFileMixin, frontends.Frontend):
+        pass
+
+    def setUp(self):
+        self.backend = unittest.mock.Mock()
+        self.f = self.Frontend(self.backend)
+
+    def test__get_path(self):
+        path_mock = unittest.mock.MagicMock()
+        level = unittest.mock.Mock()
+        self.backend.type_base_paths.return_value = [path_mock]
+
+        with contextlib.ExitStack() as stack:
+            escape_path_part = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.escape_path_part")
+            )
+
+            result = self.f._get_path(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+            )
+
+        self.backend.type_base_paths.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            True,
+        )
+
+        escape_path_part.assert_called_once_with(
+            unittest.mock.sentinel.namespace
+        )
+
+        path_mock.__truediv__.assert_called_once_with(level.level.value)
+        path_mock.__truediv__().__truediv__.assert_called_once_with(
+            level.key_path
+        )
+        path_mock.__truediv__().__truediv__().__truediv__\
+            .assert_called_once_with(
+                escape_path_part()
+            )
+        path_mock.__truediv__().__truediv__().__truediv__().__truediv__\
+            .assert_called_once_with(
+                unittest.mock.sentinel.name,
+            )
+
+        self.assertEqual(
+            result,
+            path_mock.__truediv__().__truediv__().__truediv__().__truediv__()
         )
 
 
@@ -352,22 +432,31 @@ class TestDatabaseFrontend(unittest.TestCase):
         path_mock = unittest.mock.MagicMock()
         self.backend.type_base_paths.return_value = [path_mock]
 
-        result = self.f._get_path(
-            unittest.mock.sentinel.type_,
-            unittest.mock.sentinel.namespace,
-            unittest.mock.sentinel.name,
-        )
+        with contextlib.ExitStack() as stack:
+            escape_path_part = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.escape_path_part")
+            )
+
+            result = self.f._get_path(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.namespace,
+                unittest.mock.sentinel.name,
+            )
 
         self.backend.type_base_paths.assert_called_once_with(
             unittest.mock.sentinel.type_,
             True,
         )
 
+        escape_path_part.assert_called_once_with(
+            unittest.mock.sentinel.namespace
+        )
+
         path_mock.__truediv__.assert_called_once_with(
             frontends.StorageLevel.GLOBAL.value
         )
         path_mock.__truediv__().__truediv__.assert_called_once_with(
-            unittest.mock.sentinel.namespace,
+            escape_path_part(),
         )
         path_mock.__truediv__().__truediv__().__truediv__\
             .assert_called_once_with(
@@ -2387,3 +2476,1474 @@ class TestAppendFrontend(unittest.TestCase):
 
             f = _get_path().open().__enter__()
             f.write.assert_called_once_with(unittest.mock.sentinel.data)
+
+
+class TestXMLFrontend(unittest.TestCase):
+    def setUp(self):
+        self.backend = unittest.mock.Mock()
+        self.f = frontends.XMLFrontend(self.backend)
+
+    def test__get_path(self):
+        level_type = unittest.mock.Mock()
+        path_mock = unittest.mock.MagicMock()
+        self.backend.type_base_paths.return_value = [path_mock]
+
+        with contextlib.ExitStack() as stack:
+            escape_path_part = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.escape_path_part")
+            )
+
+            result = self.f._get_path(
+                unittest.mock.sentinel.type_,
+                level_type,
+            )
+
+        self.backend.type_base_paths.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            True,
+        )
+
+        escape_path_part.assert_called_once_with(
+            "dns:mlxc.zombofant.net"
+        )
+
+        path_mock.__truediv__.assert_called_once_with(
+            frontends.StorageLevel.GLOBAL.value
+        )
+        path_mock.__truediv__().__truediv__.assert_called_once_with(
+            escape_path_part(),
+        )
+        path_mock.__truediv__().__truediv__().__truediv__\
+            .assert_called_once_with(
+                "xml-storage"
+            )
+        path_mock.__truediv__().__truediv__().__truediv__().__truediv__\
+            .assert_called_once_with(
+                "{}.xml".format(level_type.value)
+            )
+
+        self.assertEqual(
+            result,
+            path_mock.__truediv__().__truediv__().__truediv__().__truediv__()
+        )
+
+    def test__get_path_peer(self):
+        path_mock = unittest.mock.MagicMock()
+        level_type = frontends.StorageLevel.PEER
+        self.backend.type_base_paths.return_value = [path_mock]
+
+        with contextlib.ExitStack() as stack:
+            escape_path_part = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.escape_path_part")
+            )
+
+            encode_uuid = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.encode_uuid")
+            )
+
+            result = self.f._get_path(
+                unittest.mock.sentinel.type_,
+                level_type,
+                identity=unittest.mock.sentinel.identity,
+            )
+
+        self.backend.type_base_paths.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            True,
+        )
+
+        escape_path_part.assert_called_once_with(
+            "dns:mlxc.zombofant.net"
+        )
+
+        encode_uuid.assert_called_once_with(unittest.mock.sentinel.identity)
+
+        path_mock.__truediv__.assert_called_once_with(
+            frontends.StorageLevel.IDENTITY.value
+        )
+        path_mock.__truediv__().__truediv__.assert_called_once_with(
+            encode_uuid(),
+        )
+        path_mock.__truediv__().__truediv__().__truediv__\
+            .assert_called_once_with(
+                escape_path_part(),
+            )
+        path_mock.__truediv__().__truediv__().__truediv__().__truediv__\
+            .assert_called_once_with(
+                "xml-storage"
+            )
+        path_mock.__truediv__().__truediv__().__truediv__().__truediv__()\
+            .__truediv__.assert_called_once_with(
+                "{}.xml".format(level_type.value)
+            )
+
+        self.assertEqual(
+            result,
+            path_mock.__truediv__().__truediv__().__truediv__().__truediv__()
+            .__truediv__()
+        )
+
+    def test__load_account(self):
+        level = frontends.AccountLevel(
+            unittest.mock.sentinel.account,
+        )
+
+        with contextlib.ExitStack() as stack:
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_path")
+            )
+            _get_path.return_value = unittest.mock.MagicMock()
+
+            read_single_xso = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xml.read_single_xso")
+            )
+
+            result = self.f._load(
+                unittest.mock.sentinel.type_,
+                level,
+            )
+
+        _get_path.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level.level,
+            identity=unittest.mock.ANY,
+        )
+
+        _get_path().open.assert_called_once_with(
+            "rb",
+        )
+
+        read_single_xso.assert_called_once_with(
+            _get_path().open().__enter__(),
+            mlxc.storage.account_model.XMLStorage,
+        )
+
+        self.assertEqual(
+            result,
+            read_single_xso(),
+        )
+
+    def test__load_account_returns_fresh_object_if_nonexistant(self):
+        level = frontends.AccountLevel(
+            unittest.mock.sentinel.account,
+        )
+
+        path = unittest.mock.MagicMock()
+        path.open.side_effect = FileNotFoundError
+
+        with contextlib.ExitStack() as stack:
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_path")
+            )
+            _get_path.return_value = path
+
+            read_single_xso = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xml.read_single_xso")
+            )
+
+            result = self.f._load(
+                unittest.mock.sentinel.type_,
+                level,
+            )
+
+        _get_path.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level.level,
+            identity=unittest.mock.ANY,
+        )
+
+        _get_path().open.assert_called_once_with(
+            "rb",
+        )
+
+        self.assertIsInstance(
+            result,
+            mlxc.storage.account_model.XMLStorage,
+        )
+
+    def test__load_identity(self):
+        level = frontends.IdentityLevel(
+            unittest.mock.sentinel.identity,
+        )
+
+        with contextlib.ExitStack() as stack:
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_path")
+            )
+            _get_path.return_value = unittest.mock.MagicMock()
+
+            read_single_xso = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xml.read_single_xso")
+            )
+
+            result = self.f._load(
+                unittest.mock.sentinel.type_,
+                level,
+            )
+
+        _get_path.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level.level,
+            identity=unittest.mock.ANY,
+        )
+
+        _get_path().open.assert_called_once_with(
+            "rb",
+        )
+
+        read_single_xso.assert_called_once_with(
+            _get_path().open().__enter__(),
+            mlxc.storage.identity_model.XMLStorage,
+        )
+
+        self.assertEqual(
+            result,
+            read_single_xso(),
+        )
+
+    def test__load_identity_returns_fresh_object_if_nonexistant(self):
+        level = frontends.IdentityLevel(
+            unittest.mock.sentinel.identity,
+        )
+
+        path = unittest.mock.MagicMock()
+        path.open.side_effect = FileNotFoundError
+
+        with contextlib.ExitStack() as stack:
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_path")
+            )
+            _get_path.return_value = path
+
+            read_single_xso = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xml.read_single_xso")
+            )
+
+            result = self.f._load(
+                unittest.mock.sentinel.type_,
+                level,
+            )
+
+        _get_path.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level.level,
+            identity=unittest.mock.ANY,
+        )
+
+        _get_path().open.assert_called_once_with(
+            "rb",
+        )
+
+        self.assertIsInstance(
+            result,
+            mlxc.storage.identity_model.XMLStorage,
+        )
+
+    def test__load_peer(self):
+        level = frontends.PeerLevel(
+            unittest.mock.sentinel.identity,
+            unittest.mock.sentinel.peer,
+        )
+
+        with contextlib.ExitStack() as stack:
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_path")
+            )
+            _get_path.return_value = unittest.mock.MagicMock()
+
+            read_single_xso = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xml.read_single_xso")
+            )
+
+            result = self.f._load(
+                unittest.mock.sentinel.type_,
+                level,
+            )
+
+        _get_path.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level.level,
+            identity=unittest.mock.sentinel.identity,
+        )
+
+        _get_path().open.assert_called_once_with(
+            "rb",
+        )
+
+        read_single_xso.assert_called_once_with(
+            _get_path().open().__enter__(),
+            mlxc.storage.peer_model.XMLStorage,
+        )
+
+        self.assertEqual(
+            result,
+            read_single_xso(),
+        )
+
+    def test__load_peer_returns_fresh_object_if_nonexistant(self):
+        level = frontends.PeerLevel(
+            unittest.mock.sentinel.identity,
+            unittest.mock.sentinel.peer,
+        )
+
+        path = unittest.mock.MagicMock()
+        path.open.side_effect = FileNotFoundError
+
+        with contextlib.ExitStack() as stack:
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_path")
+            )
+            _get_path.return_value = path
+
+            read_single_xso = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xml.read_single_xso")
+            )
+
+            result = self.f._load(
+                unittest.mock.sentinel.type_,
+                level,
+            )
+
+        _get_path.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level.level,
+            identity=unittest.mock.sentinel.identity,
+        )
+
+        _get_path().open.assert_called_once_with(
+            "rb",
+        )
+
+        self.assertIsInstance(
+            result,
+            mlxc.storage.peer_model.XMLStorage,
+        )
+
+    def test__open_uses__load_to_obtain_data(self):
+        level = unittest.mock.Mock(spec=frontends.LevelDescriptor)
+        level.level = frontends.StorageLevel.ACCOUNT
+
+        with contextlib.ExitStack() as stack:
+            _load = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_load")
+            )
+
+            result = self.f._open(
+                unittest.mock.sentinel.type_,
+                level,
+            )
+
+        _load.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level,
+        )
+
+        self.assertEqual(result, _load())
+
+    def test__open_caches_data(self):
+        level = unittest.mock.Mock(spec=frontends.LevelDescriptor)
+        level.level = frontends.StorageLevel.ACCOUNT
+
+        with contextlib.ExitStack() as stack:
+            _load = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_load")
+            )
+
+            result1 = self.f._open(
+                unittest.mock.sentinel.type_,
+                level,
+            )
+
+            result2 = self.f._open(
+                unittest.mock.sentinel.type_,
+                level,
+            )
+
+        _load.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level,
+        )
+
+        self.assertEqual(result1, _load())
+        self.assertEqual(result1, result2)
+
+    def test__open_caches_peer_data_by_identity(self):
+        level1 = frontends.PeerLevel(
+            unittest.mock.sentinel.identity1,
+            unittest.mock.sentinel.peer1,
+        )
+
+        level2 = frontends.PeerLevel(
+            unittest.mock.sentinel.identity1,
+            unittest.mock.sentinel.peer2,
+        )
+
+        level3 = frontends.PeerLevel(
+            unittest.mock.sentinel.identity2,
+            unittest.mock.sentinel.peer2,
+        )
+
+
+        def generate_results():
+            for i in itertools.count(1):
+                yield getattr(unittest.mock.sentinel, "data{}".format(i))
+
+
+        with contextlib.ExitStack() as stack:
+            _load = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_load")
+            )
+            _load.side_effect = generate_results()
+
+            result11 = self.f._open(
+                unittest.mock.sentinel.type_,
+                level1,
+            )
+
+            result21 = self.f._open(
+                unittest.mock.sentinel.type_,
+                level2,
+            )
+
+            result31 = self.f._open(
+                unittest.mock.sentinel.type_,
+                level3,
+            )
+
+            result12 = self.f._open(
+                unittest.mock.sentinel.type_,
+                level1,
+            )
+
+            result22 = self.f._open(
+                unittest.mock.sentinel.type_,
+                level2,
+            )
+
+            result32 = self.f._open(
+                unittest.mock.sentinel.type_,
+                level3,
+            )
+
+        self.assertCountEqual(
+            _load.mock_calls,
+            [
+                unittest.mock.call(unittest.mock.sentinel.type_, level1),
+                unittest.mock.call(unittest.mock.sentinel.type_, level3),
+            ]
+        )
+
+        self.assertEqual(result11, unittest.mock.sentinel.data1)
+        self.assertEqual(result21, unittest.mock.sentinel.data1)
+        self.assertEqual(result31, unittest.mock.sentinel.data2)
+
+        self.assertEqual(result12, unittest.mock.sentinel.data1)
+        self.assertEqual(result22, unittest.mock.sentinel.data1)
+        self.assertEqual(result32, unittest.mock.sentinel.data2)
+
+    def test_get_level_keys_returns_keys_of_data(self):
+        storage = unittest.mock.Mock()
+
+        with contextlib.ExitStack() as stack:
+            _open = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_open")
+            )
+
+            _open.return_value = storage
+
+            result = self.f.get_level_keys(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level_type,
+            )
+
+        _open.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            unittest.mock.sentinel.level_type,
+        )
+
+        storage.items.keys.assert_called_once_with()
+
+        self.assertEqual(
+            result,
+            storage.items.keys(),
+        )
+
+    def test_get_all_returns_data_for_account(self):
+        level = frontends.AccountLevel(
+            unittest.mock.sentinel.account,
+        )
+        storage = unittest.mock.Mock()
+        storage.items = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            _open = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_open")
+            )
+
+            _open.return_value = storage
+
+            result = self.f.get_all(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.xso_type,
+            )
+
+        _open.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level,
+        )
+
+        storage.items.__getitem__.assert_called_once_with(
+            unittest.mock.sentinel.account,
+        )
+
+        storage.items.__getitem__().__getitem__.assert_called_once_with(
+            unittest.mock.sentinel.xso_type,
+        )
+
+        self.assertEqual(
+            result,
+            storage.items[...][...]
+        )
+
+    def test_get_all_handles_KeyError_for_items(self):
+        level = frontends.AccountLevel(
+            unittest.mock.sentinel.account,
+        )
+        storage = unittest.mock.Mock()
+        storage.items = unittest.mock.MagicMock()
+        storage.items.__getitem__.side_effect = KeyError
+
+        with contextlib.ExitStack() as stack:
+            _open = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_open")
+            )
+
+            _open.return_value = storage
+
+            result = self.f.get_all(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.xso_type,
+            )
+
+        _open.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level,
+        )
+
+        storage.items.__getitem__.assert_called_once_with(
+            unittest.mock.sentinel.account,
+        )
+
+        self.assertSequenceEqual(
+            result,
+            [],
+        )
+
+        self.assertIsInstance(
+            result,
+            aioxmpp.xso.model.XSOList,
+        )
+
+    def test_get_all_handles_KeyError_for_data(self):
+        level = frontends.AccountLevel(
+            unittest.mock.sentinel.account,
+        )
+        storage = unittest.mock.Mock()
+        storage.items = unittest.mock.MagicMock()
+        storage.items.__getitem__.return_value.__getitem__.side_effect = KeyError
+
+        with contextlib.ExitStack() as stack:
+            _open = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_open")
+            )
+
+            _open.return_value = storage
+
+            result = self.f.get_all(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.xso_type,
+            )
+
+        _open.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level,
+        )
+
+        storage.items.__getitem__.assert_called_once_with(
+            unittest.mock.sentinel.account,
+        )
+
+        storage.items.__getitem__().__getitem__.assert_called_once_with(
+            unittest.mock.sentinel.xso_type,
+        )
+
+        self.assertSequenceEqual(
+            result,
+            [],
+        )
+
+        self.assertIsInstance(
+            result,
+            aioxmpp.xso.model.XSOList,
+        )
+
+    def test_get_all_returns_data_for_identity(self):
+        identity = unittest.mock.Mock()
+        level = frontends.IdentityLevel(
+            identity,
+        )
+        storage = unittest.mock.Mock()
+        storage.items = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            _open = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_open")
+            )
+
+            _open.return_value = storage
+
+            result = self.f.get_all(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.xso_type,
+            )
+
+        _open.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level,
+        )
+
+        storage.items.__getitem__.assert_called_once_with(
+            identity.bytes,
+        )
+
+        storage.items.__getitem__().__getitem__.assert_called_once_with(
+            unittest.mock.sentinel.xso_type,
+        )
+
+        self.assertEqual(
+            result,
+            storage.items[...][...]
+        )
+
+    def test_get_all_returns_data_for_peer(self):
+        identity = unittest.mock.Mock()
+        level = frontends.PeerLevel(
+            identity,
+            unittest.mock.sentinel.jid,
+        )
+        storage = unittest.mock.Mock()
+        storage.items = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            _open = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_open")
+            )
+
+            _open.return_value = storage
+
+            result = self.f.get_all(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.xso_type,
+            )
+
+        _open.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level,
+        )
+
+        storage.items.__getitem__.assert_called_once_with(
+            (
+                identity.bytes,
+                unittest.mock.sentinel.jid,
+            )
+        )
+
+        storage.items.__getitem__().__getitem__.assert_called_once_with(
+            unittest.mock.sentinel.xso_type,
+        )
+
+        self.assertEqual(
+            result,
+            storage.items[...][...]
+        )
+
+    def test_get_uses_get_all(self):
+        with contextlib.ExitStack() as stack:
+            get_all = stack.enter_context(
+                unittest.mock.patch.object(self.f, "get_all")
+            )
+            get_all.return_value = unittest.mock.MagicMock()
+
+            result = self.f.get(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.xso_type,
+            )
+
+        get_all.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            unittest.mock.sentinel.level,
+            unittest.mock.sentinel.xso_type,
+        )
+
+        get_all().__getitem__.assert_called_once_with(0)
+
+        self.assertEqual(
+            result,
+            get_all()[...],
+        )
+
+    def test_get_returns_None_on_IndexError(self):
+        with contextlib.ExitStack() as stack:
+            get_all = stack.enter_context(
+                unittest.mock.patch.object(self.f, "get_all")
+            )
+            get_all.return_value = unittest.mock.MagicMock()
+            get_all.return_value.__getitem__.side_effect = IndexError
+
+            result = self.f.get(
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level,
+                unittest.mock.sentinel.xso_type,
+            )
+
+        get_all.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            unittest.mock.sentinel.level,
+            unittest.mock.sentinel.xso_type,
+        )
+
+        get_all().__getitem__.assert_called_once_with(0)
+
+        self.assertIsNone(result)
+
+    def test_get_reraises_IndexError_from_get_all(self):
+        with contextlib.ExitStack() as stack:
+            get_all = stack.enter_context(
+                unittest.mock.patch.object(self.f, "get_all")
+            )
+            get_all.side_effect = IndexError
+
+            with self.assertRaises(IndexError):
+                self.f.get(
+                    unittest.mock.sentinel.type_,
+                    unittest.mock.sentinel.level,
+                    unittest.mock.sentinel.xso_type,
+                )
+
+    def test__put_into_single_xso_existing(self):
+        items = unittest.mock.MagicMock()
+        xso = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+
+        self.f._put_into(
+            items,
+            unittest.mock.sentinel.key,
+            xso,
+        )
+
+        items.__getitem__.assert_called_once_with(unittest.mock.sentinel.key)
+
+        items.__getitem__().__getitem__.assert_called_once_with(
+            type(xso),
+        )
+
+        items.__getitem__().__getitem__().__setitem__.assert_called_once_with(
+            slice(None),
+            [xso],
+        )
+
+    def test__put_into_single_xso_key_missing(self):
+        items = unittest.mock.MagicMock()
+        items.__getitem__.side_effect = KeyError()
+
+        xso = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+
+        with contextlib.ExitStack() as stack:
+            XSOList = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xso.model.XSOList")
+            )
+
+            self.f._put_into(
+                items,
+                unittest.mock.sentinel.key,
+                xso,
+            )
+
+        items.__getitem__.assert_called_once_with(unittest.mock.sentinel.key)
+
+        XSOList.assert_called_once_with([xso])
+
+        items.__setitem__.assert_called_once_with(
+            unittest.mock.sentinel.key,
+            {
+                type(xso): XSOList(),
+            }
+        )
+
+    def test__put_into_single_xso_type_missing(self):
+        items = unittest.mock.MagicMock()
+        items.__getitem__.return_value.__getitem__.side_effect = KeyError()
+
+        xso = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+
+        with contextlib.ExitStack() as stack:
+            XSOList = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xso.model.XSOList")
+            )
+
+            self.f._put_into(
+                items,
+                unittest.mock.sentinel.key,
+                xso,
+            )
+
+        items.__getitem__.assert_called_once_with(unittest.mock.sentinel.key)
+
+        items.__getitem__().__getitem__.assert_called_once_with(
+            type(xso),
+        )
+
+        XSOList.assert_called_once_with([xso])
+
+        items.__getitem__().__setitem__.assert_called_once_with(
+            type(xso),
+            XSOList(),
+        )
+
+    def test__put_into_multiple_xsos_existing(self):
+        items = unittest.mock.MagicMock()
+
+        xso1 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+        xso2 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+
+        self.f._put_into(
+            items,
+            unittest.mock.sentinel.key,
+            [xso1, xso2],
+        )
+
+        items.__getitem__.assert_called_once_with(unittest.mock.sentinel.key)
+
+        items.__getitem__().__getitem__.assert_called_once_with(
+            type(xso1),
+        )
+
+        items.__getitem__().__getitem__().__setitem__.assert_called_once_with(
+            slice(None),
+            [xso1, xso2],
+        )
+
+    def test__put_into_single_xso_key_missing(self):
+        items = unittest.mock.MagicMock()
+        items.__getitem__.side_effect = KeyError()
+
+        xso1 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+        xso2 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+
+        with contextlib.ExitStack() as stack:
+            XSOList = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xso.model.XSOList")
+            )
+
+            self.f._put_into(
+                items,
+                unittest.mock.sentinel.key,
+                [xso1, xso2],
+            )
+
+        items.__getitem__.assert_called_once_with(unittest.mock.sentinel.key)
+
+        XSOList.assert_called_once_with([xso1, xso2])
+
+        items.__setitem__.assert_called_once_with(
+            unittest.mock.sentinel.key,
+            {
+                type(xso1): XSOList(),
+            }
+        )
+
+    def test__put_into_single_xso_type_missing(self):
+        items = unittest.mock.MagicMock()
+        items.__getitem__.return_value.__getitem__.side_effect = KeyError()
+
+        xso1 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+        xso2 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+
+        with contextlib.ExitStack() as stack:
+            XSOList = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xso.model.XSOList")
+            )
+
+            self.f._put_into(
+                items,
+                unittest.mock.sentinel.key,
+                [xso1, xso2],
+            )
+
+        items.__getitem__.assert_called_once_with(unittest.mock.sentinel.key)
+
+        items.__getitem__().__getitem__.assert_called_once_with(
+            type(xso1),
+        )
+
+        XSOList.assert_called_once_with([xso1, xso2])
+
+        items.__getitem__().__setitem__.assert_called_once_with(
+            type(xso1),
+            XSOList(),
+        )
+
+    def test_put_to_account(self):
+        level = frontends.AccountLevel(
+            unittest.mock.sentinel.account,
+        )
+
+        storage = unittest.mock.Mock()
+        storage.items = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            _open = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_open")
+            )
+            _open.return_value = storage
+
+            _put_into = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_put_into")
+            )
+
+            XSOList = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xso.model.XSOList")
+            )
+
+            self.f.put(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.xso,
+            )
+
+        _open.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level,
+        )
+
+        _put_into.assert_called_once_with(
+            storage.items,
+            unittest.mock.sentinel.account,
+            unittest.mock.sentinel.xso,
+        )
+
+    def test_put_to_identity(self):
+        identity = unittest.mock.Mock()
+        level = frontends.IdentityLevel(
+            identity,
+        )
+        storage = unittest.mock.Mock()
+        storage.items = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            _open = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_open")
+            )
+            _open.return_value = storage
+
+            _put_into = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_put_into")
+            )
+
+            XSOList = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xso.model.XSOList")
+            )
+
+            self.f.put(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.xso,
+            )
+
+        _open.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level,
+        )
+
+        _put_into.assert_called_once_with(
+            storage.items,
+            identity.bytes,
+            unittest.mock.sentinel.xso,
+        )
+
+    def test_put_to_peer(self):
+        identity = unittest.mock.Mock()
+        level = frontends.PeerLevel(
+            identity,
+            unittest.mock.sentinel.peer,
+        )
+        storage = unittest.mock.Mock()
+        storage.items = unittest.mock.MagicMock()
+
+        with contextlib.ExitStack() as stack:
+            _open = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_open")
+            )
+            _open.return_value = storage
+
+            _put_into = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_put_into")
+            )
+
+            XSOList = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xso.model.XSOList")
+            )
+
+            self.f.put(
+                unittest.mock.sentinel.type_,
+                level,
+                unittest.mock.sentinel.xso,
+            )
+
+        _open.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            level,
+        )
+
+        _put_into.assert_called_once_with(
+            storage.items,
+            (identity.bytes, unittest.mock.sentinel.peer),
+            unittest.mock.sentinel.xso,
+        )
+
+    def test__save(self):
+        with contextlib.ExitStack() as stack:
+            _get_path = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_get_path")
+            )
+
+            write_single_xso = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xml.write_single_xso")
+            )
+
+            mkdir_exist_ok = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+            )
+
+            safe_writer = stack.enter_context(
+                unittest.mock.patch("mlxc.utils.safe_writer")
+            )
+            safe_writer.return_value = unittest.mock.MagicMock([
+                "__enter__",
+                "__exit__",
+            ])
+
+            self.f._save(
+                unittest.mock.sentinel.data,
+                unittest.mock.sentinel.type_,
+                unittest.mock.sentinel.level_type,
+                unittest.mock.sentinel.identities,
+            )
+
+        _get_path.assert_called_once_with(
+            unittest.mock.sentinel.type_,
+            unittest.mock.sentinel.level_type,
+            unittest.mock.sentinel.identities,
+        )
+
+        mkdir_exist_ok.assert_called_once_with(
+            _get_path().parent,
+        )
+
+        safe_writer.assert_called_once_with(
+            _get_path()
+        )
+
+        safe_writer().__enter__.assert_called_once_with()
+
+        write_single_xso.assert_called_once_with(
+            unittest.mock.sentinel.data,
+            safe_writer().__enter__(),
+        )
+
+    def test__writeback_uses__save(self):
+        level = frontends.PeerLevel(
+            unittest.mock.sentinel.identity,
+            unittest.mock.sentinel.peer,
+        )
+
+        with contextlib.ExitStack() as stack:
+            _save = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_save")
+            )
+
+            _load = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_load")
+            )
+
+            data = self.f._open(
+                unittest.mock.sentinel.type_,
+                level,
+            )
+
+            _save.assert_not_called()
+            _open = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_open")
+            )
+
+            self.f._writeback(
+                unittest.mock.sentinel.type_,
+                (
+                    level.level,
+                    level.identity,
+                )
+            )
+
+        _save.assert_called_once_with(
+            data,
+            unittest.mock.sentinel.type_,
+            level.level,
+            level.identity,
+        )
+
+        _open.assert_not_called()
+
+    def test__writeback_is_noop_if_not_open(self):
+        level = unittest.mock.Mock()
+        level.level = frontends.StorageLevel.ACCOUNT
+
+        with contextlib.ExitStack() as stack:
+            _save = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_save")
+            )
+
+            _load = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_load")
+            )
+
+            data = self.f._open(
+                unittest.mock.sentinel.type_,
+                level,
+            )
+
+            _save.assert_not_called()
+            _open = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_open")
+            )
+
+            self.f._writeback(
+                unittest.mock.sentinel.other_type,
+                level,
+            )
+
+        _save.assert_not_called()
+        _open.assert_not_called()
+
+    def test_flush_all_calls_writeback_for_open_stuff(self):
+        level1 = frontends.AccountLevel(
+            unittest.mock.sentinel.account1,
+        )
+
+        level2 = frontends.IdentityLevel(
+            unittest.mock.sentinel.identity1,
+        )
+
+        level3 = frontends.PeerLevel(
+            unittest.mock.sentinel.identity1,
+            unittest.mock.sentinel.peer1,
+        )
+
+        level4 = frontends.PeerLevel(
+            unittest.mock.sentinel.identity1,
+            unittest.mock.sentinel.peer2,
+        )
+
+        with contextlib.ExitStack() as stack:
+            _writeback = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_writeback")
+            )
+
+            _load = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_load"),
+            )
+
+            self.f._open(
+                unittest.mock.sentinel.type1,
+                level3,
+            )
+
+            self.f._open(
+                unittest.mock.sentinel.type2,
+                level2,
+            )
+
+            self.f._open(
+                unittest.mock.sentinel.type1,
+                level4,
+            )
+
+            self.f._open(
+                unittest.mock.sentinel.type2,
+                level1,
+            )
+
+            self.f.flush_all()
+
+
+        self.assertCountEqual(
+            _writeback.mock_calls,
+            [
+                unittest.mock.call(
+                    unittest.mock.sentinel.type1,
+                    (
+                        level3.level,
+                        level3.identity,
+                    )
+                ),
+                unittest.mock.call(
+                    unittest.mock.sentinel.type2,
+                    (
+                        level2.level,
+                    )
+                ),
+                unittest.mock.call(
+                    unittest.mock.sentinel.type2,
+                    (
+                        level1.level,
+                    )
+                ),
+            ]
+        )
+
+    def test_register_registers_XSO_child_for_account(self):
+        class Foo(aioxmpp.xso.XSO):
+            TAG = "urn:test", "account"
+
+        frontends.XMLFrontend.register(
+            frontends.StorageLevel.ACCOUNT,
+            Foo,
+        )
+
+        self.assertIn(
+            Foo.TAG,
+            mlxc.storage.account_model.XMLStorageItem.CHILD_MAP,
+        )
+
+        self.assertIn(
+            Foo,
+            mlxc.storage.account_model.XMLStorageItem.data._classes,
+        )
+
+    def test_register_registers_XSO_child_for_identity(self):
+        class Foo(aioxmpp.xso.XSO):
+            TAG = "urn:test", "identity"
+
+        frontends.XMLFrontend.register(
+            frontends.StorageLevel.IDENTITY,
+            Foo,
+        )
+
+        self.assertIn(
+            Foo.TAG,
+            mlxc.storage.identity_model.XMLStorageItem.CHILD_MAP,
+        )
+
+        self.assertIn(
+            Foo,
+            mlxc.storage.identity_model.XMLStorageItem.data._classes,
+        )
+
+    def test_register_registers_XSO_child_for_peer(self):
+        class Foo(aioxmpp.xso.XSO):
+            TAG = "urn:test", "peer"
+
+        frontends.XMLFrontend.register(
+            frontends.StorageLevel.PEER,
+            Foo,
+        )
+
+        self.assertIn(
+            Foo.TAG,
+            mlxc.storage.peer_model.XMLStorageItem.CHILD_MAP,
+        )
+
+        self.assertIn(
+            Foo,
+            mlxc.storage.peer_model.XMLStorageItem.data._classes,
+        )
+
+    def test_put_get_cycle_account(self):
+        with MockBackend() as backend:
+            self.f = frontends.XMLFrontend(backend)
+
+            j1 = aioxmpp.JID.fromstr("romeo@montague.lit")
+            j2 = aioxmpp.JID.fromstr("juliet@capulet.lit")
+
+            d1s = []
+            for i in range(3):
+                d1 = Data1()
+                d1.foo = "test foo data {}".format(i)
+                d1.bar = "test bar data {}".format(i)
+                d1s.append(d1)
+
+            self.f.put(
+                mlxc.storage.common.StorageType.CACHE,
+                frontends.AccountLevel(j1),
+                [d1s[0], d1s[1]]
+            )
+
+            self.f.put(
+                mlxc.storage.common.StorageType.CACHE,
+                frontends.AccountLevel(j2),
+                [d1s[2]],
+            )
+
+            self.f.flush_all()
+
+            self.f = frontends.XMLFrontend(backend)
+
+            for i, d1 in enumerate(self.f.get_all(
+                    mlxc.storage.common.StorageType.CACHE,
+                    frontends.AccountLevel(j1), Data1)):
+                self.assertEqual(
+                    d1.foo,
+                    d1s[i].foo,
+                    i,
+                )
+                self.assertEqual(
+                    d1.bar,
+                    d1s[i].bar,
+                    i,
+                )
+
+            for i, d1 in enumerate(self.f.get_all(
+                    mlxc.storage.common.StorageType.CACHE,
+                    frontends.AccountLevel(j2), Data1), 2):
+                self.assertEqual(
+                    d1.foo,
+                    d1s[i].foo,
+                    i,
+                )
+                self.assertEqual(
+                    d1.bar,
+                    d1s[i].bar,
+                    i,
+                )
+
+    def test_put_get_cycle_identity(self):
+        with MockBackend() as backend:
+            self.f = frontends.XMLFrontend(backend)
+
+            i1 = uuid.uuid4()
+            i2 = uuid.uuid4()
+
+            d1s = []
+            for i in range(3):
+                d1 = Data1()
+                d1.foo = "test foo data {}".format(i)
+                d1.bar = "test bar data {}".format(i)
+                d1s.append(d1)
+
+            self.f.put(
+                mlxc.storage.common.StorageType.CACHE,
+                frontends.IdentityLevel(i1),
+                [d1s[0], d1s[1]]
+            )
+
+            self.f.put(
+                mlxc.storage.common.StorageType.CACHE,
+                frontends.IdentityLevel(i2),
+                [d1s[2]],
+            )
+
+            self.f.flush_all()
+
+            self.f = frontends.XMLFrontend(backend)
+
+            for i, d1 in enumerate(self.f.get_all(
+                    mlxc.storage.common.StorageType.CACHE,
+                    frontends.IdentityLevel(i1), Data1)):
+                self.assertEqual(
+                    d1.foo,
+                    d1s[i].foo,
+                    i,
+                )
+                self.assertEqual(
+                    d1.bar,
+                    d1s[i].bar,
+                    i,
+                )
+
+            for i, d1 in enumerate(self.f.get_all(
+                    mlxc.storage.common.StorageType.CACHE,
+                    frontends.IdentityLevel(i2), Data1), 2):
+                self.assertEqual(
+                    d1.foo,
+                    d1s[i].foo,
+                    i,
+                )
+                self.assertEqual(
+                    d1.bar,
+                    d1s[i].bar,
+                    i,
+                )
+
+    def test_put_get_cycle_peer(self):
+        with MockBackend() as backend:
+            self.f = frontends.XMLFrontend(backend)
+
+            i1 = uuid.uuid4()
+            i2 = uuid.uuid4()
+            j1 = aioxmpp.JID.fromstr("romeo@montague.lit")
+            j2 = aioxmpp.JID.fromstr("juliet@capulet.lit")
+
+            d1s = []
+            for i in range(3):
+                d1 = Data1()
+                d1.foo = "test foo data {}".format(i)
+                d1.bar = "test bar data {}".format(i)
+                d1s.append(d1)
+
+            self.f.put(
+                mlxc.storage.common.StorageType.CACHE,
+                frontends.PeerLevel(i1, j1),
+                [d1s[0], d1s[1]]
+            )
+
+            self.f.put(
+                mlxc.storage.common.StorageType.CACHE,
+                frontends.PeerLevel(i2, j2),
+                [d1s[2]],
+            )
+
+            self.f.flush_all()
+
+            self.f = frontends.XMLFrontend(backend)
+
+            for i, d1 in enumerate(self.f.get_all(
+                    mlxc.storage.common.StorageType.CACHE,
+                    frontends.PeerLevel(i1, j1), Data1)):
+                self.assertEqual(
+                    d1.foo,
+                    d1s[i].foo,
+                    i,
+                )
+                self.assertEqual(
+                    d1.bar,
+                    d1s[i].bar,
+                    i,
+                )
+
+            for i, d1 in enumerate(self.f.get_all(
+                    mlxc.storage.common.StorageType.CACHE,
+                    frontends.PeerLevel(i2, j2), Data1), 2):
+                self.assertEqual(
+                    d1.foo,
+                    d1s[i].foo,
+                    i,
+                )
+                self.assertEqual(
+                    d1.bar,
+                    d1s[i].bar,
+                    i,
+                )

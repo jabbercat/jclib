@@ -2,11 +2,13 @@ import sqlalchemy
 
 from sqlalchemy import (
     Column,
-    LargeBinary,
 )
 from sqlalchemy.ext.declarative import declarative_base
 
+import aioxmpp.xso
+
 from .common import UUID, JID, SmallBlobMixin
+from ..utils import mlxc_namespaces
 
 
 class Base(declarative_base()):
@@ -51,3 +53,47 @@ class SmallBlob(SmallBlobMixin, Base):
             return cls.filter_by(session.query(*which), level, name).one()
         except sqlalchemy.orm.exc.NoResultFound:
             raise KeyError(level) from None
+
+
+class XMLStorageItem(aioxmpp.xso.XSO):
+    TAG = mlxc_namespaces.xml_storage_peer, "peer"
+
+    jid = aioxmpp.xso.Attr(
+        "jid",
+        type_=aioxmpp.xso.JID(),
+    )
+
+    identity = aioxmpp.xso.Attr(
+        "identity",
+        type_=aioxmpp.xso.Base64Binary(),
+    )
+
+    data = aioxmpp.xso.ChildMap(
+        [],
+    )
+
+
+class XMLStorageItemType(aioxmpp.xso.AbstractType):
+    @classmethod
+    def get_formatted_type(self):
+        return XMLStorageItem
+
+    def parse(self, obj):
+        return (obj.identity, obj.jid), obj.data
+
+    def format(self, t):
+        (identity, jid), data = t
+        obj = XMLStorageItem()
+        obj.identity = identity
+        obj.jid = jid
+        obj.data.update(data)
+        return obj
+
+
+class XMLStorage(aioxmpp.xso.XSO):
+    TAG = mlxc_namespaces.xml_storage_peer, "peers"
+
+    items = aioxmpp.xso.ChildValueMap(
+        type_=XMLStorageItemType()
+    )
+

@@ -15,6 +15,18 @@ from sqlalchemy import (
 
 import aioxmpp
 
+from mlxc.utils import mlxc_namespaces
+
+
+mlxc_namespaces.xml_storage_global = \
+    "https://xmlns.zombofant.net/mlxc/storage/global/1.0"
+mlxc_namespaces.xml_storage_account = \
+    "https://xmlns.zombofant.net/mlxc/storage/account/1.0"
+mlxc_namespaces.xml_storage_identity = \
+    "https://xmlns.zombofant.net/mlxc/storage/identity/1.0"
+mlxc_namespaces.xml_storage_peer = \
+    "https://xmlns.zombofant.net/mlxc/storage/peer/1.0"
+
 
 class StorageType(enum.Enum):
     CACHE = 'cache'
@@ -23,9 +35,9 @@ class StorageType(enum.Enum):
 
 
 class StorageLevel(enum.Enum):
-    GLOBAL = 'glbl'
-    IDENTITY = 'idty'
-    ACCOUNT = 'acct'
+    GLOBAL = 'global'
+    IDENTITY = 'identity'
+    ACCOUNT = 'account'
     PEER = 'peer'
 
 

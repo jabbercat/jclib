@@ -6,11 +6,14 @@ import functools
 import hashlib
 import io
 import pathlib
+import urllib.parse
 import sys
 
 from datetime import datetime
 
 import sqlalchemy
+
+import aioxmpp.xml
 
 from .. import utils
 from .common import StorageLevel
@@ -43,6 +46,10 @@ def encode_uuid(uid):
     return pathlib.Path(
         base64.b32encode(uid.bytes).decode("ascii").rstrip("=").lower()
     )
+
+
+def escape_path_part(part):
+    return urllib.parse.quote(part, safe=" ")
 
 
 def _get_engine(path):
@@ -138,7 +145,7 @@ class _PerLevelMixin:
     def _get_path(self, type_, level_type, namespace, frontend_name, name):
         return (self._backend.type_base_paths(type_, True)[0] /
                 StorageLevel.GLOBAL.value /
-                namespace /
+                escape_path_part(namespace) /
                 frontend_name /
                 level_type.value /
                 name)
@@ -149,7 +156,7 @@ class _PerLevelKeyFileMixin:
         return (self._backend.type_base_paths(type_, True)[0] /
                 level.level.value /
                 level.key_path /
-                namespace /
+                escape_path_part(namespace) /
                 name)
 
 
@@ -164,7 +171,7 @@ class DatabaseFrontend(Frontend):
     def _get_path(self, type_, namespace, name):
         return (self._backend.type_base_paths(type_, True)[0] /
                 StorageLevel.GLOBAL.value /
-                namespace /
+                escape_path_part(namespace) /
                 "db" /
                 name)
 
@@ -702,19 +709,206 @@ class AppendFrontend(_PerLevelKeyFileMixin, Frontend):
             f.write(data)
 
 
-class XMLFrontend(_PerLevelMixin):
+class XMLFrontend(Frontend):
     """
     Manage snippets of XSO-defined XML data.
 
     The snippet XSO definitions need to be registered before they can be read
-    or written.
+    or written. Data is stored in a single file for each level type and type
+    combination.
     """
 
-    def register(self, type_, level_type, xso_type):
-        pass
+    LEVEL_INFO = {
+        StorageLevel.IDENTITY: (
+            identity_model.XMLStorage,
+            lambda x: (x.level,),
+            lambda x: x.identity.bytes
+        ),
+        StorageLevel.ACCOUNT: (
+            account_model.XMLStorage,
+            lambda x: (x.level,),
+            lambda x: x.account
+        ),
+        StorageLevel.PEER: (
+            peer_model.XMLStorage,
+            lambda x: (x.level, x.identity),
+            lambda x: (x.identity.bytes, x.peer)
+        ),
+    }
+
+    def __init__(self, backend):
+        super().__init__(backend)
+        self.__open_storages = {}
+
+    def _get_path(self, type_, level_type, identity=None):
+        if level_type == StorageLevel.PEER:
+            return (self._backend.type_base_paths(type_, True)[0] /
+                    StorageLevel.IDENTITY.value /
+                    encode_uuid(identity) /
+                    escape_path_part("dns:mlxc.zombofant.net") /
+                    "xml-storage" /
+                    "{}.xml".format(level_type.value))
+        else:
+            return (self._backend.type_base_paths(type_, True)[0] /
+                    StorageLevel.GLOBAL.value /
+                    escape_path_part("dns:mlxc.zombofant.net") /
+                    "xml-storage" /
+                    "{}.xml".format(level_type.value))
+
+    def _load(self, type_, level):
+        path = self._get_path(
+            type_,
+            level.level,
+            identity=getattr(level, "identity", None)
+        )
+
+        storage_cls, _, _ = self.LEVEL_INFO[level.level]
+
+        try:
+            with path.open("rb") as f:
+                return aioxmpp.xml.read_single_xso(
+                    f,
+                    storage_cls,
+                )
+        except FileNotFoundError:
+            return storage_cls()
+
+    def _save(self, data, type_, level_type, *args):
+        path = self._get_path(
+            type_,
+            level_type,
+            *args,
+        )
+        utils.mkdir_exist_ok(path.parent)
+
+        with utils.safe_writer(path) as f:
+            aioxmpp.xml.write_single_xso(data, f)
+
+    def _open(self, type_, level):
+        _, cache_key_func, _ = self.LEVEL_INFO[level.level]
+        cache_key = cache_key_func(level)
+        try:
+            return self.__open_storages[type_, cache_key]
+        except KeyError:
+            data = self._load(type_, level)
+            self.__open_storages[type_, cache_key] = data
+            return data
+
+    @classmethod
+    def register(cls, level_type, xso_type):
+        """
+        Register an XSO type for use with a level type.
+        """
+        storage_cls, _, _ = cls.LEVEL_INFO[level_type]
+        item_cls = storage_cls.items.type_.get_formatted_type()
+        item_cls.register_child(
+            item_cls.data,
+            xso_type,
+        )
+
+    def get_level_keys(self, type_, level_type):
+        """
+        Return all level keys which exist.
+
+        This operation opens the corresponding XML storage.
+        """
+        return self._open(type_, level_type).items.keys()
 
     def get(self, type_, level, xso_type):
-        pass
+        """
+        Return the first instance of an XSO.
+
+        This operation opens the corresponding XML storage.
+
+        .. note::
+
+            Objects returned by this method **must not** be modified, unless
+            they are queued for writing using :meth:`put` afterwards.
+
+            Otherwise, it is possible that changes are partially or not at all
+            written back to disk.
+        """
+        items = self.get_all(type_, level, xso_type)
+        try:
+            return items[0]
+        except IndexError:
+            return None
+
+    def get_all(self, type_, level, xso_type):
+        """
+        Return all instances of an XSO.
+
+        If there is no data for the given level and xso_type, an empty iterable
+        is returned.
+
+        This operation opens the corresponding XML storage.
+
+        .. note::
+
+            Objects returned by this method **must not** be modified, unless
+            they are queued for writing using :meth:`put` afterwards.
+
+            Otherwise, it is possible that changes are partially or not at all
+            written back to disk.
+        """
+        data = self._open(type_, level)
+        _, _, key_func = self.LEVEL_INFO[level.level]
+        try:
+            return data.items[key_func(level)][xso_type]
+        except KeyError:
+            return aioxmpp.xso.model.XSOList()
+
+    @staticmethod
+    def _put_into(items, key, xso):
+        if isinstance(xso, aioxmpp.xso.XSO):
+            xso_type = type(xso)
+            xsos = [xso]
+        else:
+            xsos = list(xso)
+            xso_type = type(xsos[0])
+
+        try:
+            data = items[key]
+        except KeyError:
+            data = {
+                xso_type: aioxmpp.xso.model.XSOList(xsos)
+            }
+            items[key] = data
+            return
+
+        try:
+            xso_items = data[xso_type]
+        except KeyError:
+            data[xso_type] = aioxmpp.xso.model.XSOList(xsos)
+            return
+
+        xso_items[:] = xsos
 
     def put(self, type_, level, xso):
-        pass
+        """
+        Put one or more XSOs.
+
+        The data is not written to disk immediately. It is required to call
+        :meth:`flush` or :meth:`flush_all` to force a writeback to disk.
+
+        However, it may be required to acquire a lock to prevent a concurrent
+        flush operation to be disturbed, which is why this method is a
+        coroutine method.
+        """
+        data = self._open(type_, level)
+        _, _, key_func = self.LEVEL_INFO[level.level]
+        self._put_into(data.items, key_func(level), xso)
+
+    def _writeback(self, type_, key):
+        try:
+            data = self.__open_storages[type_, key]
+        except KeyError:
+            return
+        self._save(data, type_, *key)
+
+    def flush_all(self):
+        """
+        Write back all open XML storages and closes them.
+        """
+        for type_, key in self.__open_storages.keys():
+            self._writeback(type_, key)
