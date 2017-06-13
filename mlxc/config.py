@@ -60,7 +60,7 @@ class SimpleConfigurable(metaclass=abc.ABCMeta):
         user_path, _ = config_manager.get_config_paths(
             self.UID, self.FILENAME
         )
-        with safe_writer(user_path) as f:
+        with utils.safe_writer(user_path) as f:
             self._do_save(f)
 
 
