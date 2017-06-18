@@ -330,6 +330,7 @@ def angle_to_cbcr_edge(angle):
         factor = 0.5 / abs(cr)
     else:
         factor = 0.5 / abs(cb)
+    # factor = 0.5
     return cb*factor, cr*factor
 
 
@@ -342,8 +343,8 @@ def text_to_colour(text):
     # hue, = struct.unpack("<H", data[:2])
 
     data = binascii.crc32(text.encode("utf-8"))
-    # hue = (data & 0xffff) ^ (data >> 16)
-    hue = data & 0xffff
+    hue = (data & 0xffff) ^ (data >> 16)
+    # hue = data & 0xffff
 
     # first attempt, simply mix with the inverse of in_contrast_with
     # initial_color = Qt.QColor(*struct.unpack("<BBB", data), 255)
@@ -394,6 +395,9 @@ def text_to_colour(text):
 
     cb, cr = angle_to_cbcr_edge(hue / 65535 * math.pi * 2)
     r, g, b = clip_rgb(*ycbcr_to_rgb(0.5**0.45, cb, cr))
+    r *= 0.8
+    g *= 0.8
+    b *= 0.8
     return r, g, b
 
 
