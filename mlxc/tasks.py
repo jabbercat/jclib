@@ -19,7 +19,14 @@ class AnnotatedTask:
         super().__init__()
         self.__asyncio_task = asyncio_task
         self.__text = None
-        self.__progress_ratio = 0
+        self.__progress_ratio = None
+
+    def add_done_callback(self, fn):
+        @functools.wraps(fn)
+        def wrapper(task):
+            fn(self)
+
+        self.__asyncio_task.add_done_callback(wrapper)
 
     @property
     def text(self) -> str:
@@ -33,12 +40,13 @@ class AnnotatedTask:
         self.on_changed()
 
     @property
-    def progress_ratio(self) -> float:
+    def progress_ratio(self) -> typing.Optional[float]:
         return self.__progress_ratio
 
     @progress_ratio.setter
-    def progress_ratio(self, value: float):
-        value = float(value)
+    def progress_ratio(self, value: typing.Optional[float]):
+        if value is not None:
+            value = float(value)
         if self.__progress_ratio == value:
             return
         self.__progress_ratio = value
@@ -56,6 +64,7 @@ class TaskManager:
 
     on_task_added = aioxmpp.callbacks.Signal()
     on_task_changed = aioxmpp.callbacks.Signal()
+    on_task_done = aioxmpp.callbacks.Signal()
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -75,6 +84,7 @@ class TaskManager:
         ))
         self._tasks[task] = annotated
         task.add_done_callback(self._task_done)
+        annotated.add_done_callback(self.on_task_done)
         self.on_task_added(annotated)
         return annotated
 

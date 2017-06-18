@@ -29,9 +29,18 @@ class TestAnnotatedTask(unittest.TestCase):
         self.listener.on_changed.assert_called_once_with()
 
     def test_setting_progress_ratio_emits_on_changed(self):
-        self.assertEqual(self.at.progress_ratio, 0)
+        self.assertIsNone(self.at.progress_ratio)
         self.at.progress_ratio = 0.8
         self.assertEqual(self.at.progress_ratio, 0.8)
+
+        self.listener.on_changed.assert_called_once_with()
+
+    def test_setting_progress_ration_can_be_set_to_None(self):
+        self.assertIsNone(self.at.progress_ratio)
+        self.at.progress_ratio = 0.5
+        self.listener.on_changed.reset_mock()
+        self.at.progress_ratio = None
+        self.assertIsNone(self.at.progress_ratio)
 
         self.listener.on_changed.assert_called_once_with()
 
@@ -40,6 +49,22 @@ class TestAnnotatedTask(unittest.TestCase):
 
         with self.assertRaisesRegex(AttributeError, "can't set attribute"):
             self.at.asyncio_task = self.at.asyncio_task
+
+    def test_add_done_callback(self):
+        receiver = unittest.mock.Mock()
+        self.at.add_done_callback(receiver)
+
+        self.original_task.add_done_callback.assert_called_once_with(
+            unittest.mock.ANY,
+        )
+
+        receiver.assert_not_called()
+
+        _, (wrapper,), _ = self.original_task.add_done_callback.mock_calls[-1]
+
+        wrapper(self.original_task)
+
+        receiver.assert_called_once_with(self.at)
 
 
 class TestTaskManager(unittest.TestCase):
@@ -119,6 +144,22 @@ class TestTaskManager(unittest.TestCase):
         )
 
         task.cancel()
+
+    def test_on_task_done_emits_when_task_is_done(self):
+        task = self._ensure_future(self.some_job())
+
+        result = self.tm.add(task)
+
+        task.cancel()
+
+        self.listener.on_task_done.assert_not_called()
+
+        with self.assertRaises(asyncio.CancelledError):
+            run_coroutine(task)
+
+        self.listener.on_task_done.assert_called_once_with(
+            result,
+        )
 
     def test_task_is_already_in_list_when_on_task_added_emits(self):
         result = asyncio.Future()
