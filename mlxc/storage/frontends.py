@@ -800,11 +800,11 @@ class XMLFrontend(Frontend):
         Register an XSO type for use with a level type.
         """
         storage_cls, _, _ = cls.LEVEL_INFO[level_type]
-        item_cls = storage_cls.items.type_.get_formatted_type()
-        item_cls.register_child(
-            item_cls.data,
-            xso_type,
-        )
+        for item_cls in storage_cls.items.type_.get_xso_types():
+            item_cls.register_child(
+                item_cls.data,
+                xso_type,
+            )
 
     def get_level_keys(self, type_, level_type):
         """

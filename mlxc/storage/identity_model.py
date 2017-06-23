@@ -60,15 +60,15 @@ class XMLStorageItem(aioxmpp.xso.XSO):
     )
 
 
-class XMLStorageItemType(aioxmpp.xso.AbstractType):
+class XMLStorageItemType(aioxmpp.xso.AbstractElementType):
     @classmethod
-    def get_formatted_type(self):
-        return XMLStorageItem
+    def get_xso_types(self):
+        return [XMLStorageItem]
 
-    def parse(self, obj):
+    def unpack(self, obj):
         return obj.uid, obj.data
 
-    def format(self, t):
+    def pack(self, t):
         uid, data = t
         obj = XMLStorageItem()
         obj.uid = uid
