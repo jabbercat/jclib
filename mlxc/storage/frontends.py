@@ -745,13 +745,13 @@ class XMLFrontend(Frontend):
             return (self._backend.type_base_paths(type_, True)[0] /
                     StorageLevel.IDENTITY.value /
                     encode_uuid(identity) /
-                    escape_path_part("dns:mlxc.zombofant.net") /
+                    escape_path_part(utils.mlxc_namespaces.core) /
                     "xml-storage" /
                     "{}.xml".format(level_type.value))
         else:
             return (self._backend.type_base_paths(type_, True)[0] /
                     StorageLevel.GLOBAL.value /
-                    escape_path_part("dns:mlxc.zombofant.net") /
+                    escape_path_part(utils.mlxc_namespaces.core) /
                     "xml-storage" /
                     "{}.xml".format(level_type.value))
 
