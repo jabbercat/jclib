@@ -52,7 +52,7 @@ def escape_path_part(part):
     return urllib.parse.quote(part, safe=" ")
 
 
-def _get_engine(path):
+def _get_engine(path: pathlib.Path) -> sqlalchemy.engine.Engine:
     utils.mkdir_exist_ok(path.parent)
     engine = sqlalchemy.create_engine(
         "sqlite:///{}".format(path),
@@ -176,9 +176,9 @@ class DatabaseFrontend(Frontend):
                 name)
 
     @functools.lru_cache(32)
-    def connect(self, type_, namespace, name):
+    def get_engine(self, type_, namespace, name):
         """
-        Return a SQLAlchemy sessionmaker for a database.
+        Return a SQLAlchemy engine for a database.
 
         :param type_: The storage type of the database.
         :type type_: :class:`StorageType`
@@ -186,14 +186,14 @@ class DatabaseFrontend(Frontend):
         :type namespace: :class:`str`
         :param name: The name of the database.
         :type name: :class:`str`
-        :rtype: :class:`sqlalchemy.orm.sessionmaker`
+        :rtype: :class:`sqlalchemy.engine.Engine`
         :return: A session maker for the given database.
 
         The sessionmakers returned by this function may be cached and shared.
         """
         path = self._get_path(type_, namespace, name)
         engine = _get_engine(path)
-        return sqlalchemy.orm.sessionmaker(bind=engine)
+        return engine
 
 
 class FileLikeFrontend(metaclass=abc.ABCMeta):

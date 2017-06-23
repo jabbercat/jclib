@@ -472,7 +472,7 @@ class TestDatabaseFrontend(unittest.TestCase):
             path_mock.__truediv__().__truediv__().__truediv__().__truediv__()
         )
 
-    def test_connect(self):
+    def test_get_engine(self):
         with contextlib.ExitStack() as stack:
             _get_engine = stack.enter_context(
                 unittest.mock.patch(
@@ -488,7 +488,7 @@ class TestDatabaseFrontend(unittest.TestCase):
                 unittest.mock.patch("sqlalchemy.orm.sessionmaker")
             )
 
-            result = self.f.connect(
+            result = self.f.get_engine(
                 unittest.mock.sentinel.type_,
                 unittest.mock.sentinel.level,
                 unittest.mock.sentinel.namespace,
@@ -502,15 +502,15 @@ class TestDatabaseFrontend(unittest.TestCase):
 
             _get_engine.assert_called_once_with(_get_path())
 
-            sessionmaker.assert_called_once_with(bind=_get_engine())
+            sessionmaker.assert_not_called()
 
             self.assertEqual(
                 result,
-                sessionmaker()
+                _get_engine(),
             )
 
-    def test_connect_is_lru_cache(self):
-        self.assertTrue(hasattr(type(self.f).connect, "cache_info"))
+    def test_get_engine_is_lru_cache(self):
+        self.assertTrue(hasattr(type(self.f).get_engine, "cache_info"))
 
 
 
