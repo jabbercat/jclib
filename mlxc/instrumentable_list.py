@@ -128,7 +128,7 @@ class ModelList(collections.abc.MutableSequence):
 
     .. method:: begin_insert_rows(_, index1, index2)
 
-       This attribute is called before rows are inserted at `index1` up to
+       This signal is called before rows are inserted at `index1` up to
        (including) `index2`. The existing rows are not removed. The number of
        rows inserted is `index2-index1+1`.
 
@@ -140,11 +140,11 @@ class ModelList(collections.abc.MutableSequence):
 
     .. method:: end_insert_rows()
 
-       This attribute is called after rows have been inserted.
+       This signal is called after rows have been inserted.
 
     .. method:: begin_remove_rows(_, index1, index2)
 
-       This attribute is called before rows are removed from `index1` up to (and
+       This signal is called before rows are removed from `index1` up to (and
        including) `index2`.
 
        The same note as for :meth:`begin_insert_rows` holds for the first
@@ -152,11 +152,11 @@ class ModelList(collections.abc.MutableSequence):
 
     .. method:: end_remove_rows()
 
-       This attribute is called after rows have been removed.
+       This signal is called after rows have been removed.
 
     .. method:: begin_move_rows(_, srcindex1, srcindex2, _, destindex)
 
-       This attribute is called before rows are moved from `srcindex1` to
+       This signal is called before rows are moved from `srcindex1` to
        `destindex`. The rows which are being moved are those addressed by the
        indices from `srcindex1` up to (and including) `srcindex2`.
 
@@ -167,9 +167,17 @@ class ModelList(collections.abc.MutableSequence):
        The same note as for :meth:`begin_insert_rows` holds for the first
        and fourth argument.
 
-    .. attribute:: end_move_rows()
+    .. method:: end_move_rows()
 
-       This attribute is called after rows have been moved.
+       This signal is called after rows have been moved.
+
+    .. method:: data_changed(_, index1, index2, column1, column2, roles)
+
+        This signal is called from :meth:`refresh_data`. It is never emitted
+        automatically.
+
+        The arguments are those passed to :meth:`refresh_data`; the first
+        argument is always :data:`None`.
 
     The above attributes are called whenever neccessary by the mutable sequence
     implementation. In addition, signals having an identical function to those
@@ -224,6 +232,7 @@ class ModelList(collections.abc.MutableSequence):
     end_remove_rows = aioxmpp.callbacks.Signal()
     begin_move_rows = aioxmpp.callbacks.Signal()
     end_move_rows = aioxmpp.callbacks.Signal()
+    data_changed = aioxmpp.callbacks.Signal()
 
     def __init__(self, initial=(), **kwargs):
         super().__init__(**kwargs)
@@ -393,7 +402,7 @@ class ModelList(collections.abc.MutableSequence):
         upper = len(self._storage)
         for i in range(len(self._storage) // 2):
             self.move(i, upper)
-            if upper-2 > i:
+            if upper - 2 > i:
                 self.move(upper - 2, i)
             upper -= 1
 
@@ -407,6 +416,31 @@ class ModelList(collections.abc.MutableSequence):
 
     def clear(self):
         del self[:]
+
+    def refresh_data(self, slice, column1=0, column2=0, roles=None):
+        if column1 is None:
+            if column2 == 0:
+                column2 = None
+            elif column2 is not None:
+                raise ValueError(
+                    "either both or no columns must be None"
+                )
+
+        if column1 is not None and column2 < column1:
+            raise ValueError(
+                "end column must be greater than or equal to start column"
+            )
+
+        start, end, stride = slice.indices(len(self))
+        if stride != 1:
+            raise ValueError("slice must have stride 1")
+
+        self.data_changed(
+            None,
+            start, end - 1,
+            column1, column2,
+            roles,
+        )
 
 
 class ModelListView(collections.abc.Sequence):

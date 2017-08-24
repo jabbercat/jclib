@@ -5,6 +5,10 @@ import unittest.mock
 
 import aioxmpp.callbacks
 
+from aioxmpp.testutils import (
+    make_listener,
+)
+
 from mlxc.instrumentable_list import (
     IList,
     ModelList,
@@ -302,33 +306,7 @@ class TestModelList(unittest.TestCase):
 
     def setUp(self):
         self.mlist = ModelList()
-        self.mock = unittest.mock.Mock()
-
-        self.mock.register_item.return_value = False
-        self.mock.unregister_item.return_value = False
-
-        self.mock.begin_insert_rows.return_value = False
-        self.mock.end_insert_rows.return_value = False
-
-        self.mock.begin_remove_rows.return_value = False
-        self.mock.end_remove_rows.return_value = False
-
-        self.mock.begin_move_rows.return_value = False
-        self.mock.end_move_rows.return_value = False
-
-        self.mlist.on_register_item.connect(
-            self.mock.register_item
-        )
-        self.mlist.on_unregister_item.connect(
-            self.mock.unregister_item
-        )
-
-        self.mlist.begin_insert_rows.connect(self.mock.begin_insert_rows)
-        self.mlist.end_insert_rows.connect(self.mock.end_insert_rows)
-        self.mlist.begin_remove_rows.connect(self.mock.begin_remove_rows)
-        self.mlist.end_remove_rows.connect(self.mock.end_remove_rows)
-        self.mlist.begin_move_rows.connect(self.mock.begin_move_rows)
-        self.mlist.end_move_rows.connect(self.mock.end_move_rows)
+        self.listener = make_listener(self.mlist)
 
     def test_init_bare(self):
         mlist = ModelList()
@@ -370,16 +348,16 @@ class TestModelList(unittest.TestCase):
         )
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(1, 0),
+                unittest.mock.call.on_register_item(1, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(2, 0),
+                unittest.mock.call.on_register_item(2, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 1),
-                unittest.mock.call.register_item(3, 1),
+                unittest.mock.call.on_register_item(3, 1),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -397,16 +375,16 @@ class TestModelList(unittest.TestCase):
         )
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(1, 0),
+                unittest.mock.call.on_register_item(1, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(2, 0),
+                unittest.mock.call.on_register_item(2, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 2, 2),
-                unittest.mock.call.register_item(3, 2),
+                unittest.mock.call.on_register_item(3, 2),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -424,16 +402,16 @@ class TestModelList(unittest.TestCase):
         )
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(1, 0),
+                unittest.mock.call.on_register_item(1, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(2, 0),
+                unittest.mock.call.on_register_item(2, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 1),
-                unittest.mock.call.register_item(3, 1),
+                unittest.mock.call.on_register_item(3, 1),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -451,16 +429,16 @@ class TestModelList(unittest.TestCase):
         )
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(1, 0),
+                unittest.mock.call.on_register_item(1, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(2, 0),
+                unittest.mock.call.on_register_item(2, 0),
                 unittest.mock.call.end_insert_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 0),
-                unittest.mock.call.register_item(3, 0),
+                unittest.mock.call.on_register_item(3, 0),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -487,7 +465,7 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         del self.mlist[0]
 
@@ -512,16 +490,16 @@ class TestModelList(unittest.TestCase):
         self.assertSequenceEqual(list(self.mlist), [])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 0, 0),
-                unittest.mock.call.unregister_item(2),
+                unittest.mock.call.on_unregister_item(2),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_remove_rows(None, 1, 1),
-                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.on_unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_remove_rows(None, 0, 0),
-                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.on_unregister_item(3),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -531,7 +509,7 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         with self.assertRaises(IndexError):
             del self.mlist[10]
@@ -539,14 +517,14 @@ class TestModelList(unittest.TestCase):
         with self.assertRaises(IndexError):
             del self.mlist[-10]
 
-        self.assertSequenceEqual(self.mock.mock_calls, [])
+        self.assertSequenceEqual(self.listener.mock_calls, [])
 
     def test_delitem_positive_slice_with_unity_stride(self):
         self.mlist.insert(0, 1)
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         del self.mlist[1:]
 
@@ -562,14 +540,14 @@ class TestModelList(unittest.TestCase):
         self.assertSequenceEqual(list(self.mlist), [])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 2),
-                unittest.mock.call.unregister_item(3),
-                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.on_unregister_item(3),
+                unittest.mock.call.on_unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_remove_rows(None, 0, 0),
-                unittest.mock.call.unregister_item(2),
+                unittest.mock.call.on_unregister_item(2),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -579,19 +557,19 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         del self.mlist[-3:]
 
         self.assertSequenceEqual(list(self.mlist), [])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 0, 2),
-                unittest.mock.call.unregister_item(2),
-                unittest.mock.call.unregister_item(3),
-                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.on_unregister_item(2),
+                unittest.mock.call.on_unregister_item(3),
+                unittest.mock.call.on_unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -601,19 +579,19 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         del self.mlist[-1:-4:-1]
 
         self.assertSequenceEqual(list(self.mlist), [])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 0, 2),
-                unittest.mock.call.unregister_item(2),
-                unittest.mock.call.unregister_item(3),
-                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.on_unregister_item(2),
+                unittest.mock.call.on_unregister_item(3),
+                unittest.mock.call.on_unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -623,18 +601,18 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         del self.mlist[2:0:-1]
 
         self.assertSequenceEqual(list(self.mlist), [2])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 2),
-                unittest.mock.call.unregister_item(3),
-                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.on_unregister_item(3),
+                unittest.mock.call.on_unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -644,20 +622,20 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         del self.mlist[::2]
 
         self.assertSequenceEqual(list(self.mlist), [3])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 0, 0),
-                unittest.mock.call.unregister_item(2),
+                unittest.mock.call.on_unregister_item(2),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_remove_rows(None, 1, 1),
-                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.on_unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -667,46 +645,46 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist[1] = 10
 
         self.assertSequenceEqual(list(self.mlist), [2, 10, 1])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 1),
-                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.on_unregister_item(3),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 1),
-                unittest.mock.call.register_item(10, 1),
+                unittest.mock.call.on_register_item(10, 1),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
 
     def test_setitem_as_bulk_insert_does_not_generate_removal(self):
         self.mlist.extend([1, 2, 3])
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist[1:1] = [10, 20, 30]
 
         self.assertSequenceEqual(list(self.mlist), [1, 10, 20, 30, 2, 3])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_insert_rows(None, 1, 3),
-                unittest.mock.call.register_item(10, 1),
-                unittest.mock.call.register_item(20, 2),
-                unittest.mock.call.register_item(30, 3),
+                unittest.mock.call.on_register_item(10, 1),
+                unittest.mock.call.on_register_item(20, 2),
+                unittest.mock.call.on_register_item(30, 3),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
 
     def test_setitem_reject_mismatching_size_of_ext_slices(self):
         self.mlist.extend([1, 2, 3])
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         with self.assertRaisesRegex(
                 ValueError,
@@ -716,7 +694,7 @@ class TestModelList(unittest.TestCase):
         self.assertSequenceEqual(list(self.mlist), [1, 2, 3])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
             ]
         )
@@ -726,20 +704,20 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist[-1] = 10
 
         self.assertSequenceEqual(list(self.mlist), [2, 3, 10])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 2, 2),
-                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.on_unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 2, 2),
-                unittest.mock.call.register_item(10, 2),
+                unittest.mock.call.on_register_item(10, 2),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -749,7 +727,7 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         with self.assertRaises(IndexError):
             self.mlist[10] = 10
@@ -760,7 +738,7 @@ class TestModelList(unittest.TestCase):
         self.assertSequenceEqual(list(self.mlist), [2, 3, 1])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
             ]
         )
@@ -770,23 +748,23 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist[1:] = [10, 11, 12]
 
         self.assertSequenceEqual(list(self.mlist), [2, 10, 11, 12])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 2),
-                unittest.mock.call.unregister_item(3),
-                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.on_unregister_item(3),
+                unittest.mock.call.on_unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 3),
-                unittest.mock.call.register_item(10, 1),
-                unittest.mock.call.register_item(11, 2),
-                unittest.mock.call.register_item(12, 3),
+                unittest.mock.call.on_register_item(10, 1),
+                unittest.mock.call.on_register_item(11, 2),
+                unittest.mock.call.on_register_item(12, 3),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -796,22 +774,22 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist[-1:] = [10, 11, 12]
 
         self.assertSequenceEqual(list(self.mlist), [2, 3, 10, 11, 12])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 2, 2),
-                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.on_unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 2, 4),
-                unittest.mock.call.register_item(10, 2),
-                unittest.mock.call.register_item(11, 3),
-                unittest.mock.call.register_item(12, 4),
+                unittest.mock.call.on_register_item(10, 2),
+                unittest.mock.call.on_register_item(11, 3),
+                unittest.mock.call.on_register_item(12, 4),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -821,24 +799,24 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist[-1:-4:-1] = [10, 11, 12]
 
         self.assertSequenceEqual(list(self.mlist), [10, 11, 12])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 0, 2),
-                unittest.mock.call.unregister_item(2),
-                unittest.mock.call.unregister_item(3),
-                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.on_unregister_item(2),
+                unittest.mock.call.on_unregister_item(3),
+                unittest.mock.call.on_unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 0, 2),
-                unittest.mock.call.register_item(10, 0),
-                unittest.mock.call.register_item(11, 1),
-                unittest.mock.call.register_item(12, 2),
+                unittest.mock.call.on_register_item(10, 0),
+                unittest.mock.call.on_register_item(11, 1),
+                unittest.mock.call.on_register_item(12, 2),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -848,22 +826,22 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist[2:0:-1] = [10, 11]
 
         self.assertSequenceEqual(list(self.mlist), [2, 10, 11])
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 2),
-                unittest.mock.call.unregister_item(3),
-                unittest.mock.call.unregister_item(1),
+                unittest.mock.call.on_unregister_item(3),
+                unittest.mock.call.on_unregister_item(1),
                 unittest.mock.call.end_remove_rows(),
                 unittest.mock.call.begin_insert_rows(None, 1, 2),
-                unittest.mock.call.register_item(10, 1),
-                unittest.mock.call.register_item(11, 2),
+                unittest.mock.call.on_register_item(10, 1),
+                unittest.mock.call.on_register_item(11, 2),
                 unittest.mock.call.end_insert_rows(),
             ]
         )
@@ -873,7 +851,7 @@ class TestModelList(unittest.TestCase):
         self.mlist.insert(0, 2)
         self.mlist.insert(1, 3)
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         with self.assertRaisesRegex(
                 IndexError,
@@ -886,7 +864,7 @@ class TestModelList(unittest.TestCase):
             self.mlist[::-2] = [1, 2, 3]
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
             ]
         )
@@ -909,7 +887,7 @@ class TestModelList(unittest.TestCase):
     def test_move_forward(self):
         self.mlist[:] = [0, 1, 2, 3, 4, 5]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist.move(2, 4)
 
@@ -921,7 +899,7 @@ class TestModelList(unittest.TestCase):
         )
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_move_rows(None, 2, 2, None, 4),
                 unittest.mock.call.end_move_rows(),
@@ -931,7 +909,7 @@ class TestModelList(unittest.TestCase):
     def test_move_forward_with_negative_indices(self):
         self.mlist[:] = [0, 1, 2, 3, 4, 5]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist.move(2, -1)
 
@@ -952,7 +930,7 @@ class TestModelList(unittest.TestCase):
         )
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_move_rows(None, 2, 2, None, 5),
                 unittest.mock.call.end_move_rows(),
@@ -964,7 +942,7 @@ class TestModelList(unittest.TestCase):
     def test_move_backward(self):
         self.mlist[:] = [0, 1, 2, 3, 4, 5]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist.move(2, 0)
 
@@ -976,7 +954,7 @@ class TestModelList(unittest.TestCase):
         )
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_move_rows(None, 2, 2, None, 0),
                 unittest.mock.call.end_move_rows(),
@@ -986,7 +964,7 @@ class TestModelList(unittest.TestCase):
     def test_move_backward_with_negative_indices(self):
         self.mlist[:] = [0, 1, 2, 3, 4, 5]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist.move(-1, 0)
 
@@ -1007,7 +985,7 @@ class TestModelList(unittest.TestCase):
         )
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_move_rows(None, 5, 5, None, 0),
                 unittest.mock.call.end_move_rows(),
@@ -1019,7 +997,7 @@ class TestModelList(unittest.TestCase):
     def test_move_rejects_out_of_bounds_indices(self):
         self.mlist[:] = [0, 1, 2, 3, 4, 5]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         with self.assertRaises(IndexError):
             self.mlist.move(-10, 0)
@@ -1036,7 +1014,7 @@ class TestModelList(unittest.TestCase):
     def test_move_ignores_noop_move(self):
         self.mlist[:] = [0, 1, 2, 3, 4, 5]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         # these four operations are identical and all noops
         self.mlist.move(2, 2)
@@ -1052,7 +1030,7 @@ class TestModelList(unittest.TestCase):
         )
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
             ]
         )
@@ -1060,7 +1038,7 @@ class TestModelList(unittest.TestCase):
     def test_move_ignores_invalid_move(self):
         self.mlist[:] = [0, 1, 2, 3, 4, 5]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         # these four operations are identical and all invalid
         self.mlist.move(2, 3)
@@ -1076,7 +1054,7 @@ class TestModelList(unittest.TestCase):
         )
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
             ]
         )
@@ -1084,7 +1062,7 @@ class TestModelList(unittest.TestCase):
     def test_reverse_with_odd_item_count_uses_move(self):
         self.mlist[:] = [1, 2, 3, 4, 5]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         with unittest.mock.patch.object(self.mlist, "move") as move:
             self.mlist.reverse()
@@ -1102,7 +1080,7 @@ class TestModelList(unittest.TestCase):
     def test_reverse_with_even_item_count_uses_move(self):
         self.mlist[:] = [1, 2, 3, 4, 5, 6]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         with unittest.mock.patch.object(self.mlist, "move") as move:
             self.mlist.reverse()
@@ -1139,15 +1117,15 @@ class TestModelList(unittest.TestCase):
     def test_pop(self):
         self.mlist[:] = [1, 2, 3]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.assertEqual(self.mlist.pop(1), 2)
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 1, 1),
-                unittest.mock.call.unregister_item(2),
+                unittest.mock.call.on_unregister_item(2),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -1155,15 +1133,15 @@ class TestModelList(unittest.TestCase):
     def test_pop_negative_index(self):
         self.mlist[:] = [1, 2, 3]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.assertEqual(self.mlist.pop(-1), 3)
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 2, 2),
-                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.on_unregister_item(3),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -1171,7 +1149,7 @@ class TestModelList(unittest.TestCase):
     def test_pop_rejects_out_of_bounds_indices(self):
         self.mlist[:] = [1, 2, 3]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         with self.assertRaises(IndexError):
             self.mlist.pop(10)
@@ -1180,7 +1158,7 @@ class TestModelList(unittest.TestCase):
             self.mlist.pop(-10)
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
             ]
         )
@@ -1188,15 +1166,15 @@ class TestModelList(unittest.TestCase):
     def test_pop_without_index(self):
         self.mlist[:] = [1, 2, 3]
 
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist.pop()
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 2, 2),
-                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.on_unregister_item(3),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -1210,17 +1188,17 @@ class TestModelList(unittest.TestCase):
 
     def test_clear(self):
         self.mlist[:] = [1, 2, 3]
-        self.mock.mock_calls.clear()
+        self.listener.mock_calls.clear()
 
         self.mlist.clear()
 
         self.assertSequenceEqual(
-            self.mock.mock_calls,
+            self.listener.mock_calls,
             [
                 unittest.mock.call.begin_remove_rows(None, 0, 2),
-                unittest.mock.call.unregister_item(1),
-                unittest.mock.call.unregister_item(2),
-                unittest.mock.call.unregister_item(3),
+                unittest.mock.call.on_unregister_item(1),
+                unittest.mock.call.on_unregister_item(2),
+                unittest.mock.call.on_unregister_item(3),
                 unittest.mock.call.end_remove_rows(),
             ]
         )
@@ -1269,6 +1247,109 @@ class TestModelList(unittest.TestCase):
             {
                 "x": "a"
             }
+        )
+
+    def test_refresh_data(self):
+        self.mlist[:] = range(5)
+
+        self.mlist.refresh_data(
+            slice(1, 3)
+        )
+
+        self.listener.data_changed.assert_called_once_with(
+            None, 1, 2, 0, 0, None
+        )
+
+    def test_refresh_data_checks_column_range(self):
+        self.mlist[:] = range(5)
+
+        with self.assertRaisesRegex(
+                ValueError,
+                "end column must be greater than or equal to start column"):
+            self.mlist.refresh_data(
+                slice(1, 3),
+                3, 1
+            )
+
+        self.listener.data_changed.assert_not_called()
+
+    def test_refresh_data_allows_None_columns(self):
+        self.mlist[:] = range(5)
+
+        self.mlist.refresh_data(
+            slice(1, 3),
+            None, None,
+        )
+
+        self.listener.data_changed.assert_called_once_with(
+            None,
+            1, 2,
+            None, None,
+            None
+        )
+
+    def test_refresh_data_sets_colmun2_to_None_if_column1_is_None(self):
+        self.mlist[:] = range(5)
+
+        self.mlist.refresh_data(
+            slice(1, 3),
+            None,
+        )
+
+        self.listener.data_changed.assert_called_once_with(
+            None,
+            1, 2,
+            None, None,
+            None
+        )
+
+    def test_refresh_data_does_not_Noneify_column2_if_column2_is_nonzero(self):
+        self.mlist[:] = range(5)
+
+        with self.assertRaisesRegex(
+                ValueError,
+                "either both or no columns must be None"):
+            self.mlist.refresh_data(
+                slice(1, 3),
+                None, 2
+            )
+
+        self.listener.data_changed.assert_not_called()
+
+    def test_refresh_data_rejects_non_unity_non_forward_slice(self):
+        self.mlist[:] = range(5)
+
+        with self.assertRaisesRegex(
+                ValueError,
+                "slice must have stride 1"):
+            self.mlist.refresh_data(
+                slice(1, 3, -1),
+            )
+
+        self.listener.data_changed.assert_not_called()
+
+        with self.assertRaisesRegex(
+                ValueError,
+                "slice must have stride 1"):
+            self.mlist.refresh_data(
+                slice(1, 3, 2),
+            )
+
+        self.listener.data_changed.assert_not_called()
+
+    def test_refresh_data_passes_roles(self):
+        self.mlist[:] = range(5)
+
+        self.mlist.refresh_data(
+            slice(1, 3),
+            roles=unittest.mock.sentinel.roles
+        )
+
+        self.listener.data_changed.assert_called_once_with(
+            None,
+            1, 2,
+            0, 0,
+            unittest.mock.sentinel.roles,
         )
 
 
