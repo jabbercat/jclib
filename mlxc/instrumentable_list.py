@@ -67,6 +67,11 @@ class IList(collections.abc.MutableSequence):
     def _unregister_slice(self, sl):
         items = self[sl]
         i = None
+        # this is a rather interesting use of ExitStack: we add the
+        # on_register_item calls for each unregistered item to the stack; they
+        # will be called when the stack unwinds due to an exception. The call
+        # to .pop_all() at the end of the with-block prevents them from being
+        # called when the with-block is left without an exception.
         with contextlib.ExitStack() as stack:
             for i, item in enumerate(items):
                 self.on_unregister_item(item)
@@ -235,7 +240,7 @@ class ModelList(collections.abc.MutableSequence):
 
     def _register_items(self, items, base_index):
         for i, item in enumerate(items):
-            self.on_register_item(item, base_index+i)
+            self.on_register_item(item, base_index + i)
 
     def _unregister_items(self, items):
         for item in items:
@@ -270,12 +275,12 @@ class ModelList(collections.abc.MutableSequence):
         if isinstance(index, slice):
             start, end, stride = index.indices(len(self._storage))
             if stride == 1:
-                self._begin_remove_rows(start, end-1)
+                self._begin_remove_rows(start, end - 1)
                 self._unregister_items(self._storage[index])
                 del self._storage[index]
                 self._end_remove_rows()
             elif stride == -1:
-                self._begin_remove_rows(end+1, start)
+                self._begin_remove_rows(end + 1, start)
                 self._unregister_items(reversed(self._storage[index]))
                 del self._storage[index]
                 self._end_remove_rows()
@@ -284,7 +289,7 @@ class ModelList(collections.abc.MutableSequence):
                 # constraints
                 ndeleted = 0
                 for i in range(start, end, stride):
-                    del self[i-ndeleted]
+                    del self[i - ndeleted]
                     ndeleted += 1
             return
 
@@ -301,11 +306,11 @@ class ModelList(collections.abc.MutableSequence):
             start, end, stride = index.indices(len(self._storage))
             if stride == 1:
                 if start != end:
-                    self._begin_remove_rows(start, end-1)
+                    self._begin_remove_rows(start, end - 1)
                     self._unregister_items(self._storage[index])
                     del self._storage[index]
                     self._end_remove_rows()
-                self._begin_insert_rows(start, len(items)+start-1)
+                self._begin_insert_rows(start, len(items) + start - 1)
                 self._storage[start:start] = items
                 self._register_items(items, start)
                 self._end_insert_rows()
@@ -318,13 +323,13 @@ class ModelList(collections.abc.MutableSequence):
                             start - end
                         )
                     )
-                self._begin_remove_rows(end+1, start)
+                self._begin_remove_rows(end + 1, start)
                 self._unregister_items(reversed(self._storage[index]))
                 del self._storage[index]
                 self._end_remove_rows()
-                self._begin_insert_rows(end+1, len(items)+end)
-                self._storage[end+1:end+1] = items
-                self._register_items(items, end+1)
+                self._begin_insert_rows(end + 1, len(items) + end)
+                self._storage[end + 1:end + 1] = items
+                self._register_items(items, end + 1)
                 self._end_insert_rows()
             else:
                 raise IndexError("non-unity strides not supported")
@@ -365,7 +370,7 @@ class ModelList(collections.abc.MutableSequence):
         if index2 != len(self._storage):
             index2 = self._check_and_normalize_index(index2)
 
-        if index1 == index2 or index1 == index2-1:
+        if index1 == index2 or index1 == index2 - 1:
             return
 
         self._begin_move_rows(index1, index1, index2)
@@ -386,10 +391,10 @@ class ModelList(collections.abc.MutableSequence):
         """
 
         upper = len(self._storage)
-        for i in range(len(self._storage)//2):
+        for i in range(len(self._storage) // 2):
             self.move(i, upper)
             if upper-2 > i:
-                self.move(upper-2, i)
+                self.move(upper - 2, i)
             upper -= 1
 
     def pop(self, index=-1):
@@ -468,7 +473,7 @@ class ModelTreeNode(collections.abc.MutableSequence):
     def _adopt_items(self, items, base_index, stride):
         for i, item in enumerate(items):
             assert item.parent is None
-            item._set_parent(self, base_index + i*stride)
+            item._set_parent(self, base_index + i * stride)
 
     def _release_items(self, items):
         for item in items:
@@ -486,12 +491,12 @@ class ModelTreeNode(collections.abc.MutableSequence):
 
         self._items[indexdest:indexdest] = nodes
         self._adopt_items(
-            self._items[indexdest:indexdest+len(nodes)],
+            self._items[indexdest:indexdest + len(nodes)],
             indexdest,
             1,
         )
         self._shift_indices(
-            slice(indexdest+len(nodes), None),
+            slice(indexdest + len(nodes), None),
             len(nodes)
         )
 
@@ -520,13 +525,13 @@ class ModelTreeNode(collections.abc.MutableSequence):
                 return
 
             if step == -1:
-                start, stop = stop+1, start+1
+                start, stop = stop + 1, start + 1
                 step = 1
 
             if step != 1 and step > 0:
                 ndeleted = 0
                 for index in range(*slice_.indices(len(self._items))):
-                    del self[index-ndeleted]
+                    del self[index - ndeleted]
                     ndeleted += 1
                 return
             elif step < 0:
@@ -537,7 +542,7 @@ class ModelTreeNode(collections.abc.MutableSequence):
             self._tree._node_begin_remove_rows(
                 self,
                 start,
-                stop-1)
+                stop - 1)
             self._release_items(self._items[slice_])
             self._shift_indices(slice(stop, None), start - stop)
             del self._items[slice_]
@@ -547,7 +552,7 @@ class ModelTreeNode(collections.abc.MutableSequence):
         index = self._check_and_normalize_index(slice_)
         self._tree._node_begin_remove_rows(self, index, index)
         self._release_items([self._items[index]])
-        self._shift_indices(slice(index+1, None), -1)
+        self._shift_indices(slice(index + 1, None), -1)
         del self._items[index]
         self._tree._node_end_remove_rows(self)
 
@@ -561,7 +566,7 @@ class ModelTreeNode(collections.abc.MutableSequence):
 
             if step == 1:
                 if start != stop:
-                    self._tree._node_begin_remove_rows(self, start, stop-1)
+                    self._tree._node_begin_remove_rows(self, start, stop - 1)
                     self._release_items(self._items[slice_])
                     self._shift_indices(slice(stop, None), -(stop - start))
                     del self._items[slice_]
@@ -569,14 +574,14 @@ class ModelTreeNode(collections.abc.MutableSequence):
                 if items:
                     self._tree._node_begin_insert_rows(self,
                                                        start,
-                                                       start+len(items)-1)
+                                                       start + len(items) - 1)
                     self._items[start:start] = items
                     self._adopt_items(
-                        self._items[start:start+len(items)],
+                        self._items[start:start + len(items)],
                         start,
                         1
                     )
-                    self._shift_indices(slice(start+len(items), None),
+                    self._shift_indices(slice(start + len(items), None),
                                         len(items))
                     self._tree._node_end_insert_rows(self)
             elif step == -1:
@@ -592,18 +597,18 @@ class ModelTreeNode(collections.abc.MutableSequence):
                 if start == stop:
                     return
 
-                start, stop = stop+1, start+1
+                start, stop = stop + 1, start + 1
                 step = 1
-                self._tree._node_begin_remove_rows(self, start, stop-1)
+                self._tree._node_begin_remove_rows(self, start, stop - 1)
                 self._release_items(self._items[slice_])
                 del self._items[slice_]
                 self._tree._node_end_remove_rows(self)
                 self._tree._node_begin_insert_rows(self,
                                                    start,
-                                                   start+len(items)-1)
+                                                   start + len(items) - 1)
                 self._items[start:start] = reversed(items)
                 self._adopt_items(
-                    self._items[start:start+len(items)],
+                    self._items[start:start + len(items)],
                     start,
                     1
                 )
@@ -618,13 +623,13 @@ class ModelTreeNode(collections.abc.MutableSequence):
         index = self._check_and_normalize_index(slice_)
         self._tree._node_begin_remove_rows(self, index, index)
         self._release_items([self._items[index]])
-        self._shift_indices(slice(index+1, None), -1)
+        self._shift_indices(slice(index + 1, None), -1)
         del self._items[index]
         self._tree._node_end_remove_rows(self)
         self._tree._node_begin_insert_rows(self, index, index)
         self._items.insert(index, items)
         self._adopt_items([items], index, 1)
-        self._shift_indices(slice(index+1, None), 1)
+        self._shift_indices(slice(index + 1, None), 1)
         self._tree._node_end_insert_rows(self)
 
     def __len__(self):
@@ -636,7 +641,7 @@ class ModelTreeNode(collections.abc.MutableSequence):
 
         self._tree._node_begin_insert_rows(self, index, index)
         self._items.insert(index, item)
-        self._shift_indices(slice(index+1, None), 1)
+        self._shift_indices(slice(index + 1, None), 1)
         self._adopt_items([item], index, 1)
         self._tree._node_end_insert_rows(self)
 
@@ -649,7 +654,7 @@ class ModelTreeNode(collections.abc.MutableSequence):
         self._tree._node_begin_insert_rows(
             self,
             start,
-            start+len(items)-1
+            start + len(items) - 1
         )
         self._items.extend(items)
         self._adopt_items(self._items[start:], start, 1)
@@ -681,7 +686,7 @@ class ModelTreeNode(collections.abc.MutableSequence):
             raise ValueError("slice must have stride 1")
 
         self._tree._node_data_changed(
-            self, start, stop-1,
+            self, start, stop - 1,
             column1,
             column2,
             roles,
@@ -689,7 +694,7 @@ class ModelTreeNode(collections.abc.MutableSequence):
 
     def refresh_self(self, column1=0, column2=0, roles=None):
         self.parent.refresh_data(
-            slice(self.parent_index, self.parent_index+1),
+            slice(self.parent_index, self.parent_index + 1),
             column1, column2,
             roles,
         )
