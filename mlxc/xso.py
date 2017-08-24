@@ -73,31 +73,7 @@ class ComplexPresenceState(_AbstractPresence):
     ])
 
 
-class IdentitySettings(xso.XSO):
-    TAG = (mlxc_namespaces.identity, "identity")
+class AccountsSettings(xso.XSO):
+    TAG = (mlxc_namespaces.identity, "accounts")
 
-    name = xso.Attr(
-        "name",
-    )
-
-    accounts = xso.ChildList([
-        AccountSettings,
-    ])
-
-    custom_presences = xso.ChildList([
-        ComplexPresenceState,
-    ])
-
-    disabled = xso.Attr(
-        "disabled",
-        type_=xso.Bool(),
-        default=False,
-    )
-
-    _ = xso.Collector()
-
-
-class IdentitiesSettings(xso.XSO):
-    TAG = (mlxc_namespaces.identity, "identities")
-
-    identities = xso.ChildList([IdentitySettings])
+    accounts = xso.ChildList([AccountSettings])
