@@ -1384,6 +1384,9 @@ class TestModelListView(unittest.TestCase):
         self.assertIsInstance(view.end_remove_rows,
                               aioxmpp.callbacks.AdHocSignal)
 
+        self.assertIsInstance(view.data_changed,
+                              aioxmpp.callbacks.AdHocSignal)
+
     def test_is_sequence(self):
         self.assertTrue(issubclass(
             ModelListView,
@@ -1422,6 +1425,10 @@ class TestModelListView(unittest.TestCase):
 
         backend.end_move_rows.connect.assert_called_with(
             view.end_move_rows
+        )
+
+        backend.data_changed.connect.assert_called_once_with(
+            view.data_changed
         )
 
     def test___getitem__forwards_to_backend(self):

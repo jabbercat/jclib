@@ -450,6 +450,7 @@ class ModelListView(collections.abc.Sequence):
     end_remove_rows = aioxmpp.callbacks.Signal()
     begin_move_rows = aioxmpp.callbacks.Signal()
     end_move_rows = aioxmpp.callbacks.Signal()
+    data_changed = aioxmpp.callbacks.Signal()
 
     def __init__(self, backend):
         super().__init__()
@@ -460,6 +461,7 @@ class ModelListView(collections.abc.Sequence):
         self._backend.end_insert_rows.connect(self.end_insert_rows)
         self._backend.end_move_rows.connect(self.end_move_rows)
         self._backend.end_remove_rows.connect(self.end_remove_rows)
+        self._backend.data_changed.connect(self.data_changed)
 
     def __getitem__(self, index):
         return self._backend[index]
