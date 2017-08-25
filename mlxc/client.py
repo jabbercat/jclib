@@ -45,13 +45,13 @@ class Client:
     on_client_prepare = aioxmpp.callbacks.Signal()
     on_client_stopped = aioxmpp.callbacks.Signal()
 
-    def __init__(self, identities: identity.Identities, *, use_keyring=None):
+    def __init__(self, accounts: identity.Accounts, *, use_keyring=None):
         super().__init__()
         self.logger = logging.getLogger(
             type(self).__module__ + type(self).__qualname__
         )
-        identities.on_account_enabled.connect(self.on_account_enabled)
-        identities.on_account_disabled.connect(self.on_account_disabled)
+        accounts.on_account_enabled.connect(self.on_account_enabled)
+        accounts.on_account_disabled.connect(self.on_account_disabled)
         self.loop = asyncio.get_event_loop()
         self.keyring = (use_keyring
                         if use_keyring is not None

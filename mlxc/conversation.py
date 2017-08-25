@@ -93,7 +93,6 @@ class ConversationManager:
         """
         Must be called during client prepare for each client to track.
         """
-        identity = account.parent.object_
         convs = client.summon(aioxmpp.im.service.ConversationService)
         tokens = []
         _connect_and_store_token(

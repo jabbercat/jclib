@@ -1,13 +1,19 @@
+import contextlib
 import unittest
 
 import aioxmpp
 
 import mlxc.client as client
+import mlxc.identity
 import mlxc.instrumentable_list
 
 from aioxmpp.testutils import (
     make_connected_client,
+    make_listener,
 )
+
+
+TEST_JID = aioxmpp.JID.fromstr("romeo@montague.lit")
 
 
 class TestRosterGroups(unittest.TestCase):
@@ -75,4 +81,66 @@ class TestRosterGroups(unittest.TestCase):
         self.assertCountEqual(
             self.s.groups,
             ["bar"]
+        )
+
+
+class TestClient(unittest.TestCase):
+    def setUp(self):
+        self.accounts = mlxc.identity.Accounts()
+        self.acc = self.accounts.new_account(TEST_JID, None)
+        self.accounts.set_account_enabled(self.acc, False)
+        self.keyring = unittest.mock.Mock(["priority"])
+        self.keyring.priority = 1
+        self.c = client.Client(self.accounts, use_keyring=self.keyring)
+        self.listener = make_listener(self.c)
+
+    def test_no_client_for_disabled_account(self):
+        with self.assertRaises(KeyError):
+            self.c.client_by_account(self.acc)
+
+    def test_create_client_for_account(self):
+        with contextlib.ExitStack() as stack:
+            PresenceManagedClient = stack.enter_context(
+                unittest.mock.patch("aioxmpp.PresenceManagedClient")
+            )
+
+            self.accounts.set_account_enabled(self.acc, True)
+
+        PresenceManagedClient.assert_called_once_with(
+            self.acc.jid,
+            unittest.mock.ANY,
+        )
+
+        self.assertIn(
+            unittest.mock.call(aioxmpp.DiscoServer),
+            PresenceManagedClient().summon.mock_calls,
+        )
+
+        self.assertIn(
+            unittest.mock.call(aioxmpp.MUCClient),
+            PresenceManagedClient().summon.mock_calls,
+        )
+
+        self.assertIn(
+            unittest.mock.call(aioxmpp.AdHocClient),
+            PresenceManagedClient().summon.mock_calls,
+        )
+
+        self.assertIn(
+            unittest.mock.call(aioxmpp.PresenceClient),
+            PresenceManagedClient().summon.mock_calls,
+        )
+
+        self.assertIn(
+            unittest.mock.call(aioxmpp.RosterClient),
+            PresenceManagedClient().summon.mock_calls,
+        )
+
+        self.assertIn(
+            unittest.mock.call(aioxmpp.im.p2p.Service),
+            PresenceManagedClient().summon.mock_calls,
+        )
+
+        self.listener.on_client_prepare.assert_called_once_with(
+            self.acc, PresenceManagedClient()
         )

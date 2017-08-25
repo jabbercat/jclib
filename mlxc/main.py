@@ -118,14 +118,14 @@ def get_singleton_impl(loop):
 
 
 class Main:
-    Identities = identity.Identities
+    Accounts = identity.Accounts
     Client = client.Client
 
     def __init__(self, loop):
         super().__init__()
         self.loop = loop
-        self.identities = self.Identities()
-        self.client = self.Client(self.identities)
+        self.accounts = self.Accounts()
+        self.client = self.Client(self.accounts)
 
         self._terminated_at = None
 
@@ -201,7 +201,7 @@ class Main:
                 returncode = 1
                 return returncode
 
-            self.identities.load()
+            self.accounts.load()
 
             try:
                 returncode = yield from self.run_core()

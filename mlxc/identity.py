@@ -49,7 +49,7 @@ class Account:
 class Accounts(mlxc.config.SimpleConfigurable,
                mlxc.instrumentable_list.ModelListView):
     UID = mlxc.utils.mlxc_uid
-    FILENAME = "identities.xml"
+    FILENAME = "accounts.xml"
 
     on_account_enabled = aioxmpp.callbacks.Signal()
     on_account_disabled = aioxmpp.callbacks.Signal()
