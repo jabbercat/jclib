@@ -1,5 +1,13 @@
+import unittest
+
 import sqlalchemy
 import sqlalchemy.pool
+
+import aioxmpp.callbacks
+
+from aioxmpp.testutils import (
+    make_connected_client,
+)
 
 
 def inmemory_database(declarative_base):

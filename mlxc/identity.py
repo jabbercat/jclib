@@ -19,6 +19,7 @@ class Account:
         self.allow_unencrypted = False
         self.stashed_xml = []
         self.colour = colour
+        self.client = None
 
     @property
     def jid(self):

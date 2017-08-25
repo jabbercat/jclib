@@ -59,7 +59,7 @@ class Client:
         self.keyring_is_safe = self.keyring.priority >= 1
         self.clients = {}
 
-    def client_by_account(self, account):
+    def client_by_account(self, account: identity.Account) -> aioxmpp.Client:
         return self.clients[account]
 
     @asyncio.coroutine
@@ -113,6 +113,8 @@ class Client:
         return None
 
     def _new_client(self, account: identity.Account):
+        assert account.client is None
+
         result = aioxmpp.PresenceManagedClient(
             account.jid,
             aioxmpp.make_security_layer(
@@ -128,6 +130,7 @@ class Client:
         result.summon(aioxmpp.RosterClient)
         result.summon(RosterGroups)
         result.summon(aioxmpp.im.p2p.Service)
+        account.client = result
         self.on_client_prepare(account, result)
         return result
 
@@ -168,6 +171,7 @@ class Client:
     def on_stopped(self, account, exc=None):
         self.logger.info("client stopped for account %r", account)
         client = self.clients.pop(account)
+        account.client = None
         self.on_client_stopped(account, client)
 
     def on_account_disabled(self, account: identity.Account):
