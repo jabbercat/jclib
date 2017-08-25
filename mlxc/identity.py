@@ -25,10 +25,6 @@ class Account:
     def jid(self):
         return self._jid
 
-    @property
-    def identity(self):
-        return self.__node.parent.object_
-
     def to_xso(self):
         result = mlxc.xso.AccountSettings(self._jid)
         result.disabled = not self.enabled
