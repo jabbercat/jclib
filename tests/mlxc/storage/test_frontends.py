@@ -13,7 +13,6 @@ import aioxmpp
 
 import mlxc.storage.account_model
 import mlxc.storage.common
-import mlxc.storage.identity_model
 import mlxc.storage.peer_model
 import mlxc.storage.frontends as frontends
 
@@ -187,28 +186,6 @@ class Testencode_uuid(unittest.TestCase):
             )
 
 
-class TestIdentityLevel(unittest.TestCase):
-    def test_key_path(self):
-        il = frontends.IdentityLevel(
-            unittest.mock.sentinel.identity,
-        )
-
-        with contextlib.ExitStack() as stack:
-            encode_uuid = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.encode_uuid")
-            )
-
-            result = il.key_path
-
-            encode_uuid.assert_called_once_with(
-                unittest.mock.sentinel.identity,
-            )
-            self.assertEqual(
-                result,
-                encode_uuid()
-            )
-
-
 class TestAccountLevel(unittest.TestCase):
     def test_key_path(self):
         il = frontends.AccountLevel(
@@ -234,36 +211,40 @@ class TestAccountLevel(unittest.TestCase):
 
 class TestPeerLevel(unittest.TestCase):
     def test_key_path(self):
+        encoded = unittest.mock.MagicMock()
+
+        def generate_results():
+            for i in itertools.count():
+                yield getattr(
+                    encoded, "jid{}".format(i)
+                )
+
         il = frontends.PeerLevel(
-            unittest.mock.sentinel.identity,
+            unittest.mock.sentinel.account,
             unittest.mock.sentinel.peer,
         )
 
         with contextlib.ExitStack() as stack:
-            encode_uuid = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.encode_uuid")
-            )
-            encode_uuid.return_value = unittest.mock.MagicMock()
-
             encode_jid = stack.enter_context(
                 unittest.mock.patch("mlxc.storage.frontends.encode_jid")
             )
+            encode_jid.side_effect = generate_results()
 
             result = il.key_path
 
-            encode_jid.assert_called_once_with(
-                unittest.mock.sentinel.peer
+            self.assertSequenceEqual(
+                encode_jid.mock_calls,
+                [
+                    unittest.mock.call(unittest.mock.sentinel.account),
+                    unittest.mock.call(unittest.mock.sentinel.peer),
+                ]
             )
 
-            encode_uuid.assert_called_once_with(
-                unittest.mock.sentinel.identity
-            )
-
-            encode_uuid().__truediv__.assert_called_once_with(encode_jid())
+            encoded.jid0.__truediv__.assert_called_once_with(encoded.jid1)
 
             self.assertEqual(
                 result,
-                encode_uuid().__truediv__()
+                encoded.jid0.__truediv__()
             )
 
 
@@ -768,13 +749,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 )
             )
 
-            identity_metadata = stack.enter_context(
-                unittest.mock.patch.object(
-                    mlxc.storage.identity_model.Base,
-                    "metadata"
-                )
-            )
-
             account_metadata = stack.enter_context(
                 unittest.mock.patch.object(
                     mlxc.storage.account_model.Base,
@@ -791,42 +765,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.engine,
             )
 
-            identity_metadata.create_all.assert_not_called()
-            account_metadata.create_all.assert_not_called()
-
-    def test__init_engine_for_identity(self):
-        with contextlib.ExitStack() as stack:
-            peer_metadata = stack.enter_context(
-                unittest.mock.patch.object(
-                    mlxc.storage.peer_model.Base,
-                    "metadata"
-                )
-            )
-
-            identity_metadata = stack.enter_context(
-                unittest.mock.patch.object(
-                    mlxc.storage.identity_model.Base,
-                    "metadata"
-                )
-            )
-
-            account_metadata = stack.enter_context(
-                unittest.mock.patch.object(
-                    mlxc.storage.account_model.Base,
-                    "metadata"
-                )
-            )
-
-            self.f._init_engine(
-                unittest.mock.sentinel.engine,
-                frontends.StorageLevel.IDENTITY,
-            )
-
-            identity_metadata.create_all.assert_called_once_with(
-                unittest.mock.sentinel.engine,
-            )
-
-            peer_metadata.create_all.assert_not_called()
             account_metadata.create_all.assert_not_called()
 
     def test__init_engine_for_account(self):
@@ -834,13 +772,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
             peer_metadata = stack.enter_context(
                 unittest.mock.patch.object(
                     mlxc.storage.peer_model.Base,
-                    "metadata"
-                )
-            )
-
-            identity_metadata = stack.enter_context(
-                unittest.mock.patch.object(
-                    mlxc.storage.identity_model.Base,
                     "metadata"
                 )
             )
@@ -862,20 +793,12 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             peer_metadata.create_all.assert_not_called()
-            identity_metadata.create_all.assert_not_called()
 
     def test__init_engine_fails_for_global(self):
         with contextlib.ExitStack() as stack:
             peer_metadata = stack.enter_context(
                 unittest.mock.patch.object(
                     mlxc.storage.peer_model.Base,
-                    "metadata"
-                )
-            )
-
-            identity_metadata = stack.enter_context(
-                unittest.mock.patch.object(
-                    mlxc.storage.identity_model.Base,
                     "metadata"
                 )
             )
@@ -897,20 +820,12 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             account_metadata.create_all.assert_not_called()
             peer_metadata.create_all.assert_not_called()
-            identity_metadata.create_all.assert_not_called()
 
     def test__init_engine_fails_for_unknown_enum(self):
         with contextlib.ExitStack() as stack:
             peer_metadata = stack.enter_context(
                 unittest.mock.patch.object(
                     mlxc.storage.peer_model.Base,
-                    "metadata"
-                )
-            )
-
-            identity_metadata = stack.enter_context(
-                unittest.mock.patch.object(
-                    mlxc.storage.identity_model.Base,
                     "metadata"
                 )
             )
@@ -932,7 +847,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             account_metadata.create_all.assert_not_called()
             peer_metadata.create_all.assert_not_called()
-            identity_metadata.create_all.assert_not_called()
 
     def test__get_sessionmaker(self):
         with contextlib.ExitStack() as stack:
@@ -1008,7 +922,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
             self.f._store_blob(
                 unittest.mock.sentinel.type_,
                 frontends.PeerLevel(
-                    unittest.mock.sentinel.identity,
+                    unittest.mock.sentinel.account,
                     unittest.mock.sentinel.peer,
                 ),
                 unittest.mock.sentinel.namespace,
@@ -1040,8 +954,8 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             self.assertEqual(
-                blob.identity,
-                unittest.mock.sentinel.identity,
+                blob.account,
+                unittest.mock.sentinel.account,
             )
 
             self.assertEqual(
@@ -1117,76 +1031,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
             self.assertEqual(
                 blob.account,
                 unittest.mock.sentinel.account,
-            )
-
-            self.assertEqual(
-                blob.data,
-                unittest.mock.sentinel.data,
-            )
-
-            self.assertEqual(
-                blob.name,
-                unittest.mock.sentinel.name,
-            )
-
-    def test__store_blob_identity(self):
-        with contextlib.ExitStack() as stack:
-            _get_sessionmaker = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_get_sessionmaker")
-            )
-
-            session_scope = unittest.mock.MagicMock()
-            session_scope.side_effect = mlxc.storage.common.session_scope
-            stack.enter_context(
-                unittest.mock.patch(
-                    "mlxc.storage.common.session_scope",
-                    new=session_scope
-                )
-            )
-
-            touch_mtime = stack.enter_context(
-                unittest.mock.patch.object(
-                    mlxc.storage.identity_model.SmallBlob,
-                    "touch_mtime",
-                )
-            )
-
-            self.f._store_blob(
-                unittest.mock.sentinel.type_,
-                frontends.IdentityLevel(
-                    unittest.mock.sentinel.identity,
-                ),
-                unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
-                unittest.mock.sentinel.data,
-            )
-
-            _get_sessionmaker.assert_called_once_with(
-                unittest.mock.sentinel.type_,
-                mlxc.storage.common.StorageLevel.IDENTITY,
-                unittest.mock.sentinel.namespace,
-            )
-
-            session_scope.assert_called_once_with(
-                _get_sessionmaker(),
-            )
-
-            _get_sessionmaker()().merge.assert_called_once_with(
-                unittest.mock.ANY,
-            )
-
-            _, (blob, ), _ = _get_sessionmaker()().merge.mock_calls[0]
-
-            touch_mtime.assert_called_once_with()
-
-            self.assertIsInstance(
-                blob,
-                mlxc.storage.identity_model.SmallBlob,
-            )
-
-            self.assertEqual(
-                blob.identity,
-                unittest.mock.sentinel.identity,
             )
 
             self.assertEqual(
@@ -1419,59 +1263,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             self.assertEqual(get(), result)
 
-    def test__load_blob_identity_level(self):
-        with contextlib.ExitStack() as stack:
-            _get_sessionmaker = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_get_sessionmaker")
-            )
-
-            session_scope = unittest.mock.MagicMock()
-            session_scope.side_effect = mlxc.storage.common.session_scope
-            stack.enter_context(
-                unittest.mock.patch(
-                    "mlxc.storage.common.session_scope",
-                    new=session_scope
-                )
-            )
-
-            get = stack.enter_context(
-                unittest.mock.patch.object(
-                    mlxc.storage.identity_model.SmallBlob,
-                    "get",
-                )
-            )
-
-            level = frontends.IdentityLevel(
-                unittest.mock.sentinel.identity,
-            )
-
-            result = self.f._load_blob(
-                unittest.mock.sentinel.type_,
-                level,
-                unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
-                unittest.mock.sentinel.query,
-            )
-
-            _get_sessionmaker.assert_called_once_with(
-                unittest.mock.sentinel.type_,
-                mlxc.storage.common.StorageLevel.IDENTITY,
-                unittest.mock.sentinel.namespace,
-            )
-
-            session_scope.assert_called_once_with(
-                _get_sessionmaker(),
-            )
-
-            get.assert_called_once_with(
-                _get_sessionmaker()(),
-                level,
-                unittest.mock.sentinel.name,
-                unittest.mock.sentinel.query,
-            )
-
-            self.assertEqual(get(), result)
-
     def test__load_in_executor_uses__load_blob(self):
         with contextlib.ExitStack() as stack:
             _load_blob = stack.enter_context(
@@ -1608,65 +1399,6 @@ class TestSmallBlobFrontend(unittest.TestCase):
             session = _get_sessionmaker()()
             session.query.assert_called_once_with(
                 mlxc.storage.peer_model.SmallBlob,
-            )
-            filter_by.assert_called_once_with(
-                session.query(),
-                level,
-                unittest.mock.sentinel.name,
-            )
-            filter_by().delete.assert_called_once_with()
-
-            self.assertEqual(
-                result,
-                filter_by().delete()
-            )
-
-    def test__unlink_blob_identity_level(self):
-        with contextlib.ExitStack() as stack:
-            _get_sessionmaker = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_get_sessionmaker")
-            )
-
-            session_scope = unittest.mock.MagicMock()
-            session_scope.side_effect = mlxc.storage.common.session_scope
-            stack.enter_context(
-                unittest.mock.patch(
-                    "mlxc.storage.common.session_scope",
-                    new=session_scope
-                )
-            )
-
-            filter_by = stack.enter_context(
-                unittest.mock.patch.object(
-                    mlxc.storage.identity_model.SmallBlob,
-                    "filter_by",
-                )
-            )
-
-            level = frontends.IdentityLevel(
-                unittest.mock.sentinel.identity,
-            )
-
-            result = self.f._unlink_blob(
-                unittest.mock.sentinel.type_,
-                level,
-                unittest.mock.sentinel.namespace,
-                unittest.mock.sentinel.name,
-            )
-
-            _get_sessionmaker.assert_called_once_with(
-                unittest.mock.sentinel.type_,
-                mlxc.storage.common.StorageLevel.IDENTITY,
-                unittest.mock.sentinel.namespace,
-            )
-
-            session_scope.assert_called_once_with(
-                _get_sessionmaker(),
-            )
-
-            session = _get_sessionmaker()()
-            session.query.assert_called_once_with(
-                mlxc.storage.identity_model.SmallBlob,
             )
             filter_by.assert_called_once_with(
                 session.query(),
@@ -2537,14 +2269,14 @@ class TestXMLFrontend(unittest.TestCase):
                 unittest.mock.patch("mlxc.storage.frontends.escape_path_part")
             )
 
-            encode_uuid = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.encode_uuid")
+            encode_jid = stack.enter_context(
+                unittest.mock.patch("mlxc.storage.frontends.encode_jid")
             )
 
             result = self.f._get_path(
                 unittest.mock.sentinel.type_,
                 level_type,
-                identity=unittest.mock.sentinel.identity,
+                account=unittest.mock.sentinel.account,
             )
 
         self.backend.type_base_paths.assert_called_once_with(
@@ -2556,13 +2288,13 @@ class TestXMLFrontend(unittest.TestCase):
             "dns:mlxc.zombofant.net"
         )
 
-        encode_uuid.assert_called_once_with(unittest.mock.sentinel.identity)
+        encode_jid.assert_called_once_with(unittest.mock.sentinel.account)
 
         path_mock.__truediv__.assert_called_once_with(
-            frontends.StorageLevel.IDENTITY.value
+            frontends.StorageLevel.ACCOUNT.value
         )
         path_mock.__truediv__().__truediv__.assert_called_once_with(
-            encode_uuid(),
+            encode_jid(),
         )
         path_mock.__truediv__().__truediv__().__truediv__\
             .assert_called_once_with(
@@ -2606,7 +2338,7 @@ class TestXMLFrontend(unittest.TestCase):
         _get_path.assert_called_once_with(
             unittest.mock.sentinel.type_,
             level.level,
-            identity=unittest.mock.ANY,
+            account=unittest.mock.ANY,
         )
 
         _get_path().open.assert_called_once_with(
@@ -2649,7 +2381,7 @@ class TestXMLFrontend(unittest.TestCase):
         _get_path.assert_called_once_with(
             unittest.mock.sentinel.type_,
             level.level,
-            identity=unittest.mock.ANY,
+            account=unittest.mock.ANY,
         )
 
         _get_path().open.assert_called_once_with(
@@ -2661,87 +2393,9 @@ class TestXMLFrontend(unittest.TestCase):
             mlxc.storage.account_model.XMLStorage,
         )
 
-    def test__load_identity(self):
-        level = frontends.IdentityLevel(
-            unittest.mock.sentinel.identity,
-        )
-
-        with contextlib.ExitStack() as stack:
-            _get_path = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_get_path")
-            )
-            _get_path.return_value = unittest.mock.MagicMock()
-
-            read_single_xso = stack.enter_context(
-                unittest.mock.patch("aioxmpp.xml.read_single_xso")
-            )
-
-            result = self.f._load(
-                unittest.mock.sentinel.type_,
-                level,
-            )
-
-        _get_path.assert_called_once_with(
-            unittest.mock.sentinel.type_,
-            level.level,
-            identity=unittest.mock.ANY,
-        )
-
-        _get_path().open.assert_called_once_with(
-            "rb",
-        )
-
-        read_single_xso.assert_called_once_with(
-            _get_path().open().__enter__(),
-            mlxc.storage.identity_model.XMLStorage,
-        )
-
-        self.assertEqual(
-            result,
-            read_single_xso(),
-        )
-
-    def test__load_identity_returns_fresh_object_if_nonexistant(self):
-        level = frontends.IdentityLevel(
-            unittest.mock.sentinel.identity,
-        )
-
-        path = unittest.mock.MagicMock()
-        path.open.side_effect = FileNotFoundError
-
-        with contextlib.ExitStack() as stack:
-            _get_path = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_get_path")
-            )
-            _get_path.return_value = path
-
-            read_single_xso = stack.enter_context(
-                unittest.mock.patch("aioxmpp.xml.read_single_xso")
-            )
-
-            result = self.f._load(
-                unittest.mock.sentinel.type_,
-                level,
-            )
-
-        _get_path.assert_called_once_with(
-            unittest.mock.sentinel.type_,
-            level.level,
-            identity=unittest.mock.ANY,
-        )
-
-        _get_path().open.assert_called_once_with(
-            "rb",
-        )
-
-        self.assertIsInstance(
-            result,
-            mlxc.storage.identity_model.XMLStorage,
-        )
-
     def test__load_peer(self):
         level = frontends.PeerLevel(
-            unittest.mock.sentinel.identity,
+            unittest.mock.sentinel.account,
             unittest.mock.sentinel.peer,
         )
 
@@ -2763,7 +2417,7 @@ class TestXMLFrontend(unittest.TestCase):
         _get_path.assert_called_once_with(
             unittest.mock.sentinel.type_,
             level.level,
-            identity=unittest.mock.sentinel.identity,
+            account=unittest.mock.sentinel.account,
         )
 
         _get_path().open.assert_called_once_with(
@@ -2782,7 +2436,7 @@ class TestXMLFrontend(unittest.TestCase):
 
     def test__load_peer_returns_fresh_object_if_nonexistant(self):
         level = frontends.PeerLevel(
-            unittest.mock.sentinel.identity,
+            unittest.mock.sentinel.account,
             unittest.mock.sentinel.peer,
         )
 
@@ -2807,7 +2461,7 @@ class TestXMLFrontend(unittest.TestCase):
         _get_path.assert_called_once_with(
             unittest.mock.sentinel.type_,
             level.level,
-            identity=unittest.mock.sentinel.identity,
+            account=unittest.mock.sentinel.account,
         )
 
         _get_path().open.assert_called_once_with(
@@ -3090,49 +2744,10 @@ class TestXMLFrontend(unittest.TestCase):
             aioxmpp.xso.model.XSOList,
         )
 
-    def test_get_all_returns_data_for_identity(self):
-        identity = unittest.mock.Mock()
-        level = frontends.IdentityLevel(
-            identity,
-        )
-        storage = unittest.mock.Mock()
-        storage.items = unittest.mock.MagicMock()
-
-        with contextlib.ExitStack() as stack:
-            _open = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_open")
-            )
-
-            _open.return_value = storage
-
-            result = self.f.get_all(
-                unittest.mock.sentinel.type_,
-                level,
-                unittest.mock.sentinel.xso_type,
-            )
-
-        _open.assert_called_once_with(
-            unittest.mock.sentinel.type_,
-            level,
-        )
-
-        storage.items.__getitem__.assert_called_once_with(
-            identity.bytes,
-        )
-
-        storage.items.__getitem__().__getitem__.assert_called_once_with(
-            unittest.mock.sentinel.xso_type,
-        )
-
-        self.assertEqual(
-            result,
-            storage.items[...][...]
-        )
-
     def test_get_all_returns_data_for_peer(self):
-        identity = unittest.mock.Mock()
+        account = unittest.mock.Mock()
         level = frontends.PeerLevel(
-            identity,
+            account,
             unittest.mock.sentinel.jid,
         )
         storage = unittest.mock.Mock()
@@ -3158,7 +2773,7 @@ class TestXMLFrontend(unittest.TestCase):
 
         storage.items.__getitem__.assert_called_once_with(
             (
-                identity.bytes,
+                account,
                 unittest.mock.sentinel.jid,
             )
         )
@@ -3437,49 +3052,10 @@ class TestXMLFrontend(unittest.TestCase):
             unittest.mock.sentinel.xso,
         )
 
-    def test_put_to_identity(self):
-        identity = unittest.mock.Mock()
-        level = frontends.IdentityLevel(
-            identity,
-        )
-        storage = unittest.mock.Mock()
-        storage.items = unittest.mock.MagicMock()
-
-        with contextlib.ExitStack() as stack:
-            _open = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_open")
-            )
-            _open.return_value = storage
-
-            _put_into = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_put_into")
-            )
-
-            XSOList = stack.enter_context(
-                unittest.mock.patch("aioxmpp.xso.model.XSOList")
-            )
-
-            self.f.put(
-                unittest.mock.sentinel.type_,
-                level,
-                unittest.mock.sentinel.xso,
-            )
-
-        _open.assert_called_once_with(
-            unittest.mock.sentinel.type_,
-            level,
-        )
-
-        _put_into.assert_called_once_with(
-            storage.items,
-            identity.bytes,
-            unittest.mock.sentinel.xso,
-        )
-
     def test_put_to_peer(self):
-        identity = unittest.mock.Mock()
+        account = unittest.mock.Mock()
         level = frontends.PeerLevel(
-            identity,
+            account,
             unittest.mock.sentinel.peer,
         )
         storage = unittest.mock.Mock()
@@ -3512,7 +3088,7 @@ class TestXMLFrontend(unittest.TestCase):
 
         _put_into.assert_called_once_with(
             storage.items,
-            (identity.bytes, unittest.mock.sentinel.peer),
+            (account, unittest.mock.sentinel.peer),
             unittest.mock.sentinel.xso,
         )
 
@@ -3595,7 +3171,7 @@ class TestXMLFrontend(unittest.TestCase):
                 unittest.mock.sentinel.type_,
                 (
                     level.level,
-                    level.identity,
+                    level.account,
                 )
             )
 
@@ -3603,7 +3179,7 @@ class TestXMLFrontend(unittest.TestCase):
             data,
             unittest.mock.sentinel.type_,
             level.level,
-            level.identity,
+            level.account,
         )
 
         _open.assert_not_called()
@@ -3644,17 +3220,13 @@ class TestXMLFrontend(unittest.TestCase):
             unittest.mock.sentinel.account1,
         )
 
-        level2 = frontends.IdentityLevel(
-            unittest.mock.sentinel.identity1,
-        )
-
         level3 = frontends.PeerLevel(
-            unittest.mock.sentinel.identity1,
+            unittest.mock.sentinel.account1,
             unittest.mock.sentinel.peer1,
         )
 
         level4 = frontends.PeerLevel(
-            unittest.mock.sentinel.identity1,
+            unittest.mock.sentinel.account1,
             unittest.mock.sentinel.peer2,
         )
 
@@ -3670,11 +3242,6 @@ class TestXMLFrontend(unittest.TestCase):
             self.f._open(
                 unittest.mock.sentinel.type1,
                 level3,
-            )
-
-            self.f._open(
-                unittest.mock.sentinel.type2,
-                level2,
             )
 
             self.f._open(
@@ -3697,13 +3264,7 @@ class TestXMLFrontend(unittest.TestCase):
                     unittest.mock.sentinel.type1,
                     (
                         level3.level,
-                        level3.identity,
-                    )
-                ),
-                unittest.mock.call(
-                    unittest.mock.sentinel.type2,
-                    (
-                        level2.level,
+                        level3.account,
                     )
                 ),
                 unittest.mock.call(
@@ -3732,25 +3293,6 @@ class TestXMLFrontend(unittest.TestCase):
         self.assertIn(
             Foo,
             mlxc.storage.account_model.XMLStorageItem.data._classes,
-        )
-
-    def test_register_registers_XSO_child_for_identity(self):
-        class Foo(aioxmpp.xso.XSO):
-            TAG = "urn:test", "identity"
-
-        frontends.XMLFrontend.register(
-            frontends.StorageLevel.IDENTITY,
-            Foo,
-        )
-
-        self.assertIn(
-            Foo.TAG,
-            mlxc.storage.identity_model.XMLStorageItem.CHILD_MAP,
-        )
-
-        self.assertIn(
-            Foo,
-            mlxc.storage.identity_model.XMLStorageItem.data._classes,
         )
 
     def test_register_registers_XSO_child_for_peer(self):
@@ -3830,70 +3372,12 @@ class TestXMLFrontend(unittest.TestCase):
                     i,
                 )
 
-    def test_put_get_cycle_identity(self):
-        with MockBackend() as backend:
-            self.f = frontends.XMLFrontend(backend)
-
-            i1 = uuid.uuid4()
-            i2 = uuid.uuid4()
-
-            d1s = []
-            for i in range(3):
-                d1 = Data1()
-                d1.foo = "test foo data {}".format(i)
-                d1.bar = "test bar data {}".format(i)
-                d1s.append(d1)
-
-            self.f.put(
-                mlxc.storage.common.StorageType.CACHE,
-                frontends.IdentityLevel(i1),
-                [d1s[0], d1s[1]]
-            )
-
-            self.f.put(
-                mlxc.storage.common.StorageType.CACHE,
-                frontends.IdentityLevel(i2),
-                [d1s[2]],
-            )
-
-            self.f.flush_all()
-
-            self.f = frontends.XMLFrontend(backend)
-
-            for i, d1 in enumerate(self.f.get_all(
-                    mlxc.storage.common.StorageType.CACHE,
-                    frontends.IdentityLevel(i1), Data1)):
-                self.assertEqual(
-                    d1.foo,
-                    d1s[i].foo,
-                    i,
-                )
-                self.assertEqual(
-                    d1.bar,
-                    d1s[i].bar,
-                    i,
-                )
-
-            for i, d1 in enumerate(self.f.get_all(
-                    mlxc.storage.common.StorageType.CACHE,
-                    frontends.IdentityLevel(i2), Data1), 2):
-                self.assertEqual(
-                    d1.foo,
-                    d1s[i].foo,
-                    i,
-                )
-                self.assertEqual(
-                    d1.bar,
-                    d1s[i].bar,
-                    i,
-                )
-
     def test_put_get_cycle_peer(self):
         with MockBackend() as backend:
             self.f = frontends.XMLFrontend(backend)
 
-            i1 = uuid.uuid4()
-            i2 = uuid.uuid4()
+            i1 = aioxmpp.JID.fromstr("account1@server.example")
+            i2 = aioxmpp.JID.fromstr("account2@server.example")
             j1 = aioxmpp.JID.fromstr("romeo@montague.lit")
             j2 = aioxmpp.JID.fromstr("juliet@capulet.lit")
 

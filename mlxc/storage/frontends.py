@@ -17,7 +17,7 @@ import aioxmpp.xml
 
 from .. import utils
 from .common import StorageLevel
-from . import peer_model, identity_model, account_model, common
+from . import peer_model, account_model, common
 
 
 def encode_jid(jid):
@@ -87,14 +87,6 @@ class GlobalLevel(collections.namedtuple("GlobalLevel", [])):
         return pathlib.Path()
 
 
-class IdentityLevel(collections.namedtuple("IdentityLevel", ["identity"])):
-    level = StorageLevel.IDENTITY
-
-    @property
-    def key_path(self):
-        return encode_uuid(self.identity)
-
-
 class AccountLevel(collections.namedtuple("AccountLevel", ["account"])):
     level = StorageLevel.ACCOUNT
 
@@ -103,12 +95,12 @@ class AccountLevel(collections.namedtuple("AccountLevel", ["account"])):
         return encode_jid(self.account)
 
 
-class PeerLevel(collections.namedtuple("PeerLevel", ["identity", "peer"])):
+class PeerLevel(collections.namedtuple("PeerLevel", ["account", "peer"])):
     level = StorageLevel.PEER
 
     @property
     def key_path(self):
-        return encode_uuid(self.identity) / encode_jid(self.peer)
+        return encode_jid(self.account) / encode_jid(self.peer)
 
 
 class Frontend:
@@ -362,10 +354,6 @@ class SmallBlobFrontend(FileLikeFrontend, Frontend):
         StorageLevel.PEER: (
             peer_model.Base,
             peer_model.SmallBlob,
-        ),
-        StorageLevel.IDENTITY: (
-            identity_model.Base,
-            identity_model.SmallBlob,
         ),
         StorageLevel.ACCOUNT: (
             account_model.Base,
@@ -719,11 +707,6 @@ class XMLFrontend(Frontend):
     """
 
     LEVEL_INFO = {
-        StorageLevel.IDENTITY: (
-            identity_model.XMLStorage,
-            lambda x: (x.level,),
-            lambda x: x.identity.bytes
-        ),
         StorageLevel.ACCOUNT: (
             account_model.XMLStorage,
             lambda x: (x.level,),
@@ -731,8 +714,8 @@ class XMLFrontend(Frontend):
         ),
         StorageLevel.PEER: (
             peer_model.XMLStorage,
-            lambda x: (x.level, x.identity),
-            lambda x: (x.identity.bytes, x.peer)
+            lambda x: (x.level, x.account),
+            lambda x: (x.account, x.peer)
         ),
     }
 
@@ -740,11 +723,11 @@ class XMLFrontend(Frontend):
         super().__init__(backend)
         self.__open_storages = {}
 
-    def _get_path(self, type_, level_type, identity=None):
+    def _get_path(self, type_, level_type, account=None):
         if level_type == StorageLevel.PEER:
             return (self._backend.type_base_paths(type_, True)[0] /
-                    StorageLevel.IDENTITY.value /
-                    encode_uuid(identity) /
+                    StorageLevel.ACCOUNT.value /
+                    encode_jid(account) /
                     escape_path_part(utils.mlxc_namespaces.core) /
                     "xml-storage" /
                     "{}.xml".format(level_type.value))
@@ -759,7 +742,7 @@ class XMLFrontend(Frontend):
         path = self._get_path(
             type_,
             level.level,
-            identity=getattr(level, "identity", None)
+            account=getattr(level, "account", None)
         )
 
         storage_cls, _, _ = self.LEVEL_INFO[level.level]

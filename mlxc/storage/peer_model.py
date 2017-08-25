@@ -19,9 +19,9 @@ class Base(declarative_base()):
 class SmallBlob(SmallBlobMixin, Base):
     __tablename__ = "smallblobs"
 
-    identity = Column(
-        "identity",
-        UUID(),
+    account = Column(
+        "account",
+        JID(),
         primary_key=True
     )
 
@@ -34,14 +34,14 @@ class SmallBlob(SmallBlobMixin, Base):
     @classmethod
     def from_level_descriptor(cls, level):
         instance = cls()
-        instance.identity = level.identity
+        instance.account = level.account
         instance.peer = level.peer
         return instance
 
     @classmethod
     def filter_by(cls, query, level, name):
         return query.filter(
-            cls.identity == level.identity,
+            cls.account == level.account,
             cls.peer == level.peer,
             cls.name == name,
         )
@@ -58,14 +58,14 @@ class SmallBlob(SmallBlobMixin, Base):
 class XMLStorageItem(aioxmpp.xso.XSO):
     TAG = mlxc_namespaces.xml_storage_peer, "peer"
 
-    jid = aioxmpp.xso.Attr(
-        "jid",
+    peer = aioxmpp.xso.Attr(
+        "peer",
         type_=aioxmpp.xso.JID(),
     )
 
-    identity = aioxmpp.xso.Attr(
-        "identity",
-        type_=aioxmpp.xso.Base64Binary(),
+    account = aioxmpp.xso.Attr(
+        "account",
+        type_=aioxmpp.xso.JID(),
     )
 
     data = aioxmpp.xso.ChildMap(
@@ -79,13 +79,13 @@ class XMLStorageItemType(aioxmpp.xso.AbstractElementType):
         return [XMLStorageItem]
 
     def unpack(self, obj):
-        return (obj.identity, obj.jid), obj.data
+        return (obj.account, obj.peer), obj.data
 
     def pack(self, t):
-        (identity, jid), data = t
+        (account, peer), data = t
         obj = XMLStorageItem()
-        obj.identity = identity
-        obj.jid = jid
+        obj.account = account
+        obj.peer = peer
         obj.data.update(data)
         return obj
 
