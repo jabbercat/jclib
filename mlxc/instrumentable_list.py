@@ -122,7 +122,17 @@ class IList(collections.abc.MutableSequence):
         self._storage.reverse()
 
 
-class ModelList(typing.Generic[T], collections.abc.MutableSequence):
+class AbstractModelListView(typing.Generic[T], collections.abc.Sequence):
+    begin_insert_rows = aioxmpp.callbacks.Signal()
+    end_insert_rows = aioxmpp.callbacks.Signal()
+    begin_remove_rows = aioxmpp.callbacks.Signal()
+    end_remove_rows = aioxmpp.callbacks.Signal()
+    begin_move_rows = aioxmpp.callbacks.Signal()
+    end_move_rows = aioxmpp.callbacks.Signal()
+    data_changed = aioxmpp.callbacks.Signal()
+
+
+class ModelList(AbstractModelListView[T], collections.abc.MutableSequence):
     """
     A model list is a mutable sequence suitable for use with Qt-like list
     models. The consturctor forwards the keyword arguments to the next classes
@@ -232,14 +242,6 @@ class ModelList(typing.Generic[T], collections.abc.MutableSequence):
 
     on_register_item = aioxmpp.callbacks.Signal()
     on_unregister_item = aioxmpp.callbacks.Signal()
-
-    begin_insert_rows = aioxmpp.callbacks.Signal()
-    end_insert_rows = aioxmpp.callbacks.Signal()
-    begin_remove_rows = aioxmpp.callbacks.Signal()
-    end_remove_rows = aioxmpp.callbacks.Signal()
-    begin_move_rows = aioxmpp.callbacks.Signal()
-    end_move_rows = aioxmpp.callbacks.Signal()
-    data_changed = aioxmpp.callbacks.Signal()
 
     def __init__(self, initial=(), **kwargs):
         super().__init__(**kwargs)
@@ -457,15 +459,7 @@ class ModelList(typing.Generic[T], collections.abc.MutableSequence):
         )
 
 
-class ModelListView(typing.Generic[T], collections.abc.Sequence):
-    begin_insert_rows = aioxmpp.callbacks.Signal()
-    end_insert_rows = aioxmpp.callbacks.Signal()
-    begin_remove_rows = aioxmpp.callbacks.Signal()
-    end_remove_rows = aioxmpp.callbacks.Signal()
-    begin_move_rows = aioxmpp.callbacks.Signal()
-    end_move_rows = aioxmpp.callbacks.Signal()
-    data_changed = aioxmpp.callbacks.Signal()
-
+class ModelListView(AbstractModelListView[T]):
     def __init__(self, backend: ModelList[T]):
         super().__init__()
         self._backend = backend
@@ -500,7 +494,7 @@ class ModelListView(typing.Generic[T], collections.abc.Sequence):
         return self._backend.count(item)
 
 
-class JoinedModelListView(typing.Generic[T], collections.abc.Sequence):
+class JoinedModelListView(AbstractModelListView[T]):
     """
     A concatenation of multiple model lists or model list views (can be mixed).
 
@@ -511,14 +505,6 @@ class JoinedModelListView(typing.Generic[T], collections.abc.Sequence):
 
     .. automethod:: remove_source
     """
-
-    begin_insert_rows = aioxmpp.callbacks.Signal()
-    end_insert_rows = aioxmpp.callbacks.Signal()
-    begin_remove_rows = aioxmpp.callbacks.Signal()
-    end_remove_rows = aioxmpp.callbacks.Signal()
-    begin_move_rows = aioxmpp.callbacks.Signal()
-    end_move_rows = aioxmpp.callbacks.Signal()
-    data_changed = aioxmpp.callbacks.Signal()
 
     def __init__(self):
         super().__init__()
