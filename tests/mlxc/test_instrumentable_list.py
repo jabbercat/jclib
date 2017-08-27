@@ -1,4 +1,5 @@
 import collections.abc
+import itertools
 import functools
 import unittest
 import unittest.mock
@@ -13,6 +14,7 @@ from mlxc.instrumentable_list import (
     IList,
     ModelList,
     ModelListView,
+    JoinedModelListView,
     ModelTree,
     ModelTreeNode,
     ModelTreeNodeHolder,
@@ -2480,3 +2482,361 @@ class TestModelTree(unittest.TestCase):
                 )
             ]
         )
+
+
+class TestJoinedModelListView(unittest.TestCase):
+    def setUp(self):
+        self.l1 = ModelList(["a1", "a2", "a3"])
+        self.l2 = ModelList(["b1", "b2"])
+        self.l3 = ModelList(["c1", "c2", "c3", "c4"])
+        self.j = JoinedModelListView()
+        self.j.append_source(self.l1)
+        self.j.append_source(self.l2)
+        self.j.append_source(self.l3)
+        self.listener = make_listener(self.j)
+
+    def tearDown(self):
+        del self.j
+        del self.l3
+        del self.l2
+        del self.l1
+
+    def test_len(self):
+        self.j = JoinedModelListView()
+
+        self.assertEqual(len(self.j), 0)
+
+    def test_append_source_emits_events(self):
+        self.j = JoinedModelListView()
+        self.listener = make_listener(self.j)
+
+        begin_length = None
+
+        def check_length(_, index1, index2):
+            nonlocal begin_length
+            begin_length = len(self.j)
+
+        self.j.begin_insert_rows.connect(check_length)
+
+        self.j.append_source(self.l1)
+
+        self.listener.begin_insert_rows.assert_called_once_with(
+            None,
+            0, len(self.l1) - 1,
+        )
+
+        self.listener.end_insert_rows.assert_called_once_with()
+
+        self.assertEqual(begin_length, 0)
+
+    def test_append_source_extends_length(self):
+        self.j = JoinedModelListView()
+
+        self.j.append_source(self.l1)
+        self.assertEqual(len(self.j), len(self.l1))
+
+    def test_append_source_makes_items_accessible(self):
+        self.j = JoinedModelListView()
+
+        self.assertSequenceEqual(self.j, [])
+
+        self.j.append_source(self.l1)
+
+        self.assertSequenceEqual(
+            self.j,
+            self.l1,
+        )
+
+    def test_append_multiple_sources(self):
+        self.j = JoinedModelListView()
+        self.listener = make_listener(self.j)
+
+        begin_length = None
+
+        def check_length(_, index1, index2):
+            nonlocal begin_length
+            begin_length = len(self.j)
+
+        self.j.begin_insert_rows.connect(check_length)
+
+        self.j.append_source(self.l1)
+        self.listener.begin_insert_rows.assert_called_once_with(
+            None,
+            0, len(self.l1) - 1,
+        )
+        self.listener.end_insert_rows.assert_called_once_with()
+        self.assertEqual(begin_length, 0)
+
+        self.listener.begin_insert_rows.reset_mock()
+        self.listener.end_insert_rows.reset_mock()
+
+        self.j.append_source(self.l2)
+        self.listener.begin_insert_rows.assert_called_once_with(
+            None,
+            len(self.l1), len(self.l1) + len(self.l2) - 1,
+        )
+        self.listener.end_insert_rows.assert_called_once_with()
+        self.assertEqual(begin_length, len(self.l1))
+
+        self.listener.begin_insert_rows.reset_mock()
+        self.listener.end_insert_rows.reset_mock()
+
+        self.j.append_source(self.l3)
+        self.listener.begin_insert_rows.assert_called_once_with(
+            None,
+            len(self.l1) + len(self.l2),
+            len(self.l1) + len(self.l2) + len(self.l3) - 1,
+        )
+        self.listener.end_insert_rows.assert_called_once_with()
+        self.assertEqual(begin_length, len(self.l1) + len(self.l2))
+
+        self.assertSequenceEqual(
+            list(self.l1) + list(self.l2) + list(self.l3),
+            list(self.j)
+        )
+
+    def test_index(self):
+        for i, v in enumerate(itertools.chain(self.l1, self.l2, self.l3)):
+            self.assertEqual(self.j.index(v), i)
+
+    def test_count(self):
+        l4 = ModelList(["a1", "b2", "c4", "a1"])
+        self.j.append_source(l4)
+
+        self.assertEqual(self.j.count("a2"), 1)
+        self.assertEqual(self.j.count("a1"), 3)
+        self.assertEqual(self.j.count("b2"), 2)
+        self.assertEqual(self.j.count("c4"), 2)
+
+    def test_contains(self):
+        self.assertNotIn("a0", self.j)
+        self.assertIn("a1", self.j)
+        self.assertNotIn("b3", self.j)
+        self.assertIn("b2", self.j)
+        self.assertNotIn("c5", self.j)
+        self.assertIn("c3", self.j)
+
+    def test_iter(self):
+        self.assertSequenceEqual(
+            list(iter(self.j)),
+            list(self.l1) + list(self.l2) + list(self.l3),
+        )
+
+    def test_reversed(self):
+        concated = list(self.l1) + list(self.l2) + list(self.l3)
+        self.assertSequenceEqual(
+            list(reversed(self.j)),
+            list(reversed(concated)),
+        )
+
+    def test_getitem_slice_contiguous_forward(self):
+        self.assertSequenceEqual(
+            list(self.l1)[1:] + list(self.l2)[:2],
+            self.j[1:5],
+        )
+
+    def test_getitem_slice_discontiguous_forward(self):
+        self.assertSequenceEqual(
+            list(self.l1)[1::2] + list(self.l2)[:1],
+            self.j[1:5:2],
+        )
+
+    def test_getitem_slice_contiguous_reverse(self):
+        self.assertSequenceEqual(
+            list(self.l3[1::-1]) +
+            list(self.l2[::-1]) +
+            list(self.l1[2:1:-1]),
+            self.j[6:1:-1],
+        )
+
+    def test_getitem_slice_contiguous_reverse(self):
+        self.assertSequenceEqual(
+            list(self.l3[1::-2]) +
+            list(self.l2[::-2]) +
+            list(self.l1[2:1:-2]),
+            self.j[6:1:-2],
+        )
+
+    def test_forward_events_from_source_single_append(self):
+        self.l2.append("b3")
+
+        self.listener.begin_insert_rows.assert_called_once_with(
+            None,
+            len(self.l1) + 2,
+            len(self.l1) + 2,
+        )
+        self.listener.end_insert_rows.assert_called_once_with()
+
+        self.assertSequenceEqual(
+            list(self.l1) + list(self.l2) + list(self.l3),
+            list(self.j),
+        )
+
+        self.assertEqual(self.j[6], "c1")
+        self.assertEqual(self.j.index("c1"), len(self.l1) + len(self.l2))
+
+    def test_forward_events_from_source_extend(self):
+        self.l2[1:1] = ["i1", "i2"]
+
+        self.listener.begin_insert_rows.assert_called_once_with(
+            None,
+            len(self.l1) + 1,
+            len(self.l1) + 2,
+        )
+        self.listener.end_insert_rows.assert_called_once_with()
+
+        self.assertSequenceEqual(
+            list(self.l1) + list(self.l2) + list(self.l3),
+            list(self.j),
+        )
+
+        self.assertEqual(self.j[7], "c1")
+        self.assertEqual(self.j.index("c1"), len(self.l1) + len(self.l2))
+
+    def test_forward_events_from_source_remove(self):
+        del self.l2[0]
+
+        self.listener.begin_remove_rows.assert_called_once_with(
+            None,
+            len(self.l1),
+            len(self.l1),
+        )
+        self.listener.end_remove_rows.assert_called_once_with()
+
+        self.assertSequenceEqual(
+            list(self.l1) + list(self.l2) + list(self.l3),
+            list(self.j),
+        )
+
+        self.assertEqual(self.j[4], "c1")
+
+    def test_forward_events_from_source_remove_multiple(self):
+        self.l2.clear()
+
+        self.listener.begin_remove_rows.assert_called_once_with(
+            None,
+            len(self.l1),
+            len(self.l1) + 1,
+        )
+        self.listener.end_remove_rows.assert_called_once_with()
+
+        self.assertSequenceEqual(
+            list(self.l1) + list(self.l2) + list(self.l3),
+            list(self.j),
+        )
+
+        self.assertEqual(self.j[3], "c1")
+        self.assertEqual(self.j.index("c1"), len(self.l1) + len(self.l2))
+
+    def test_forward_events_from_source_remove_multiple(self):
+        self.l2.clear()
+
+        self.listener.begin_remove_rows.assert_called_once_with(
+            None,
+            len(self.l1),
+            len(self.l1) + 1,
+        )
+        self.listener.end_remove_rows.assert_called_once_with()
+
+        self.assertSequenceEqual(
+            list(self.l1) + list(self.l2) + list(self.l3),
+            list(self.j),
+        )
+
+        self.assertEqual(self.j[3], "c1")
+        self.assertEqual(self.j.index("c1"), len(self.l1) + len(self.l2))
+
+    def test_forward_events_from_source_move(self):
+        self.l2.move(0, 2)
+
+        self.listener.begin_move_rows.assert_called_once_with(
+            None, len(self.l1), len(self.l1),
+            None, len(self.l1) + 2,
+        )
+        self.listener.end_move_rows.assert_called_once_with()
+
+        self.assertSequenceEqual(
+            list(self.l1) + list(self.l2) + list(self.l3),
+            list(self.j),
+        )
+
+        self.assertEqual(self.j[5], "c1")
+
+    def test_forward_events_data_changed(self):
+        self.l2.refresh_data(slice(0, 2), 0, 2, ["a", "b"])
+
+        self.listener.data_changed.assert_called_once_with(
+            None,
+            len(self.l1) + 0, len(self.l1) + 1,
+            0, 2,
+            ["a", "b"]
+        )
+
+    def test_remove_source_emits_events(self):
+        begin_length = None
+
+        def check_length(_, index1, index2):
+            nonlocal begin_length
+            begin_length = len(self.j)
+
+        self.j.begin_remove_rows.connect(check_length)
+
+        self.j.remove_source(self.l2)
+
+        self.listener.begin_remove_rows.assert_called_once_with(
+            None,
+            len(self.l1),
+            len(self.l1) + len(self.l2) - 1
+        )
+
+        self.listener.end_remove_rows.assert_called_once_with()
+
+        self.assertEqual(begin_length,
+                         len(self.l1) + len(self.l2) + len(self.l3))
+
+    def test_remove_source_removes_elements(self):
+        self.j.remove_source(self.l2)
+
+        self.assertEqual(len(self.j), len(self.l1) + len(self.l3))
+
+        self.assertSequenceEqual(
+            list(self.l1) + list(self.l3),
+            list(self.j),
+        )
+
+        self.assertEqual(
+            self.j[len(self.l1)],
+            self.l3[0],
+        )
+
+        self.assertEqual(
+            self.j.index("c1"),
+            len(self.l1),
+        )
+
+        self.assertEqual(
+            self.j[len(self.l1) + len(self.l3) - 1],
+            self.l3[-1]
+        )
+
+    def test_no_forwarding_of_events_from_removed_source(self):
+        self.j.remove_source(self.l2)
+
+        self.listener.begin_remove_rows.reset_mock()
+        self.listener.end_remove_rows.reset_mock()
+
+        self.l2.append("foo")
+        self.l2.move(2, 0)
+        del self.l2[0]
+
+        self.l2.refresh_data(slice(0, 2))
+
+        self.listener.begin_insert_rows.assert_not_called()
+        self.listener.begin_remove_rows.assert_not_called()
+        self.listener.begin_move_rows.assert_not_called()
+
+        self.listener.end_insert_rows.assert_not_called()
+        self.listener.end_remove_rows.assert_not_called()
+        self.listener.end_move_rows.assert_not_called()
+
+        self.listener.data_changed.assert_not_called()

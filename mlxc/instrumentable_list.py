@@ -500,6 +500,206 @@ class ModelListView(typing.Generic[T], collections.abc.Sequence):
         return self._backend.count(item)
 
 
+class JoinedModelListView(typing.Generic[T], collections.abc.Sequence):
+    """
+    A concatenation of multiple model lists or model list views (can be mixed).
+
+    Aside from implementing :class:`collections.abc.Sequence`, the following
+    methods are provided:
+
+    .. automethod:: append_source
+
+    .. automethod:: remove_source
+    """
+
+    begin_insert_rows = aioxmpp.callbacks.Signal()
+    end_insert_rows = aioxmpp.callbacks.Signal()
+    begin_remove_rows = aioxmpp.callbacks.Signal()
+    end_remove_rows = aioxmpp.callbacks.Signal()
+    begin_move_rows = aioxmpp.callbacks.Signal()
+    end_move_rows = aioxmpp.callbacks.Signal()
+    data_changed = aioxmpp.callbacks.Signal()
+
+    def __init__(self):
+        super().__init__()
+        self._sources = []
+        self._breaks = []
+        self._source_tokens = []
+
+    @staticmethod
+    def __connect(tokens, signal, handler):
+        tokens.append((signal, signal.connect(handler)))
+
+    @staticmethod
+    def __disconnect_all(tokens):
+        for signal, token in tokens:
+            signal.disconnect(token)
+        tokens.clear()
+
+    def _source_begin_insert_rows(self, source, _, index1, index2):
+        source_index = self._sources.index(source)
+        offset = self._breaks[source_index]
+        nrows = (index2 - index1) + 1
+        self.begin_insert_rows(None, index1 + offset, index2 + offset)
+        for i in range(source_index + 1, len(self._sources)):
+            self._breaks[i] += nrows
+
+    def _source_begin_remove_rows(self, source, _, index1, index2):
+        source_index = self._sources.index(source)
+        offset = self._breaks[source_index]
+        nrows = (index2 - index1) + 1
+        self.begin_remove_rows(None, index1 + offset, index2 + offset)
+        for i in range(source_index + 1, len(self._sources)):
+            self._breaks[i] -= nrows
+
+    def _source_begin_move_rows(self, source, src_parent,
+                                index_start, index_end,
+                                dest_parent, index_dest):
+        source_index = self._sources.index(source)
+        offset = self._breaks[source_index]
+        self.begin_move_rows(None,
+                             index_start + offset,
+                             index_end + offset,
+                             None,
+                             index_dest + offset)
+
+    def _source_data_changed(self, source, _,
+                             index1, index2,
+                             column1, column2,
+                             roles):
+        source_index = self._sources.index(source)
+        offset = self._breaks[source_index]
+        self.data_changed(None,
+                          index1 + offset, index2 + offset,
+                          column1, column2,
+                          roles)
+
+    def __len__(self):
+        return sum(len(x) for x in self._sources)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            result = []
+            for i in range(*index.indices(len(self))):
+                result.append(self[i])
+            return result
+        source_index = bisect.bisect_right(self._breaks, index) - 1
+        offset = -self._breaks[source_index]
+        return self._sources[source_index][index + offset]
+
+    def __contains__(self, value: T) -> bool:
+        return any(value in source for source in self._sources)
+
+    def __iter__(self) -> typing.Iterator[T]:
+        return itertools.chain(*self._sources)
+
+    def __reversed__(self) -> typing.Iterator[T]:
+        return itertools.chain(
+            *(reversed(source) for source in reversed(self._sources))
+        )
+
+    def index(self, value: T) -> int:
+        for offset, source in zip(self._breaks, self._sources):
+            try:
+                return offset + source.index(value)
+            except ValueError:
+                continue
+        raise ValueError("{!r} not in joined list".format(value))
+
+    def count(self, value: T) -> int:
+        sum_ = 0
+        for source in self._sources:
+            sum_ += source.count(value)
+        return sum_
+
+    def append_source(self, source: ModelListView[T]):
+        """
+        Append a source to the list of joined sources.
+
+        :param source: The source to add.
+        :type source: :class:`ModelListView` compatible object
+
+        Append a new `source` to the list of joined sources. The joined model
+        list view behaves as if the items from the `source` had been appended.
+
+        For all future modifications of the `source`, the events are forwarded
+        with their indices appropriately rewritten.
+        """
+        self.begin_insert_rows(None, len(self), len(self) + len(source) - 1)
+
+        tokens = []
+        self.__connect(
+            tokens,
+            source.begin_insert_rows,
+            functools.partial(self._source_begin_insert_rows, source),
+        )
+
+        self.__connect(
+            tokens,
+            source.end_insert_rows,
+            self.end_insert_rows,
+        )
+
+        self.__connect(
+            tokens,
+            source.begin_remove_rows,
+            functools.partial(self._source_begin_remove_rows, source),
+        )
+
+        self.__connect(
+            tokens,
+            source.end_remove_rows,
+            self.end_remove_rows,
+        )
+
+        self.__connect(
+            tokens,
+            source.begin_move_rows,
+            functools.partial(self._source_begin_move_rows, source),
+        )
+
+        self.__connect(
+            tokens,
+            source.end_move_rows,
+            self.end_move_rows,
+        )
+
+        source.data_changed.connect(
+            functools.partial(self._source_data_changed, source)
+        )
+
+        self._breaks.append(len(self))
+        self._sources.append(source)
+        self._source_tokens.append(tokens)
+        self.end_insert_rows()
+
+    def remove_source(self, source: ModelListView[T]):
+        """
+        Remove a source from the list of joined sources.
+
+        :param source: The source to remove.
+        :type source: :class:`ModelListView` compatible object
+        :raises ValueError: if the source has not been appended before.
+
+        Remove a `source` from the list of joined sources. The joined model
+        behaves as if the elements from the `source` had been removed from
+        the model.
+        """
+
+        source_index = self._sources.index(source)
+        offset = self._breaks[source_index]
+        nrows = len(source)
+
+        self.begin_remove_rows(None, offset, offset + nrows - 1)
+        tokens = self._source_tokens.pop(source_index)
+        self.__disconnect_all(tokens)
+        del self._sources[source_index]
+        del self._breaks[source_index]
+        for i in range(source_index, len(self._breaks)):
+            self._breaks[i] -= nrows
+        self.end_remove_rows()
+
+
 class ModelTreeNode(collections.abc.MutableSequence):
     def __init__(self, tree):
         super().__init__()
