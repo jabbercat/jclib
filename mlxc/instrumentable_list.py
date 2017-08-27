@@ -1,9 +1,16 @@
 import abc
+import bisect
 import collections.abc
 import contextlib
+import functools
+import itertools
+import typing
 import weakref
 
 import aioxmpp.callbacks
+
+
+T = typing.TypeVar("T")
 
 
 class IList(collections.abc.MutableSequence):
@@ -115,7 +122,7 @@ class IList(collections.abc.MutableSequence):
         self._storage.reverse()
 
 
-class ModelList(collections.abc.MutableSequence):
+class ModelList(typing.Generic[T], collections.abc.MutableSequence):
     """
     A model list is a mutable sequence suitable for use with Qt-like list
     models. The consturctor forwards the keyword arguments to the next classes
@@ -274,13 +281,14 @@ class ModelList(collections.abc.MutableSequence):
     def _end_move_rows(self):
         self.end_move_rows()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._storage)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: typing.Union[slice, int]) \
+            -> typing.Union[typing.Iterable[T], T]:
         return self._storage[index]
 
-    def __delitem__(self, index):
+    def __delitem__(self, index: typing.Union[slice, int]):
         if isinstance(index, slice):
             start, end, stride = index.indices(len(self._storage))
             if stride == 1:
@@ -309,7 +317,7 @@ class ModelList(collections.abc.MutableSequence):
         del self._storage[index]
         self._end_remove_rows()
 
-    def __setitem__(self, index, item):
+    def __setitem__(self, index: typing.Union[slice, int], item: T):
         if isinstance(index, slice):
             items = list(item)
             start, end, stride = index.indices(len(self._storage))
@@ -354,7 +362,7 @@ class ModelList(collections.abc.MutableSequence):
         self._register_items([item], index)
         self._end_insert_rows()
 
-    def insert(self, index, item):
+    def insert(self, index: int, item: T):
         if index > len(self._storage):
             index = len(self._storage)
         elif index < 0:
@@ -368,7 +376,7 @@ class ModelList(collections.abc.MutableSequence):
         self._register_items([item], index)
         self._end_insert_rows()
 
-    def move(self, index1, index2):
+    def move(self, index1: int, index2: int):
         """
         Move a row from `index1` to `index2`. The row is re-inserted in front
         of the item which is addressed by `index2` at the time :meth:`move` is
@@ -406,7 +414,7 @@ class ModelList(collections.abc.MutableSequence):
                 self.move(upper - 2, i)
             upper -= 1
 
-    def pop(self, index=-1):
+    def pop(self, index: int=-1) -> T:
         index = self._check_and_normalize_index(index)
         self._begin_remove_rows(index, index)
         self._unregister_items([self._storage[index]])
@@ -417,7 +425,13 @@ class ModelList(collections.abc.MutableSequence):
     def clear(self):
         del self[:]
 
-    def refresh_data(self, slice, column1=0, column2=0, roles=None):
+    def refresh_data(self,
+                     slice: slice,
+                     column1: typing.Optional[int]=0,
+                     column2: typing.Optional[int]=0,
+                     roles: typing.Optional[
+                         typing.Iterable[typing.Any]
+                     ]=None):
         if column1 is None:
             if column2 == 0:
                 column2 = None
@@ -443,7 +457,7 @@ class ModelList(collections.abc.MutableSequence):
         )
 
 
-class ModelListView(collections.abc.Sequence):
+class ModelListView(typing.Generic[T], collections.abc.Sequence):
     begin_insert_rows = aioxmpp.callbacks.Signal()
     end_insert_rows = aioxmpp.callbacks.Signal()
     begin_remove_rows = aioxmpp.callbacks.Signal()
@@ -452,7 +466,7 @@ class ModelListView(collections.abc.Sequence):
     end_move_rows = aioxmpp.callbacks.Signal()
     data_changed = aioxmpp.callbacks.Signal()
 
-    def __init__(self, backend):
+    def __init__(self, backend: ModelList[T]):
         super().__init__()
         self._backend = backend
         self._backend.begin_insert_rows.connect(self.begin_insert_rows)
@@ -463,25 +477,26 @@ class ModelListView(collections.abc.Sequence):
         self._backend.end_remove_rows.connect(self.end_remove_rows)
         self._backend.data_changed.connect(self.data_changed)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: typing.Union[int, slice]) \
+            -> typing.Union[typing.Iterable[T], T]:
         return self._backend[index]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._backend)
 
-    def __iter__(self):
+    def __iter__(self) -> typing.Iterator[T]:
         return iter(self._backend)
 
-    def __reversed__(self):
+    def __reversed__(self) -> typing.Iterator[T]:
         return reversed(self._backend)
 
-    def __contains__(self, item):
+    def __contains__(self, item: T) -> bool:
         return item in self._backend
 
-    def index(self, item):
+    def index(self, item: T) -> int:
         return self._backend.index(item)
 
-    def count(self, item):
+    def count(self, item: T) -> int:
         return self._backend.count(item)
 
 
