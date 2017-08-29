@@ -47,27 +47,30 @@ class AbstractRosterItem(metaclass=abc.ABCMeta):
     def account(self) -> mlxc.identity.Account:
         return self._account
 
-    @property
-    def pinned(self) -> bool:
-        """
-        A flag indicating whether a roster item is pinned.
-
-        A pinned roster item is always shown in the conversation list, even if
-        no conversation is currently active.
-        """
-
-    @property
-    def closed(self) -> typing.Optional[datetime]:
-        """
-        Timestamp of the last closing of a conversation with the roster item.
-
-        Non-pinned roster items are only shown in the conversation list if
-
-        * they have not been closed and the last message is newer than a
-          configurable threshold ("recent conversations"), or
-        * they have been closed and the last message is newer than the closure
-          and newer than the configurable threshold
-        """
+    # these do not belong in the roster, these belong into conversation nodes
+    # persistence needs to be figured out
+    #
+    # @property
+    # def pinned(self) -> bool:
+    #     """
+    #     A flag indicating whether a roster item is pinned.
+    #
+    #     A pinned roster item is always shown in the conversation list, even if
+    #     no conversation is currently active.
+    #     """
+    #
+    # @property
+    # def closed(self) -> typing.Optional[datetime]:
+    #     """
+    #     Timestamp of the last closing of a conversation with the roster item.
+    #
+    #     Non-pinned roster items are only shown in the conversation list if
+    #
+    #     * they have not been closed and the last message is newer than a
+    #       configurable threshold ("recent conversations"), or
+    #     * they have been closed and the last message is newer than the closure
+    #       and newer than the configurable threshold
+    #     """
 
     @abc.abstractproperty
     def label(self) -> str:
