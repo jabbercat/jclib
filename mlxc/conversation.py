@@ -74,6 +74,24 @@ class ConversationNode(metaclass=abc.ABCMeta):
         Label of the conversation.
         """
 
+    @classmethod
+    def for_conversation(
+            cls,
+            account: mlxc.identity.Account,
+            conversation: aioxmpp.im.conversation.AbstractConversation):
+        """
+        Create a conversation node for the given :mod:`aioxmpp` conversation
+        object.
+
+        :raises TypeError: if the class of `conversation` is not supported.
+        """
+        if isinstance(conversation, aioxmpp.im.p2p.Conversation):
+            return P2PConversationNode(account, conversation.jid,
+                                       conversation=conversation)
+        raise TypeError("unknown conversation class: {!r}".format(
+            conversation
+        ))
+
 
 class P2PConversationNode(ConversationNode):
     def __init__(self,
@@ -161,6 +179,7 @@ class ConversationManager(mlxc.instrumentable_list.ModelListView):
         )
 
         self.__clientmap = {}
+        self.__convaddrmap = {}
 
     def handle_client_prepare(self, account, client):
         """
@@ -203,9 +222,31 @@ class ConversationManager(mlxc.instrumentable_list.ModelListView):
         )
         yield from conv.require_conversation()
 
+    @asyncio.coroutine
+    def _join_conversation(self, conv):
+        mlxc.tasks.manager.update_text(
+            "Starting {}".format(conv.label),
+        )
+        yield from aioxmpp.callbacks.first_signal(
+            conv.on_enter,
+            conv.on_failure,
+        )
+
     def start_soon(self, conv):
         if conv.conversation is None:
             mlxc.tasks.manager.start(self._require_conversation(conv))
+
+    def adopt_conversation(self, account, conversation):
+        key = account, conversation.jid
+        try:
+            node = self.__convaddrmap[key]
+        except KeyError:
+            node = ConversationNode.for_conversation(account, conversation)
+            self._backend.append(node)
+            self.on_conversation_added(node)
+            mlxc.tasks.manager.start(self._join_conversation(conversation))
+            self.__convaddrmap[key] = node
+        return node
 
     def open_onetoone_conversation(self, account, peer_jid, *,
                                    autostart=True):
