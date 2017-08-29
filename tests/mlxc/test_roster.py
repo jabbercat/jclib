@@ -117,6 +117,21 @@ class TestContactRosterItem(unittest.TestCase):
         self.assertTrue(obj.ask)
         self.assertTrue(obj.approved)
 
+    def test_update_updates_contents(self):
+        item = roster.ContactRosterItem(
+            unittest.mock.sentinel.account,
+            TEST_JID1,
+        )
+        item.update(self.upstream_item)
+
+        self.assertEqual(item.account, unittest.mock.sentinel.account)
+
+        self.assertEqual(item.label, self.upstream_item.name)
+        self.assertCountEqual(item.tags, self.upstream_item.groups)
+        self.assertEqual(item.subscription, self.upstream_item.subscription)
+        self.assertEqual(item.approved, self.upstream_item.approved)
+        self.assertEqual(item.ask, self.upstream_item.ask)
+
 
 class Testcontacts_to_json(unittest.TestCase):
     def test_minimal(self):

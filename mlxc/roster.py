@@ -174,8 +174,12 @@ class ContactRosterItem(AbstractRosterItem):
         obj.tags.update(self._tags)
         return obj
 
-    def update(self, upstream_item):
-        pass
+    def update(self, upstream_item: aioxmpp.roster.Item):
+        self._label = upstream_item.name
+        self._tags = set(upstream_item.groups)
+        self._subscription = upstream_item.subscription
+        self._approved = upstream_item.approved
+        self._ask = upstream_item.ask
 
 
 def contacts_to_json(contacts, ver=None):
