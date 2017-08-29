@@ -9,7 +9,10 @@ import time
 
 import xdg.BaseDirectory
 
+from datetime import timedelta
+
 import mlxc.config
+import mlxc.storage
 
 from . import identity, client, conversation, utils
 
@@ -126,6 +129,7 @@ class Main:
         self.loop = loop
         self.accounts = self.Accounts()
         self.client = self.Client(self.accounts)
+        self.writeman = mlxc.storage.WriteManager(timedelta(seconds=5))
 
         self._terminated_at = None
 

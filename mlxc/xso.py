@@ -36,6 +36,101 @@ class AccountSettings(xso.XSO):
         self.jid = jid
 
 
+class RosterItemTag(xso.XSO):
+    TAG = (mlxc_namespaces.roster, "tag")
+
+    label = xso.Text()
+
+
+class RosterItemTagType(xso.AbstractElementType):
+    def pack(self, v):
+        obj = RosterItemTag()
+        obj.label = v
+        return obj
+
+    def unpack(self, obj):
+        return obj.label
+
+    def get_xso_types(self):
+        return [RosterItemTag]
+
+
+class RosterItemBase(xso.XSO):
+    address = xso.Attr(
+        "address",
+        type_=xso.JID(),
+    )
+
+    label = xso.Attr(
+        "label",
+        default=None,
+    )
+
+    pinned = xso.Attr(
+        "pinned",
+        type_=xso.Bool(),
+        default=False,
+    )
+
+    closed = xso.Attr(
+        "closed",
+        type_=xso.DateTime(),
+        default=None,
+    )
+
+    tags = xso.ChildValueList(
+        RosterItemTagType(),
+        container_type=set,
+    )
+
+    muted = xso.Attr(
+        "muted",
+        type_=xso.Bool(),
+        default=False,
+    )
+
+
+class RosterContact(RosterItemBase):
+    TAG = (mlxc_namespaces.roster, "contact")
+
+    subscription = xso.Attr(
+        "subscription",
+        default="none",
+    )
+
+    approved = xso.Attr(
+        "approved",
+        type_=xso.Bool(),
+        default=False,
+    )
+
+    ask = xso.Attr(
+        "ask",
+        type_=xso.Bool(),
+        default=False,
+    )
+
+
+class RosterContacts(xso.XSO):
+    TAG = (mlxc_namespaces.roster, "contacts")
+
+    contacts = xso.ChildList([RosterContact])
+
+
+class RosterMUC(RosterItemBase):
+    TAG = (mlxc_namespaces.roster, "muc")
+
+    autojoin = xso.Attr(
+        "autojoin",
+        type_=xso.Bool(),
+        default=False,
+    )
+
+    nickname = xso.Attr(
+        "nickname",
+    )
+
+
 class _AbstractPresence(xso.XSO):
     available = xso.Attr(
         "available",

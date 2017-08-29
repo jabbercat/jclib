@@ -872,11 +872,7 @@ class XMLFrontend(Frontend):
         Put one or more XSOs.
 
         The data is not written to disk immediately. It is required to call
-        :meth:`flush` or :meth:`flush_all` to force a writeback to disk.
-
-        However, it may be required to acquire a lock to prevent a concurrent
-        flush operation to be disturbed, which is why this method is a
-        coroutine method.
+        :meth:`flush_all` to force a writeback to disk.
         """
         data = self._open(type_, level)
         _, _, key_func = self.LEVEL_INFO[level.level]

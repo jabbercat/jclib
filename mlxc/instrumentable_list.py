@@ -598,7 +598,7 @@ class JoinedModelListView(AbstractModelListView[T]):
             sum_ += source.count(value)
         return sum_
 
-    def append_source(self, source: ModelListView[T]):
+    def append_source(self, source: AbstractModelListView[T]):
         """
         Append a source to the list of joined sources.
 
@@ -659,7 +659,7 @@ class JoinedModelListView(AbstractModelListView[T]):
         self._source_tokens.append(tokens)
         self.end_insert_rows()
 
-    def remove_source(self, source: ModelListView[T]):
+    def remove_source(self, source: AbstractModelListView[T]):
         """
         Remove a source from the list of joined sources.
 
