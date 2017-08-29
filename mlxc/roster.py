@@ -235,9 +235,15 @@ class MUCRosterItem(AbstractRosterItem):
                  account: mlxc.identity.Account,
                  address: aioxmpp.JID,
                  label: typing.Optional[str]=None,
+                 nick: typing.Optional[str]=None,
+                 password: typing.Optional[str]=None,
+                 autojoin: bool=False,
                  **kwargs):
         super().__init__(account, address, **kwargs)
         self._label = label
+        self._autojoin = autojoin
+        self._nick = nick
+        self._password = password
 
     @property
     def subject(self) -> typing.Optional[str]:
@@ -251,6 +257,35 @@ class MUCRosterItem(AbstractRosterItem):
     @property
     def tags(self) -> typing.Iterable[str]:
         return []
+
+    @property
+    def autojoin(self) -> bool:
+        return self._autojoin
+
+    @property
+    def nick(self) -> typing.Optional[str]:
+        return self._nick
+
+    @property
+    def password(self) -> typing.Optional[str]:
+        return self._password
+
+    def create_conversation(self, client: aioxmpp.Client):
+        svc = client.summon(aioxmpp.MUCClient)
+        return svc.join(self.address, self.nick or self._account.jid.localpart,
+                        password=self.password)[0]
+
+    @classmethod
+    def wrap(cls,
+             account: mlxc.identity.Account,
+             obj: aioxmpp.bookmarks.xso.Conference):
+        return cls(
+            account,
+            obj.jid,
+            nick=obj.nick,
+            password=obj.password,
+            autojoin=obj.autojoin,
+        )
 
 
 class AbstractRosterService(
@@ -481,6 +516,70 @@ class ContactRosterService(AbstractRosterService):
         self._writeman.request_writeback()
 
 
+class ConferenceBookmarkService(AbstractRosterService):
+    def __init__(self,
+                 account: mlxc.identity.Account,
+                 writeman: mlxc.storage.WriteManager):
+        super().__init__(account, writeman)
+        self.__tokens = []
+        self.__addrmap = {}
+        self._client = None
+
+    def __connect(self, signal, handler):
+        self.__tokens.append(
+            (signal, signal.connect(handler))
+        )
+
+    def __disconnect_all(self):
+        for signal, token in self.__tokens:
+            signal.disconnect(token)
+        self.__tokens.clear()
+
+    @property
+    def is_writable(self):
+        return self._client is not None
+
+    def update_tags(self, item, add_tags, remove_tags):
+        raise NotImplementedError()
+
+    def set_label(self, item, new_label):
+        raise NotImplementedError()
+
+    def prepare_client(self, client):
+        bookmarks_svc = client.summon(aioxmpp.BookmarkClient)
+        self.__connect(bookmarks_svc.on_bookmark_added,
+                       self._on_bookmark_added)
+        self.__connect(bookmarks_svc.on_bookmark_removed,
+                       self._on_bookmark_removed)
+        self.__connect(bookmarks_svc.on_bookmark_changed,
+                       self._on_bookmark_changed)
+        self._client = client
+
+    def shutdown_client(self, client):
+        self.__disconnect_all()
+        self._client = None
+
+    def load(self):
+        pass
+
+    def save(self):
+        pass
+
+    def _on_bookmark_added(self, bookmark):
+        item = MUCRosterItem.wrap(self._account, bookmark)
+        self.__addrmap[item.address] = item
+        self._backend.append(item)
+        self._writeman.request_writeback()
+
+    def _on_bookmark_removed(self, bookmark):
+        item = self.__addrmap.pop(bookmark.jid)
+        self._backend.remove(item)
+        self._writeman.request_writeback()
+
+    def _on_bookmark_changed(self, old_bookmark, new_bookmark):
+        pass
+
+
 class RosterManager:
     def __init__(self,
                  accounts: mlxc.identity.Accounts,
@@ -506,7 +605,7 @@ class RosterManager:
                         client: mlxc.client.Client):
         svcs = []
         self._client_svc_map[client] = svcs
-        for class_ in [ContactRosterService]:
+        for class_ in [ContactRosterService, ConferenceBookmarkService]:
             instance = class_(account, self._writeman)
             instance.load()
             instance.prepare_client(client)

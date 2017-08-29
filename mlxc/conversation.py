@@ -88,6 +88,10 @@ class ConversationNode(metaclass=abc.ABCMeta):
         if isinstance(conversation, aioxmpp.im.p2p.Conversation):
             return P2PConversationNode(account, conversation.jid,
                                        conversation=conversation)
+        if isinstance(conversation, aioxmpp.muc.Room):
+            return MUCConversationNode(account, conversation.jid,
+                                       None,
+                                       conversation=conversation)
         raise TypeError("unknown conversation class: {!r}".format(
             conversation
         ))

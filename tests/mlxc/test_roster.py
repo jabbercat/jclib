@@ -22,6 +22,7 @@ TEST_JID2 = aioxmpp.JID.fromstr("juliet@capulet.lit")
 TEST_JID3 = aioxmpp.JID.fromstr("alice@hub.sotecware.net")
 TEST_JID4 = aioxmpp.JID.fromstr("bob@hub.sotecware.net")
 TEST_JID5 = aioxmpp.JID.fromstr("carol@hub.sotecware.net")
+TEST_JID_CHAT = aioxmpp.JID.fromstr("chat@switch.hub.sotecware.net")
 
 
 class TestContactRosterItem(unittest.TestCase):
@@ -163,7 +164,7 @@ class TestContactRosterItem(unittest.TestCase):
             TEST_JID1,
         )
 
-        item.create_conversation(client)
+        result = item.create_conversation(client)
 
         client.summon.assert_called_once_with(
             aioxmpp.im.p2p.Service,
@@ -172,6 +173,111 @@ class TestContactRosterItem(unittest.TestCase):
         client.summon().get_conversation.assert_called_once_with(
             item.address,
         )
+
+        self.assertEqual(result, client.summon().get_conversation())
+
+
+class TestMUCRosterItem(unittest.TestCase):
+    def test_init_bare(self):
+        item = roster.MUCRosterItem(
+            unittest.mock.sentinel.account,
+            TEST_JID_CHAT,
+        )
+
+        self.assertEqual(item.account, unittest.mock.sentinel.account)
+        self.assertIsNone(item.subject)
+        self.assertFalse(item.autojoin)
+        self.assertIsNone(item.nick)
+        self.assertIsNone(item.password)
+        self.assertEqual(item.label, str(TEST_JID_CHAT))
+        self.assertCountEqual(item.tags, [])
+
+    def test_init_label(self):
+        item = roster.MUCRosterItem(
+            unittest.mock.sentinel.account,
+            TEST_JID_CHAT,
+            label="test",
+        )
+
+        self.assertEqual(item.account, unittest.mock.sentinel.account)
+        self.assertIsNone(item.subject)
+        self.assertFalse(item.autojoin)
+        self.assertIsNone(item.nick)
+        self.assertIsNone(item.password)
+        self.assertEqual(item.label, "test")
+        self.assertCountEqual(item.tags, [])
+
+    def test_wrap(self):
+        obj = aioxmpp.bookmarks.xso.Conference(
+            "some name",
+            TEST_JID_CHAT,
+            autojoin=True,
+            nick="fnord",
+            password="no password",
+        )
+
+        item = roster.MUCRosterItem.wrap(
+            unittest.mock.sentinel.account,
+            obj,
+        )
+
+        self.assertIsInstance(item, roster.MUCRosterItem)
+        self.assertEqual(item.account, unittest.mock.sentinel.account)
+        self.assertEqual(item.address, TEST_JID_CHAT)
+        self.assertEqual(item.nick, "fnord")
+        self.assertEqual(item.password, "no password")
+        self.assertTrue(item.autojoin)
+
+    def test_create_conversation_uses_p2p_service(self):
+        client = unittest.mock.Mock()
+        client.summon().join.return_value = \
+            unittest.mock.sentinel.room, unittest.mock.sentinel.fut
+        client.summon.reset_mock()
+        item = roster.MUCRosterItem(
+            unittest.mock.sentinel.account,
+            TEST_JID1,
+            nick="foo",
+        )
+
+        result = item.create_conversation(client)
+
+        client.summon.assert_called_once_with(
+            aioxmpp.MUCClient,
+        )
+
+        client.summon().join.assert_called_once_with(
+            item.address,
+            "foo",
+            password=None,
+        )
+
+        self.assertEqual(result, unittest.mock.sentinel.room)
+
+    def test_create_conversation_invents_nickname_if_None(self):
+        account = unittest.mock.Mock()
+        client = unittest.mock.Mock()
+        client.summon().join.return_value = \
+            unittest.mock.sentinel.room, unittest.mock.sentinel.fut
+        client.summon.reset_mock()
+        item = roster.MUCRosterItem(
+            account,
+            TEST_JID1,
+            nick=None,
+        )
+
+        result = item.create_conversation(client)
+
+        client.summon.assert_called_once_with(
+            aioxmpp.MUCClient,
+        )
+
+        client.summon().join.assert_called_once_with(
+            item.address,
+            account.jid.localpart,
+            password=None,
+        )
+
+        self.assertEqual(result, unittest.mock.sentinel.room)
 
 
 class Testcontacts_to_json(unittest.TestCase):
@@ -713,6 +819,115 @@ class TestContactRosterService(unittest.TestCase):
             )
 
 
+class TestConferenceBookmarkService(unittest.TestCase):
+    def setUp(self):
+        self.account = unittest.mock.Mock(["jid"])
+        self.bookmarks = unittest.mock.Mock(
+            spec=aioxmpp.BookmarkClient,
+        )
+        self.writeman = unittest.mock.Mock(spec=mlxc.storage.WriteManager)
+        self.rs = roster.ConferenceBookmarkService(self.account, self.writeman)
+        self.listener = make_listener(self.rs)
+
+    def _prep_client(self):
+        client = make_connected_client()
+        client.mock_services[aioxmpp.BookmarkClient] = self.bookmarks
+        return client
+
+    def test_not_writable_by_default(self):
+        self.assertFalse(self.rs.is_writable)
+
+    def test_connects_weakly_to_write_manager(self):
+        self.writeman.on_writeback.connect.assert_called_once_with(
+            self.rs.save,
+            self.writeman.on_writeback.WEAK
+        )
+
+    def test_prepare_client_summons_roster_and_connects_signals(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        self.bookmarks.on_bookmark_added.connect.assert_called_once_with(
+            self.rs._on_bookmark_added,
+        )
+
+        self.bookmarks.on_bookmark_removed.connect.assert_called_once_with(
+            self.rs._on_bookmark_removed,
+        )
+
+        self.bookmarks.on_bookmark_changed.connect.assert_called_once_with(
+            self.rs._on_bookmark_changed,
+        )
+
+    def test_prepare_client_makes_service_writable(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        self.assertTrue(self.rs.is_writable)
+
+    def test_shutdown_client_disconnects_signals(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+        self.rs.shutdown_client(client)
+
+        self.bookmarks.on_bookmark_added.disconnect.assert_called_once_with(
+            self.bookmarks.on_bookmark_added.connect(),
+        )
+
+        self.bookmarks.on_bookmark_removed.disconnect.assert_called_once_with(
+            self.bookmarks.on_bookmark_removed.connect(),
+        )
+
+        self.bookmarks.on_bookmark_changed.disconnect.assert_called_once_with(
+            self.bookmarks.on_bookmark_changed.connect(),
+        )
+
+    def test_shutdown_makes_service_non_writable(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+        self.rs.shutdown_client(client)
+
+        self.assertFalse(self.rs.is_writable)
+
+    def test__on_bookmark_added_adds_item(self):
+        with contextlib.ExitStack() as stack:
+            wrap = stack.enter_context(
+                unittest.mock.patch.object(roster.MUCRosterItem, "wrap")
+            )
+
+            self.rs._on_bookmark_added(unittest.mock.sentinel.upstream_item)
+
+        wrap.assert_called_once_with(
+            self.account,
+            unittest.mock.sentinel.upstream_item,
+        )
+
+        self.assertEqual(len(self.rs), 1)
+        self.assertEqual(self.rs[0], wrap())
+
+        self.writeman.request_writeback.assert_called_once_with()
+
+    def test__on_bookmark_removed_removes_item(self):
+        upstream_item1_ver1 = unittest.mock.Mock()
+        upstream_item1_ver1.jid = TEST_JID1
+        upstream_item1_ver2 = unittest.mock.Mock()
+        upstream_item1_ver2.jid = TEST_JID1
+
+        upstream_item2 = unittest.mock.Mock()
+        upstream_item2.jid = TEST_JID2
+        upstream_item2.groups = []
+
+        self.rs._on_bookmark_added(upstream_item1_ver1)
+        self.rs._on_bookmark_added(upstream_item2)
+
+        self.writeman.request_writeback.reset_mock()
+        self.rs._on_bookmark_removed(upstream_item1_ver2)
+        self.writeman.request_writeback.assert_called_once_with()
+
+        self.assertEqual(len(self.rs), 1)
+        self.assertEqual(self.rs[0].address, TEST_JID2)
+
+
 class TestRosterManager(unittest.TestCase):
     def setUp(self):
         self.accounts = unittest.mock.Mock(spec=mlxc.identity.Accounts)
@@ -730,7 +945,7 @@ class TestRosterManager(unittest.TestCase):
             self.gr._shutdown_client,
         )
 
-    def test__prepare_client_creates_roster_and_links_it(self):
+    def test__prepare_client_creates_contact_service_and_links_it(self):
         client = unittest.mock.Mock(spec=aioxmpp.Client)
         account = unittest.mock.Mock(spec=mlxc.identity.Account)
 
@@ -754,15 +969,51 @@ class TestRosterManager(unittest.TestCase):
             ]
         )
 
-        _items.append_source.assert_called_once_with(ContactRosterService())
+        self.assertIn(
+            unittest.mock.call.append_source(ContactRosterService()),
+            _items.mock_calls,
+        )
 
-    def test__shutdown_client_cleans_up_previously_created_service(self):
+    def test__prepare_client_creates_bookmark_service_and_links_it(self):
+        client = unittest.mock.Mock(spec=aioxmpp.Client)
+        account = unittest.mock.Mock(spec=mlxc.identity.Account)
+
+        with contextlib.ExitStack() as stack:
+            ConferenceBookmarkService = stack.enter_context(
+                unittest.mock.patch("mlxc.roster.ConferenceBookmarkService")
+            )
+
+            _items = stack.enter_context(
+                unittest.mock.patch.object(self.gr, "_items")
+            )
+
+            self.gr._prepare_client(account, client)
+
+        self.assertSequenceEqual(
+            ConferenceBookmarkService.mock_calls,
+            [
+                unittest.mock.call(account, self.writeman),
+                unittest.mock.call().load(),
+                unittest.mock.call().prepare_client(client),
+            ]
+        )
+
+        self.assertIn(
+            unittest.mock.call.append_source(ConferenceBookmarkService()),
+            _items.mock_calls,
+        )
+
+    def test__shutdown_client_cleans_up_previously_created_services(self):
         client = unittest.mock.Mock(spec=aioxmpp.Client)
         account = unittest.mock.Mock(spec=mlxc.identity.Account)
 
         with contextlib.ExitStack() as stack:
             ContactRosterService = stack.enter_context(
                 unittest.mock.patch("mlxc.roster.ContactRosterService")
+            )
+
+            ConferenceBookmarkService = stack.enter_context(
+                unittest.mock.patch("mlxc.roster.ConferenceBookmarkService")
             )
 
             _items = stack.enter_context(
@@ -774,4 +1025,16 @@ class TestRosterManager(unittest.TestCase):
             self.gr._shutdown_client(account, client)
 
         ContactRosterService().shutdown_client.assert_called_once_with(client)
-        _items.remove_source.assert_called_once_with(ContactRosterService())
+        ConferenceBookmarkService().shutdown_client.assert_called_once_with(
+            client
+        )
+
+        self.assertIn(
+            unittest.mock.call.remove_source(ContactRosterService()),
+            _items.mock_calls,
+        )
+
+        self.assertIn(
+            unittest.mock.call.remove_source(ConferenceBookmarkService()),
+            _items.mock_calls,
+        )
