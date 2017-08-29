@@ -89,14 +89,26 @@ class AbstractRosterItem(metaclass=abc.ABCMeta):
         These tags must include the account tag, but no other dynamic tags.
         """
 
-    # @abc.abstractproperty
-    # def conversation_node(self):
-    #     """
-    #     A conversation node representing a conversation with this roster item.
-    #
-    #     This property must always return a not-:data:`None` value which never
-    #     changes over the lifetime of the item.
-    #     """
+    @abc.abstractmethod
+    def create_conversation(self, client: aioxmpp.Client):
+        """
+        Create a new conversation for this roster node.
+
+        This uses the appropriate conversation service with `client` to create
+        a new conversation.
+
+        The conversation is not entered yet, so that events can be bound before
+        the operation completes.
+        """
+
+    @property
+    def conversation_address(self):
+        """
+        Conversation address of this roster item.
+
+        This is usually equivalent to the item address.
+        """
+        return self.address
 
 
 class ContactRosterItem(AbstractRosterItem):
@@ -180,6 +192,12 @@ class ContactRosterItem(AbstractRosterItem):
         self._subscription = upstream_item.subscription
         self._approved = upstream_item.approved
         self._ask = upstream_item.ask
+
+    def create_conversation(
+            self,
+            client: aioxmpp.Client) -> aioxmpp.im.p2p.Conversation:
+        svc = client.summon(aioxmpp.im.p2p.Service)
+        return svc.get_conversation(self.address)
 
 
 def contacts_to_json(contacts, ver=None):

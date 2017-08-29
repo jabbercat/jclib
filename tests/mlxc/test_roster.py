@@ -132,6 +132,23 @@ class TestContactRosterItem(unittest.TestCase):
         self.assertEqual(item.approved, self.upstream_item.approved)
         self.assertEqual(item.ask, self.upstream_item.ask)
 
+    def test_create_conversation_uses_p2p_service(self):
+        client = unittest.mock.Mock()
+        item = roster.ContactRosterItem(
+            unittest.mock.sentinel.account,
+            TEST_JID1,
+        )
+
+        item.create_conversation(client)
+
+        client.summon.assert_called_once_with(
+            aioxmpp.im.p2p.Service,
+        )
+
+        client.summon().get_conversation.assert_called_once_with(
+            item.address,
+        )
+
 
 class Testcontacts_to_json(unittest.TestCase):
     def test_minimal(self):
