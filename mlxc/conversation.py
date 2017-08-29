@@ -177,34 +177,6 @@ class ConversationManager(mlxc.instrumentable_list.ModelListView):
             )
         )
 
-        bookmark_svc = client.summon(aioxmpp.BookmarkClient)
-        _connect_and_store_token(
-            tokens,
-            bookmark_svc.on_bookmark_added,
-            functools.partial(
-                self._bookmark_added,
-                account,
-            )
-        )
-
-        _connect_and_store_token(
-            tokens,
-            bookmark_svc.on_bookmark_changed,
-            functools.partial(
-                self._bookmark_changed,
-                account,
-            )
-        )
-
-        _connect_and_store_token(
-            tokens,
-            bookmark_svc.on_bookmark_removed,
-            functools.partial(
-                self._bookmark_removed,
-                account,
-            )
-        )
-
         self.__clientmap[client] = (account, tokens)
 
     def handle_client_stopped(self, account, client):
@@ -214,34 +186,6 @@ class ConversationManager(mlxc.instrumentable_list.ModelListView):
         _, tokens = self.__clientmap.pop(client)
         for signal, token in tokens:
             signal.disconnect(token)
-
-    def _bookmark_added(
-            self,
-            account: mlxc.identity.Account,
-            bookmark: aioxmpp.xso.XSO):
-        if not isinstance(bookmark, aioxmpp.bookmarks.Conference):
-            return
-        self.open_muc_conversation(
-            account,
-            bookmark.jid,
-            bookmark.nick,
-            autostart=bookmark.autojoin,
-        )
-
-    def _bookmark_changed(
-            self,
-            account: mlxc.identity.Account,
-            old_bookmark: aioxmpp.xso.XSO,
-            new_bookmark: aioxmpp.xso.XSO):
-        if not isinstance(old_bookmark, aioxmpp.bookmarks.Conference):
-            return
-
-    def _bookmark_removed(
-            self,
-            account: mlxc.identity.Account,
-            bookmark: aioxmpp.xso.XSO):
-        if not isinstance(bookmark, aioxmpp.bookmarks.Conference):
-            return
 
     def _spontaneous_p2p_conversation(
             self,
