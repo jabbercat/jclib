@@ -53,6 +53,30 @@ class TestContactRosterItem(unittest.TestCase):
         self.assertEqual(result.approved, self.upstream_item.approved)
         self.assertEqual(result.ask, self.upstream_item.ask)
 
+    def test_wrap_is_resistant_against_modification_of_source(self):
+        result = roster.ContactRosterItem.wrap(
+            unittest.mock.sentinel.account,
+            self.upstream_item,
+        )
+
+        self.assertEqual(result.account, unittest.mock.sentinel.account)
+        self.assertEqual(result.address, self.upstream_item.jid)
+        self.assertEqual(result.label, self.upstream_item.name)
+        self.assertCountEqual(result.tags, self.upstream_item.groups)
+        self.assertEqual(result.subscription, self.upstream_item.subscription)
+        self.assertEqual(result.approved, self.upstream_item.approved)
+        self.assertEqual(result.ask, self.upstream_item.ask)
+
+        self.upstream_item.groups.remove(unittest.mock.sentinel.g1)
+
+        self.assertCountEqual(
+            result.tags,
+            {
+                unittest.mock.sentinel.g1,
+                unittest.mock.sentinel.g2,
+            }
+        )
+
     def test_from_xso(self):
         obj = mlxc.xso.RosterContact()
         obj.address = TEST_JID2
