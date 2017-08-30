@@ -2840,3 +2840,19 @@ class TestJoinedModelListView(unittest.TestCase):
         self.listener.end_move_rows.assert_not_called()
 
         self.listener.data_changed.assert_not_called()
+
+    def test_source_offset(self):
+        offs = 0
+        for source in [self.l1, self.l2, self.l3]:
+            self.assertEqual(self.j.source_offset(source), offs)
+            self.assertEqual(self.j.index(source[0]), offs)
+            offs += len(source)
+
+    def test_source_offset_raises_ValueError_for_non_member(self):
+        with self.assertRaises(ValueError):
+            self.j.source_offset(unittest.mock.sentinel.source)
+
+        self.j.remove_source(self.l2)
+
+        with self.assertRaises(ValueError):
+            self.j.source_offset(self.l2)

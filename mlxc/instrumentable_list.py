@@ -685,6 +685,15 @@ class JoinedModelListView(AbstractModelListView[T]):
             self._breaks[i] -= nrows
         self.end_remove_rows()
 
+    def source_offset(self, source: AbstractModelListView[T]) -> int:
+        """
+        Return the offset of the first item of `source` in this joined model.
+
+        :raises ValueError: if `source` is not part of the joined model.
+        """
+        source_index = self._sources.index(source)
+        return self._breaks[source_index]
+
 
 class ModelTreeNode(collections.abc.MutableSequence):
     def __init__(self, tree):
