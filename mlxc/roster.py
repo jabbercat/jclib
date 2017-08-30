@@ -13,6 +13,7 @@
 
 import abc
 import asyncio
+import logging
 import typing
 
 from datetime import datetime
@@ -438,6 +439,9 @@ class ContactRosterService(AbstractRosterService):
         self.__addrmap = {}
         self._client = None
         self._dirty = False
+        self.logger = logging.getLogger(
+            ".".join([__name__, type(self).__qualname__, str(account.jid)]),
+        )
 
     def __connect(self, signal, handler):
         self.__tokens.append(
@@ -456,6 +460,8 @@ class ContactRosterService(AbstractRosterService):
         self.__connect(roster.on_entry_name_changed, self._on_entry_changed)
         self.__connect(roster.on_entry_subscription_state_changed,
                        self._on_entry_changed)
+        contacts_data = contacts_to_json(self)
+        roster.import_from_json(contacts_data)
         self._client = client
 
     def shutdown_client(self, client: aioxmpp.Client):
@@ -492,10 +498,14 @@ class ContactRosterService(AbstractRosterService):
             mlxc.storage.AccountLevel(self.account.jid),
             mlxc.xso.RosterContact,
         )
+        self.logger.debug("obtained %d items from XML cache",
+                          len(contacts))
         self._backend.extend(
             ContactRosterItem.from_xso(self._account, self, obj)
             for obj in contacts
         )
+        for item in self._backend:
+            self.__addrmap[item.address] = item
 
     def save(self):
         if not self._dirty:

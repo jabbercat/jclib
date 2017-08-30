@@ -712,6 +712,98 @@ class TestContactRosterService(unittest.TestCase):
                     "loaded"):
                 self.rs.load()
 
+    def test_prepare_client_imports_loaded_data_into_roster(self):
+        items = []
+
+        def generate_results():
+            for i, address in enumerate([TEST_JID1, TEST_JID3, TEST_JID4]):
+                item = roster.ContactRosterItem(
+                    unittest.mock.sentinel.account,
+                    unittest.mock.sentinel.owner,
+                    address,
+                    label="Contact no. {}".format(i)
+                )
+                items.append(item)
+                yield item
+
+        with contextlib.ExitStack() as stack:
+            get_all = stack.enter_context(unittest.mock.patch.object(
+                mlxc.storage.xml,
+                "get_all",
+            ))
+            get_all.return_value = [
+                getattr(unittest.mock.sentinel, "item{}".format(i))
+                for i in range(3)
+            ]
+
+            from_xso = stack.enter_context(unittest.mock.patch.object(
+                roster.ContactRosterItem,
+                "from_xso",
+            ))
+            from_xso.side_effect = generate_results()
+
+            self.rs.load()
+
+            contacts_to_json = stack.enter_context(unittest.mock.patch(
+                "mlxc.roster.contacts_to_json"
+            ))
+
+            client = self._prep_client()
+            self.rs.prepare_client(client)
+
+        contacts_to_json.assert_called_once_with(
+            self.rs
+        )
+
+        self.roster.import_from_json.assert_called_once_with(
+            contacts_to_json()
+        )
+
+    def test_loaded_data_gets_updated(self):
+        items = []
+
+        def generate_results():
+            for i, address in enumerate([TEST_JID1, TEST_JID3, TEST_JID4]):
+                item = roster.ContactRosterItem(
+                    unittest.mock.sentinel.account,
+                    unittest.mock.sentinel.owner,
+                    address,
+                    label="Contact no. {}".format(i)
+                )
+                items.append(item)
+                yield item
+
+        with contextlib.ExitStack() as stack:
+            get_all = stack.enter_context(unittest.mock.patch.object(
+                mlxc.storage.xml,
+                "get_all",
+            ))
+            get_all.return_value = [
+                getattr(unittest.mock.sentinel, "item{}".format(i))
+                for i in range(3)
+            ]
+
+            from_xso = stack.enter_context(unittest.mock.patch.object(
+                roster.ContactRosterItem,
+                "from_xso",
+            ))
+            from_xso.side_effect = generate_results()
+
+            self.rs.load()
+
+        with contextlib.ExitStack() as stack:
+            item = unittest.mock.Mock(spec=aioxmpp.roster.Item)
+            item.jid = TEST_JID3
+
+            update = stack.enter_context(unittest.mock.patch.object(
+                items[1],
+                "update",
+            ))
+
+            self.rs._on_entry_changed(item)
+
+        update.assert_called_once_with(item)
+
     def test_save(self):
         item_base = unittest.mock.Mock()
 
