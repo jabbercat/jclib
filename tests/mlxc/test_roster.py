@@ -14,6 +14,8 @@ import aioxmpp
 from aioxmpp.testutils import (
     make_connected_client,
     make_listener,
+    CoroutineMock,
+    run_coroutine,
 )
 
 
@@ -43,10 +45,12 @@ class TestContactRosterItem(unittest.TestCase):
     def test_wrap(self):
         result = roster.ContactRosterItem.wrap(
             unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
             self.upstream_item,
         )
 
         self.assertEqual(result.account, unittest.mock.sentinel.account)
+        self.assertEqual(result.owner, unittest.mock.sentinel.owner)
         self.assertEqual(result.address, self.upstream_item.jid)
         self.assertEqual(result.label, self.upstream_item.name)
         self.assertCountEqual(result.tags, self.upstream_item.groups)
@@ -57,10 +61,12 @@ class TestContactRosterItem(unittest.TestCase):
     def test_wrap_is_resistant_against_modification_of_source(self):
         result = roster.ContactRosterItem.wrap(
             unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
             self.upstream_item,
         )
 
         self.assertEqual(result.account, unittest.mock.sentinel.account)
+        self.assertEqual(result.owner, unittest.mock.sentinel.owner)
         self.assertEqual(result.address, self.upstream_item.jid)
         self.assertEqual(result.label, self.upstream_item.name)
         self.assertCountEqual(result.tags, self.upstream_item.groups)
@@ -89,12 +95,14 @@ class TestContactRosterItem(unittest.TestCase):
 
         item = roster.ContactRosterItem.from_xso(
             unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
             obj,
         )
 
         self.assertIsInstance(item, roster.ContactRosterItem)
 
         self.assertEqual(item.account, unittest.mock.sentinel.account)
+        self.assertEqual(item.owner, unittest.mock.sentinel.owner)
         self.assertEqual(item.address, TEST_JID2)
         self.assertEqual(item.label, "Juliet Capulet")
         self.assertCountEqual(item.tags, ["foo", "bar"])
@@ -105,6 +113,7 @@ class TestContactRosterItem(unittest.TestCase):
     def test_to_xso(self):
         item = roster.ContactRosterItem(
             unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
             TEST_JID1,
             label="Romeo Montague",
             tags=["foo", "bar"],
@@ -125,6 +134,7 @@ class TestContactRosterItem(unittest.TestCase):
     def test_to_xso_with_empty_label(self):
         item = roster.ContactRosterItem(
             unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
             TEST_JID1,
             tags=["foo", "bar"],
             subscription="both",
@@ -145,11 +155,13 @@ class TestContactRosterItem(unittest.TestCase):
     def test_update_updates_contents(self):
         item = roster.ContactRosterItem(
             unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
             TEST_JID1,
         )
         item.update(self.upstream_item)
 
         self.assertEqual(item.account, unittest.mock.sentinel.account)
+        self.assertEqual(item.owner, unittest.mock.sentinel.owner)
 
         self.assertEqual(item.label, self.upstream_item.name)
         self.assertCountEqual(item.tags, self.upstream_item.groups)
@@ -161,6 +173,7 @@ class TestContactRosterItem(unittest.TestCase):
         client = unittest.mock.Mock()
         item = roster.ContactRosterItem(
             unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
             TEST_JID1,
         )
 
@@ -181,10 +194,12 @@ class TestMUCRosterItem(unittest.TestCase):
     def test_init_bare(self):
         item = roster.MUCRosterItem(
             unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
             TEST_JID_CHAT,
         )
 
         self.assertEqual(item.account, unittest.mock.sentinel.account)
+        self.assertEqual(item.owner, unittest.mock.sentinel.owner)
         self.assertIsNone(item.subject)
         self.assertFalse(item.autojoin)
         self.assertIsNone(item.nick)
@@ -195,11 +210,13 @@ class TestMUCRosterItem(unittest.TestCase):
     def test_init_label(self):
         item = roster.MUCRosterItem(
             unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
             TEST_JID_CHAT,
             label="test",
         )
 
         self.assertEqual(item.account, unittest.mock.sentinel.account)
+        self.assertEqual(item.owner, unittest.mock.sentinel.owner)
         self.assertIsNone(item.subject)
         self.assertFalse(item.autojoin)
         self.assertIsNone(item.nick)
@@ -218,11 +235,13 @@ class TestMUCRosterItem(unittest.TestCase):
 
         item = roster.MUCRosterItem.wrap(
             unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
             obj,
         )
 
         self.assertIsInstance(item, roster.MUCRosterItem)
         self.assertEqual(item.account, unittest.mock.sentinel.account)
+        self.assertEqual(item.owner, unittest.mock.sentinel.owner)
         self.assertEqual(item.address, TEST_JID_CHAT)
         self.assertEqual(item.nick, "fnord")
         self.assertEqual(item.password, "no password")
@@ -235,6 +254,7 @@ class TestMUCRosterItem(unittest.TestCase):
         client.summon.reset_mock()
         item = roster.MUCRosterItem(
             unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
             TEST_JID1,
             nick="foo",
         )
@@ -261,6 +281,7 @@ class TestMUCRosterItem(unittest.TestCase):
         client.summon.reset_mock()
         item = roster.MUCRosterItem(
             account,
+            unittest.mock.sentinel.owner,
             TEST_JID1,
             nick=None,
         )
@@ -285,6 +306,7 @@ class Testcontacts_to_json(unittest.TestCase):
         contacts = [
             roster.ContactRosterItem(
                 unittest.mock.sentinel.account,
+                unittest.mock.sentinel.owner,
                 TEST_JID1,
             ),
         ]
@@ -308,6 +330,7 @@ class Testcontacts_to_json(unittest.TestCase):
         contacts = [
             roster.ContactRosterItem(
                 unittest.mock.sentinel.account,
+                unittest.mock.sentinel.owner,
                 TEST_JID1,
                 label="Romeo Montague",
                 subscription="both",
@@ -336,6 +359,7 @@ class Testcontacts_to_json(unittest.TestCase):
         contacts = [
             roster.ContactRosterItem(
                 unittest.mock.sentinel.account,
+                unittest.mock.sentinel.owner,
                 TEST_JID1,
                 ask=True,
                 approved=True,
@@ -362,6 +386,7 @@ class Testcontacts_to_json(unittest.TestCase):
         contacts = [
             roster.ContactRosterItem(
                 unittest.mock.sentinel.account,
+                unittest.mock.sentinel.owner,
                 TEST_JID1,
             ),
         ]
@@ -392,12 +417,14 @@ class Testcontacts_to_json(unittest.TestCase):
             [
                 roster.ContactRosterItem(
                     unittest.mock.sentinel.account,
+                    unittest.mock.sentinel.owner,
                     TEST_JID1,
                     ask=True,
                     approved=True,
                 ),
                 roster.ContactRosterItem(
                     unittest.mock.sentinel.account,
+                    unittest.mock.sentinel.owner,
                     TEST_JID3,
                     label="Alice",
                     subscription="both",
@@ -438,6 +465,7 @@ class TestContactRosterService(unittest.TestCase):
         self.roster = unittest.mock.Mock(
             spec=aioxmpp.RosterClient,
         )
+        self.roster.set_entry = CoroutineMock()
         self.writeman = unittest.mock.Mock(spec=mlxc.storage.WriteManager)
         self.rs = roster.ContactRosterService(self.account, self.writeman)
         self.listener = make_listener(self.rs)
@@ -522,6 +550,7 @@ class TestContactRosterService(unittest.TestCase):
 
         wrap.assert_called_once_with(
             self.account,
+            self.rs,
             unittest.mock.sentinel.upstream_item,
         )
 
@@ -587,6 +616,7 @@ class TestContactRosterService(unittest.TestCase):
             for i, address in enumerate([TEST_JID1, TEST_JID3, TEST_JID4]):
                 yield roster.ContactRosterItem(
                     unittest.mock.sentinel.account,
+                    unittest.mock.sentinel.owner,
                     address,
                     label="Contact no. {}".format(i)
                 )
@@ -618,9 +648,12 @@ class TestContactRosterService(unittest.TestCase):
         self.assertCountEqual(
             from_xso.mock_calls,
             [
-                unittest.mock.call(self.account, unittest.mock.sentinel.item0),
-                unittest.mock.call(self.account, unittest.mock.sentinel.item1),
-                unittest.mock.call(self.account, unittest.mock.sentinel.item2),
+                unittest.mock.call(self.account, self.rs,
+                                   unittest.mock.sentinel.item0),
+                unittest.mock.call(self.account, self.rs,
+                                   unittest.mock.sentinel.item1),
+                unittest.mock.call(self.account, self.rs,
+                                   unittest.mock.sentinel.item2),
             ]
         )
 
@@ -650,6 +683,7 @@ class TestContactRosterService(unittest.TestCase):
             for i, address in enumerate([TEST_JID1, TEST_JID3, TEST_JID4]):
                 yield roster.ContactRosterItem(
                     unittest.mock.sentinel.account,
+                    unittest.mock.sentinel.owner,
                     address,
                     label="Contact no. {}".format(i)
                 )
@@ -818,6 +852,22 @@ class TestContactRosterService(unittest.TestCase):
                 ]
             )
 
+    def test_set_label_uses_roster_service(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        item = unittest.mock.Mock(spec=roster.ContactRosterItem)
+
+        run_coroutine(self.rs.set_label(
+            item,
+            unittest.mock.sentinel.new_label,
+        ))
+
+        self.roster.set_entry.assert_called_once_with(
+            item.address,
+            name=unittest.mock.sentinel.new_label,
+        )
+
 
 class TestConferenceBookmarkService(unittest.TestCase):
     def setUp(self):
@@ -899,6 +949,7 @@ class TestConferenceBookmarkService(unittest.TestCase):
 
         wrap.assert_called_once_with(
             self.account,
+            self.rs,
             unittest.mock.sentinel.upstream_item,
         )
 

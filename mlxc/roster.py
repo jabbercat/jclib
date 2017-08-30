@@ -30,12 +30,14 @@ import mlxc.xso
 class AbstractRosterItem(metaclass=abc.ABCMeta):
     def __init__(self,
                  account: mlxc.identity.Account,
+                 owner: "AbstractRosterService",
                  address: aioxmpp.JID,
                  *,
                  conversation_node:
                      typing.Optional[mlxc.conversation.ConversationNode]=None):
         super().__init__()
         self._account = account
+        self._owner = owner
         self._address = address
         self._conversation_node = conversation_node
 
@@ -110,10 +112,18 @@ class AbstractRosterItem(metaclass=abc.ABCMeta):
         """
         return self.address
 
+    @property
+    def owner(self):
+        """
+        The :class:`AbstractRosterService` which created this item.
+        """
+        return self._owner
+
 
 class ContactRosterItem(AbstractRosterItem):
     def __init__(self,
                  account: mlxc.identity.Account,
+                 owner: "AbstractRosterService",
                  address: aioxmpp.JID,
                  label: typing.Optional[str]=None,
                  subscription: str='none',
@@ -121,7 +131,7 @@ class ContactRosterItem(AbstractRosterItem):
                  approved: bool=False,
                  ask: bool=False,
                  **kwargs):
-        super().__init__(account, address, **kwargs)
+        super().__init__(account, owner, address, **kwargs)
         self._label = label
         self._subscription = subscription
         self._approved = approved
@@ -153,9 +163,10 @@ class ContactRosterItem(AbstractRosterItem):
         return self._ask
 
     @classmethod
-    def wrap(cls, account, upstream_item):
+    def wrap(cls, account, owner, upstream_item):
         return cls(
             account,
+            owner,
             upstream_item.jid,
             label=upstream_item.name,
             subscription=upstream_item.subscription,
@@ -165,9 +176,10 @@ class ContactRosterItem(AbstractRosterItem):
         )
 
     @classmethod
-    def from_xso(cls, account, obj):
+    def from_xso(cls, account, owner, obj):
         return cls(
             account,
+            owner,
             obj.address,
             label=obj.label,
             subscription=obj.subscription,
@@ -233,13 +245,14 @@ def contacts_to_json(contacts, ver=None):
 class MUCRosterItem(AbstractRosterItem):
     def __init__(self,
                  account: mlxc.identity.Account,
+                 owner: "AbstractRosterService",
                  address: aioxmpp.JID,
                  label: typing.Optional[str]=None,
                  nick: typing.Optional[str]=None,
                  password: typing.Optional[str]=None,
                  autojoin: bool=False,
                  **kwargs):
-        super().__init__(account, address, **kwargs)
+        super().__init__(account, owner, address, **kwargs)
         self._label = label
         self._autojoin = autojoin
         self._nick = nick
@@ -278,9 +291,11 @@ class MUCRosterItem(AbstractRosterItem):
     @classmethod
     def wrap(cls,
              account: mlxc.identity.Account,
+             owner: "AbstractRosterService",
              obj: aioxmpp.bookmarks.xso.Conference):
         return cls(
             account,
+            owner,
             obj.jid,
             nick=obj.nick,
             password=obj.password,
@@ -450,8 +465,12 @@ class ContactRosterService(AbstractRosterService):
     def update_tags(self, item, add_tags, remove_tags):
         raise NotImplementedError()
 
+    @asyncio.coroutine
     def set_label(self, item, new_label):
-        raise NotImplementedError()
+        yield from self._client.summon(aioxmpp.RosterClient).set_entry(
+            item.address,
+            name=new_label,
+        )
 
     @property
     def is_writable(self):
@@ -474,7 +493,7 @@ class ContactRosterService(AbstractRosterService):
             mlxc.xso.RosterContact,
         )
         self._backend.extend(
-            ContactRosterItem.from_xso(self._account, obj)
+            ContactRosterItem.from_xso(self._account, self, obj)
             for obj in contacts
         )
 
@@ -495,7 +514,7 @@ class ContactRosterService(AbstractRosterService):
         self._dirty = False
 
     def _on_entry_added(self, item):
-        wrapped = ContactRosterItem.wrap(self._account, item)
+        wrapped = ContactRosterItem.wrap(self._account, self, item)
         self.__addrmap[wrapped.address] = wrapped
         self._backend.append(wrapped)
         self._dirty = True
@@ -566,7 +585,7 @@ class ConferenceBookmarkService(AbstractRosterService):
         pass
 
     def _on_bookmark_added(self, bookmark):
-        item = MUCRosterItem.wrap(self._account, bookmark)
+        item = MUCRosterItem.wrap(self._account, self, bookmark)
         self.__addrmap[item.address] = item
         self._backend.append(item)
         self._writeman.request_writeback()
