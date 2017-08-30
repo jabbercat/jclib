@@ -2628,6 +2628,7 @@ class TestXMLFrontend(unittest.TestCase):
         )
         storage = unittest.mock.Mock()
         storage.items = unittest.mock.MagicMock()
+        xso_type = unittest.mock.Mock(["TAG"])
 
         with contextlib.ExitStack() as stack:
             _open = stack.enter_context(
@@ -2639,7 +2640,7 @@ class TestXMLFrontend(unittest.TestCase):
             result = self.f.get_all(
                 unittest.mock.sentinel.type_,
                 level,
-                unittest.mock.sentinel.xso_type,
+                xso_type,
             )
 
         _open.assert_called_once_with(
@@ -2652,7 +2653,7 @@ class TestXMLFrontend(unittest.TestCase):
         )
 
         storage.items.__getitem__().__getitem__.assert_called_once_with(
-            unittest.mock.sentinel.xso_type,
+            xso_type.TAG,
         )
 
         self.assertEqual(
@@ -2704,6 +2705,7 @@ class TestXMLFrontend(unittest.TestCase):
         level = frontends.AccountLevel(
             unittest.mock.sentinel.account,
         )
+        xso_type = unittest.mock.Mock(["TAG"])
         storage = unittest.mock.Mock()
         storage.items = unittest.mock.MagicMock()
         storage.items.__getitem__.return_value.__getitem__.side_effect = KeyError
@@ -2718,7 +2720,7 @@ class TestXMLFrontend(unittest.TestCase):
             result = self.f.get_all(
                 unittest.mock.sentinel.type_,
                 level,
-                unittest.mock.sentinel.xso_type,
+                xso_type,
             )
 
         _open.assert_called_once_with(
@@ -2731,7 +2733,7 @@ class TestXMLFrontend(unittest.TestCase):
         )
 
         storage.items.__getitem__().__getitem__.assert_called_once_with(
-            unittest.mock.sentinel.xso_type,
+            xso_type.TAG,
         )
 
         self.assertSequenceEqual(
@@ -2752,6 +2754,7 @@ class TestXMLFrontend(unittest.TestCase):
         )
         storage = unittest.mock.Mock()
         storage.items = unittest.mock.MagicMock()
+        xso_type = unittest.mock.Mock(["TAG"])
 
         with contextlib.ExitStack() as stack:
             _open = stack.enter_context(
@@ -2763,7 +2766,7 @@ class TestXMLFrontend(unittest.TestCase):
             result = self.f.get_all(
                 unittest.mock.sentinel.type_,
                 level,
-                unittest.mock.sentinel.xso_type,
+                xso_type,
             )
 
         _open.assert_called_once_with(
@@ -2779,7 +2782,7 @@ class TestXMLFrontend(unittest.TestCase):
         )
 
         storage.items.__getitem__().__getitem__.assert_called_once_with(
-            unittest.mock.sentinel.xso_type,
+            xso_type.TAG,
         )
 
         self.assertEqual(
@@ -2853,7 +2856,11 @@ class TestXMLFrontend(unittest.TestCase):
 
     def test__put_into_single_xso_existing(self):
         items = unittest.mock.MagicMock()
-        xso = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+
+        class TestXSO(aioxmpp.xso.XSO):
+            TAG = ("test namespace", "test tag")
+
+        xso = TestXSO()
 
         self.f._put_into(
             items,
@@ -2864,7 +2871,7 @@ class TestXMLFrontend(unittest.TestCase):
         items.__getitem__.assert_called_once_with(unittest.mock.sentinel.key)
 
         items.__getitem__().__getitem__.assert_called_once_with(
-            type(xso),
+            ("test namespace", "test tag"),
         )
 
         items.__getitem__().__getitem__().__setitem__.assert_called_once_with(
@@ -2876,7 +2883,10 @@ class TestXMLFrontend(unittest.TestCase):
         items = unittest.mock.MagicMock()
         items.__getitem__.side_effect = KeyError()
 
-        xso = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+        class TestXSO(aioxmpp.xso.XSO):
+            TAG = ("test namespace", "test tag")
+
+        xso = TestXSO()
 
         with contextlib.ExitStack() as stack:
             XSOList = stack.enter_context(
@@ -2896,7 +2906,7 @@ class TestXMLFrontend(unittest.TestCase):
         items.__setitem__.assert_called_once_with(
             unittest.mock.sentinel.key,
             {
-                type(xso): XSOList(),
+                ("test namespace", "test tag"): XSOList(),
             }
         )
 
@@ -2933,8 +2943,11 @@ class TestXMLFrontend(unittest.TestCase):
     def test__put_into_multiple_xsos_existing(self):
         items = unittest.mock.MagicMock()
 
-        xso1 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
-        xso2 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+        class TestXSO(aioxmpp.xso.XSO):
+            TAG = ("test namespace", "test tag")
+
+        xso1 = TestXSO()
+        xso2 = TestXSO()
 
         self.f._put_into(
             items,
@@ -2945,7 +2958,7 @@ class TestXMLFrontend(unittest.TestCase):
         items.__getitem__.assert_called_once_with(unittest.mock.sentinel.key)
 
         items.__getitem__().__getitem__.assert_called_once_with(
-            type(xso1),
+            ("test namespace", "test tag")
         )
 
         items.__getitem__().__getitem__().__setitem__.assert_called_once_with(
@@ -2957,8 +2970,11 @@ class TestXMLFrontend(unittest.TestCase):
         items = unittest.mock.MagicMock()
         items.__getitem__.side_effect = KeyError()
 
-        xso1 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
-        xso2 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+        class TestXSO(aioxmpp.xso.XSO):
+            TAG = ("test namespace", "test tag")
+
+        xso1 = TestXSO()
+        xso2 = TestXSO()
 
         with contextlib.ExitStack() as stack:
             XSOList = stack.enter_context(
@@ -2978,7 +2994,7 @@ class TestXMLFrontend(unittest.TestCase):
         items.__setitem__.assert_called_once_with(
             unittest.mock.sentinel.key,
             {
-                type(xso1): XSOList(),
+                ("test namespace", "test tag"): XSOList(),
             }
         )
 
@@ -2986,8 +3002,11 @@ class TestXMLFrontend(unittest.TestCase):
         items = unittest.mock.MagicMock()
         items.__getitem__.return_value.__getitem__.side_effect = KeyError()
 
-        xso1 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
-        xso2 = unittest.mock.Mock(spec=aioxmpp.xso.XSO)
+        class TestXSO(aioxmpp.xso.XSO):
+            TAG = ("test namespace", "test tag")
+
+        xso1 = TestXSO()
+        xso2 = TestXSO()
 
         with contextlib.ExitStack() as stack:
             XSOList = stack.enter_context(
@@ -3003,13 +3022,13 @@ class TestXMLFrontend(unittest.TestCase):
         items.__getitem__.assert_called_once_with(unittest.mock.sentinel.key)
 
         items.__getitem__().__getitem__.assert_called_once_with(
-            type(xso1),
+            ("test namespace", "test tag"),
         )
 
         XSOList.assert_called_once_with([xso1, xso2])
 
         items.__getitem__().__setitem__.assert_called_once_with(
-            type(xso1),
+            ("test namespace", "test tag"),
             XSOList(),
         )
 

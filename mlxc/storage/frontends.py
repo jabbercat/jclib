@@ -5,6 +5,7 @@ import collections
 import functools
 import hashlib
 import io
+import logging
 import pathlib
 import urllib.parse
 import sys
@@ -107,6 +108,9 @@ class Frontend:
     def __init__(self, backend):
         super().__init__()
         self._backend = backend
+        self.logger = logging.getLogger(
+            ".".join([__name__, type(self).__qualname__])
+        )
 
     async def clear(self, level):
         """
@@ -753,7 +757,15 @@ class XMLFrontend(Frontend):
                     f,
                     storage_cls,
                 )
+            self.logger.debug(
+                "opened storage at %s for type %r at level %r",
+                path, type_, level,
+            )
         except FileNotFoundError:
+            self.logger.debug(
+                "failed to load storage from %s for type %r at level %r",
+                path, type_, level,
+            )
             return storage_cls()
 
     def _save(self, data, type_, level_type, *args):
@@ -834,10 +846,14 @@ class XMLFrontend(Frontend):
             Otherwise, it is possible that changes are partially or not at all
             written back to disk.
         """
+        self.logger.debug(
+            "opening storage for type %r at level %r, looking for "
+            "XSO class %s",
+            type_, level, xso_type)
         data = self._open(type_, level)
         _, _, key_func = self.LEVEL_INFO[level.level]
         try:
-            return data.items[key_func(level)][xso_type]
+            return data.items[key_func(level)][xso_type.TAG]
         except KeyError:
             return aioxmpp.xso.model.XSOList()
 
@@ -854,15 +870,15 @@ class XMLFrontend(Frontend):
             data = items[key]
         except KeyError:
             data = {
-                xso_type: aioxmpp.xso.model.XSOList(xsos)
+                xso_type.TAG: aioxmpp.xso.model.XSOList(xsos)
             }
             items[key] = data
             return
 
         try:
-            xso_items = data[xso_type]
+            xso_items = data[xso_type.TAG]
         except KeyError:
-            data[xso_type] = aioxmpp.xso.model.XSOList(xsos)
+            data[xso_type.TAG] = aioxmpp.xso.model.XSOList(xsos)
             return
 
         xso_items[:] = xsos
