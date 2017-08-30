@@ -609,16 +609,12 @@ class ConferenceBookmarkService(AbstractRosterService):
         pass
 
 
-class RosterManager:
+class RosterManager(mlxc.instrumentable_list.ModelListView[AbstractRosterItem]):
     def __init__(self,
                  accounts: mlxc.identity.Accounts,
                  client: mlxc.client.Client,
                  writeman: mlxc.storage.WriteManager):
-        super().__init__()
-        self._items = mlxc.instrumentable_list.JoinedModelListView()
-        self._items_view = mlxc.instrumentable_list.ModelListView(
-            self._items
-        )
+        super().__init__(mlxc.instrumentable_list.JoinedModelListView())
         self._accounts = accounts
         self._client = client
         self._writeman = writeman
@@ -638,7 +634,7 @@ class RosterManager:
             instance = class_(account, self._writeman)
             instance.load()
             instance.prepare_client(client)
-            self._items.append_source(instance)
+            self._backend.append_source(instance)
             svcs.append(instance)
 
     def _shutdown_client(self,
@@ -647,12 +643,11 @@ class RosterManager:
         svcs = self._client_svc_map.pop(client)
         for svc in svcs:
             svc.shutdown_client(client)
-            self._items.remove_source(svc)
+            self._backend.remove_source(svc)
 
-    @property
-    def items(self) -> \
-            mlxc.instrumentable_list.AbstractModelListView[AbstractRosterItem]:
-        return self._items_view
+    def index(self, item: AbstractRosterItem) -> int:
+        print(self._backend.source_offset)
+        return self._backend.source_offset(item.owner) + item.owner.index(item)
 
 
 mlxc.storage.xml.register(

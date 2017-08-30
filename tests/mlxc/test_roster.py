@@ -1098,7 +1098,7 @@ class TestRosterManager(unittest.TestCase):
             )
 
             _items = stack.enter_context(
-                unittest.mock.patch.object(self.gr, "_items")
+                unittest.mock.patch.object(self.gr, "_backend")
             )
 
             self.gr._prepare_client(account, client)
@@ -1127,7 +1127,7 @@ class TestRosterManager(unittest.TestCase):
             )
 
             _items = stack.enter_context(
-                unittest.mock.patch.object(self.gr, "_items")
+                unittest.mock.patch.object(self.gr, "_backend")
             )
 
             self.gr._prepare_client(account, client)
@@ -1160,7 +1160,7 @@ class TestRosterManager(unittest.TestCase):
             )
 
             _items = stack.enter_context(
-                unittest.mock.patch.object(self.gr, "_items")
+                unittest.mock.patch.object(self.gr, "_backend")
             )
 
             self.gr._prepare_client(account, client)
@@ -1181,3 +1181,25 @@ class TestRosterManager(unittest.TestCase):
             unittest.mock.call.remove_source(ConferenceBookmarkService()),
             _items.mock_calls,
         )
+
+    def test_index_is_optimised(self):
+        item = unittest.mock.Mock(["owner"])
+        item.owner.index.return_value = unittest.mock.MagicMock(["__add__"])
+
+        with contextlib.ExitStack() as stack:
+            source_offset = stack.enter_context(unittest.mock.patch.object(
+                self.gr._backend,
+                "source_offset",
+            ))
+            source_offset.return_value = unittest.mock.MagicMock(
+                ["__add__"]
+            )
+
+            index = self.gr.index(item)
+
+        source_offset.assert_called_once_with(item.owner)
+        item.owner.index.assert_called_once_with(item)
+
+        source_offset().__add__.assert_called_once_with(item.owner.index())
+
+        self.assertEqual(index, source_offset().__add__())
