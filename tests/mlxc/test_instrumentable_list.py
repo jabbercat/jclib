@@ -1406,31 +1406,38 @@ class TestModelListView(unittest.TestCase):
         view = ModelListView(backend)
 
         backend.begin_insert_rows.connect.assert_called_with(
-            view.begin_insert_rows
+            view.begin_insert_rows,
+            backend.begin_insert_rows.WEAK,
         )
 
         backend.begin_remove_rows.connect.assert_called_with(
-            view.begin_remove_rows
+            view.begin_remove_rows,
+            backend.begin_remove_rows.WEAK,
         )
 
         backend.begin_move_rows.connect.assert_called_with(
-            view.begin_move_rows
+            view.begin_move_rows,
+            backend.begin_move_rows.WEAK,
         )
 
         backend.end_insert_rows.connect.assert_called_with(
-            view.end_insert_rows
+            view.end_insert_rows,
+            backend.end_insert_rows.WEAK,
         )
 
         backend.end_remove_rows.connect.assert_called_with(
-            view.end_remove_rows
+            view.end_remove_rows,
+            backend.end_remove_rows.WEAK,
         )
 
         backend.end_move_rows.connect.assert_called_with(
-            view.end_move_rows
+            view.end_move_rows,
+            backend.end_move_rows.WEAK,
         )
 
         backend.data_changed.connect.assert_called_once_with(
-            view.data_changed
+            view.data_changed,
+            backend.data_changed.WEAK,
         )
 
     def test___getitem__forwards_to_backend(self):

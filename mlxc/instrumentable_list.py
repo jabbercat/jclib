@@ -463,13 +463,34 @@ class ModelListView(AbstractModelListView[T]):
     def __init__(self, backend: ModelList[T]):
         super().__init__()
         self._backend = backend
-        self._backend.begin_insert_rows.connect(self.begin_insert_rows)
-        self._backend.begin_move_rows.connect(self.begin_move_rows)
-        self._backend.begin_remove_rows.connect(self.begin_remove_rows)
-        self._backend.end_insert_rows.connect(self.end_insert_rows)
-        self._backend.end_move_rows.connect(self.end_move_rows)
-        self._backend.end_remove_rows.connect(self.end_remove_rows)
-        self._backend.data_changed.connect(self.data_changed)
+        self._backend.begin_insert_rows.connect(
+            self.begin_insert_rows,
+            self._backend.begin_insert_rows.WEAK
+        )
+        self._backend.begin_move_rows.connect(
+            self.begin_move_rows,
+            self._backend.begin_move_rows.WEAK,
+        )
+        self._backend.begin_remove_rows.connect(
+            self.begin_remove_rows,
+            self._backend.begin_remove_rows.WEAK,
+        )
+        self._backend.end_insert_rows.connect(
+            self.end_insert_rows,
+            self._backend.end_insert_rows.WEAK,
+        )
+        self._backend.end_move_rows.connect(
+            self.end_move_rows,
+            self._backend.end_move_rows.WEAK,
+        )
+        self._backend.end_remove_rows.connect(
+            self.end_remove_rows,
+            self._backend.end_remove_rows.WEAK,
+        )
+        self._backend.data_changed.connect(
+            self.data_changed,
+            self._backend.data_changed.WEAK,
+        )
 
     def __getitem__(self, index: typing.Union[int, slice]) \
             -> typing.Union[typing.Iterable[T], T]:
