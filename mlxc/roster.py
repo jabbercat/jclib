@@ -13,6 +13,7 @@
 
 import abc
 import asyncio
+import copy
 import logging
 import typing
 
@@ -120,6 +121,51 @@ class AbstractRosterItem(metaclass=abc.ABCMeta):
         """
         return self._owner
 
+    @asyncio.coroutine
+    def update_tags(self,
+                    add_tags: typing.Iterable[str]=[],
+                    remove_tags: typing.Iterable[str]=[]):
+        """
+        Calls :meth:`AbstractRosterService.update_tags` for this item with the
+        given arguments.
+
+        :raises NotImplementedError: if :attr:`can_manage_tags` is false.
+        """
+        return (yield from self.owner.update_tags(self, add_tags, remove_tags))
+
+    @asyncio.coroutine
+    def set_label(self, new_label: typing.Optional[str]):
+        """
+        Calls :meth:`AbstractRosterService.set_label` for this item with the
+        given arguments.
+
+        :raises NotImplementedError: if :attr:`can_set_label` is false.
+        """
+        return (yield from self.owner.set_label(self, new_label))
+
+    @abc.abstractproperty
+    def can_manage_tags(self) -> bool:
+        """
+        Indicate whether the tags of the item can be changed and persisted.
+
+        .. note::
+
+            A false value does not mean that the tags never change; tags can
+            change due to non-manageable factors, such as account tags
+            changing.
+
+        """
+
+    @abc.abstractproperty
+    def can_set_label(self) -> bool:
+        """
+        Indicate whether the label of an item can be changed and persisted.
+
+        .. note::
+
+            A false value does not mean that the item label never changes.
+        """
+
 
 class ContactRosterItem(AbstractRosterItem):
     def __init__(self,
@@ -212,6 +258,12 @@ class ContactRosterItem(AbstractRosterItem):
         svc = client.summon(aioxmpp.im.p2p.Service)
         return svc.get_conversation(self.address)
 
+    def can_manage_tags(self) -> bool:
+        return True
+
+    def can_set_label(self) -> bool:
+        return True
+
 
 def contacts_to_json(contacts, ver=None):
     def contact_to_json(contact):
@@ -298,10 +350,34 @@ class MUCRosterItem(AbstractRosterItem):
             account,
             owner,
             obj.jid,
+            label=obj.name,
             nick=obj.nick,
             password=obj.password,
             autojoin=obj.autojoin,
         )
+
+    def to_bookmark(self) -> aioxmpp.bookmarks.xso.Conference:
+        return aioxmpp.bookmarks.xso.Conference(
+            self._label,
+            self._address,
+            autojoin=self._autojoin,
+            nick=self._nick,
+            password=self._password,
+        )
+
+    def update(self, obj: aioxmpp.bookmarks.xso.Conference):
+        self._label = obj.name
+        self._autojoin = obj.autojoin
+        self._nick = obj.nick
+        self._password = obj.password
+
+    @property
+    def can_manage_tags(self):
+        return False
+
+    @property
+    def can_set_label(self):
+        return True
 
 
 class AbstractRosterService(
@@ -468,8 +544,13 @@ class ContactRosterService(AbstractRosterService):
         self.__disconnect_all()
         self._client = None
 
+    @asyncio.coroutine
     def update_tags(self, item, add_tags, remove_tags):
-        raise NotImplementedError()
+        yield from self._client.summon(aioxmpp.RosterClient).set_entry(
+            item.address,
+            add_to_groups=add_tags,
+            remove_from_groups=remove_tags,
+        )
 
     @asyncio.coroutine
     def set_label(self, item, new_label):
@@ -572,7 +653,14 @@ class ConferenceBookmarkService(AbstractRosterService):
         raise NotImplementedError()
 
     def set_label(self, item, new_label):
-        raise NotImplementedError()
+        bookmarks_svc = self._client.summon(aioxmpp.BookmarkClient)
+        old = item.to_bookmark()
+        new = copy.copy(old)
+        new.name = new_label
+        return (yield from bookmarks_svc.update_bookmark(
+            old,
+            new,
+        ))
 
     def prepare_client(self, client):
         bookmarks_svc = client.summon(aioxmpp.BookmarkClient)
@@ -606,7 +694,11 @@ class ConferenceBookmarkService(AbstractRosterService):
         self._writeman.request_writeback()
 
     def _on_bookmark_changed(self, old_bookmark, new_bookmark):
-        pass
+        item = self.__addrmap[old_bookmark.jid]
+        item.update(new_bookmark)
+        index = self._backend.index(item)
+        self._backend.refresh_data(slice(index, index + 1), None)
+        self._writeman.request_writeback()
 
 
 class RosterManager(mlxc.instrumentable_list.ModelListView[AbstractRosterItem]):

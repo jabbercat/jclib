@@ -189,6 +189,76 @@ class TestContactRosterItem(unittest.TestCase):
 
         self.assertEqual(result, client.summon().get_conversation())
 
+    def test_set_label_forwards_to_owner(self):
+        owner = unittest.mock.Mock()
+        owner.set_label = CoroutineMock()
+        owner.set_label.return_value = unittest.mock.sentinel.result
+
+        item = roster.ContactRosterItem(
+            unittest.mock.sentinel.account,
+            owner,
+            unittest.mock.sentinel.address,
+        )
+
+        result = run_coroutine(
+            item.set_label(unittest.mock.sentinel.new_label)
+        )
+
+        owner.set_label.assert_called_once_with(
+            item,
+            unittest.mock.sentinel.new_label,
+        )
+
+        self.assertEqual(
+            result,
+            unittest.mock.sentinel.result,
+        )
+
+    def test_update_tags_forwards_to_owner(self):
+        owner = unittest.mock.Mock()
+        owner.update_tags = CoroutineMock()
+        owner.update_tags.return_value = unittest.mock.sentinel.result
+
+        item = roster.ContactRosterItem(
+            unittest.mock.sentinel.account,
+            owner,
+            unittest.mock.sentinel.address,
+        )
+
+        result = run_coroutine(item.update_tags(
+            unittest.mock.sentinel.add_tags,
+            unittest.mock.sentinel.remove_tags,
+        ))
+
+        owner.update_tags.assert_called_once_with(
+            item,
+            unittest.mock.sentinel.add_tags,
+            unittest.mock.sentinel.remove_tags,
+        )
+
+        self.assertEqual(
+            result,
+            unittest.mock.sentinel.result,
+        )
+
+    def test_can_manage_tags(self):
+        item = roster.ContactRosterItem(
+            unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
+            unittest.mock.sentinel.address,
+        )
+
+        self.assertTrue(item.can_manage_tags)
+
+    def test_can_set_label(self):
+        item = roster.ContactRosterItem(
+            unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
+            unittest.mock.sentinel.address,
+        )
+
+        self.assertTrue(item.can_set_label)
+
 
 class TestMUCRosterItem(unittest.TestCase):
     def test_init_bare(self):
@@ -242,6 +312,7 @@ class TestMUCRosterItem(unittest.TestCase):
         self.assertIsInstance(item, roster.MUCRosterItem)
         self.assertEqual(item.account, unittest.mock.sentinel.account)
         self.assertEqual(item.owner, unittest.mock.sentinel.owner)
+        self.assertEqual(item.label, "some name")
         self.assertEqual(item.address, TEST_JID_CHAT)
         self.assertEqual(item.nick, "fnord")
         self.assertEqual(item.password, "no password")
@@ -299,6 +370,140 @@ class TestMUCRosterItem(unittest.TestCase):
         )
 
         self.assertEqual(result, unittest.mock.sentinel.room)
+
+    def test_set_label_forwards_to_owner(self):
+        owner = unittest.mock.Mock()
+        owner.set_label = CoroutineMock()
+        owner.set_label.return_value = unittest.mock.sentinel.result
+
+        item = roster.MUCRosterItem(
+            unittest.mock.sentinel.account,
+            owner,
+            unittest.mock.sentinel.address,
+        )
+
+        result = run_coroutine(
+            item.set_label(unittest.mock.sentinel.new_label)
+        )
+
+        owner.set_label.assert_called_once_with(
+            item,
+            unittest.mock.sentinel.new_label,
+        )
+
+        self.assertEqual(
+            result,
+            unittest.mock.sentinel.result,
+        )
+
+    def test_update_tags_forwards_to_owner(self):
+        owner = unittest.mock.Mock()
+        owner.update_tags = CoroutineMock()
+        owner.update_tags.return_value = unittest.mock.sentinel.result
+
+        item = roster.MUCRosterItem(
+            unittest.mock.sentinel.account,
+            owner,
+            unittest.mock.sentinel.address,
+        )
+
+        result = run_coroutine(item.update_tags(
+            unittest.mock.sentinel.add_tags,
+            unittest.mock.sentinel.remove_tags,
+        ))
+
+        owner.update_tags.assert_called_once_with(
+            item,
+            unittest.mock.sentinel.add_tags,
+            unittest.mock.sentinel.remove_tags,
+        )
+
+        self.assertEqual(
+            result,
+            unittest.mock.sentinel.result,
+        )
+
+    def test_can_manage_tags(self):
+        item = roster.MUCRosterItem(
+            unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
+            unittest.mock.sentinel.address,
+        )
+
+        self.assertFalse(item.can_manage_tags)
+
+    def test_can_set_label(self):
+        item = roster.MUCRosterItem(
+            unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
+            unittest.mock.sentinel.address,
+        )
+
+        self.assertTrue(item.can_set_label)
+
+    def test_to_bookmark(self):
+        item = roster.MUCRosterItem(
+            unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
+            unittest.mock.sentinel.address,
+            label=unittest.mock.sentinel.label,
+            nick=unittest.mock.sentinel.nick,
+            autojoin=unittest.mock.sentinel.autojoin,
+            password=unittest.mock.sentinel.password,
+        )
+
+        with contextlib.ExitStack() as stack:
+            Conference = stack.enter_context(unittest.mock.patch(
+                "aioxmpp.bookmarks.xso.Conference"
+            ))
+
+            obj = item.to_bookmark()
+
+        Conference.assert_called_once_with(
+            unittest.mock.sentinel.label,
+            unittest.mock.sentinel.address,
+            autojoin=unittest.mock.sentinel.autojoin,
+            nick=unittest.mock.sentinel.nick,
+            password=unittest.mock.sentinel.password,
+        )
+
+        self.assertEqual(obj, Conference())
+
+    def test_update(self):
+        item = roster.MUCRosterItem(
+            unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
+            unittest.mock.sentinel.address,
+            label=unittest.mock.sentinel.old_label,
+            autojoin=unittest.mock.sentinel.old_autojoin,
+            nick=unittest.mock.sentinel.old_nick,
+            password=unittest.mock.sentinel.old_password,
+        )
+
+        new_obj = unittest.mock.Mock(["name", "jid", "autojoin", "nick",
+                                      "password"])
+
+        item.update(new_obj)
+
+        self.assertEqual(
+            item.label,
+            new_obj.name,
+        )
+
+        self.assertEqual(
+            item.autojoin,
+            new_obj.autojoin,
+        )
+
+        self.assertEqual(
+            item.password,
+            new_obj.password,
+        )
+
+        self.assertEqual(
+            item.nick,
+            new_obj.nick,
+        )
 
 
 class Testcontacts_to_json(unittest.TestCase):
@@ -960,6 +1165,24 @@ class TestContactRosterService(unittest.TestCase):
             name=unittest.mock.sentinel.new_label,
         )
 
+    def test_update_tags_uses_roster_service(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        item = unittest.mock.Mock(spec=roster.ContactRosterItem)
+
+        run_coroutine(self.rs.update_tags(
+            item,
+            unittest.mock.sentinel.tags_to_add,
+            unittest.mock.sentinel.tags_to_remove,
+        ))
+
+        self.roster.set_entry.assert_called_once_with(
+            item.address,
+            add_to_groups=unittest.mock.sentinel.tags_to_add,
+            remove_from_groups=unittest.mock.sentinel.tags_to_remove,
+        )
+
 
 class TestConferenceBookmarkService(unittest.TestCase):
     def setUp(self):
@@ -1069,6 +1292,70 @@ class TestConferenceBookmarkService(unittest.TestCase):
 
         self.assertEqual(len(self.rs), 1)
         self.assertEqual(self.rs[0].address, TEST_JID2)
+
+    def test_set_label_uses_bookmark_service(self):
+        client = self._prep_client()
+        self.bookmarks.update_bookmark = CoroutineMock()
+        self.bookmarks.update_bookmark.return_value = \
+            unittest.mock.sentinel.result
+        self.rs.prepare_client(client)
+
+        item = unittest.mock.Mock(spec=roster.MUCRosterItem)
+
+        with contextlib.ExitStack() as stack:
+            copy = stack.enter_context(unittest.mock.patch(
+                "copy.copy",
+            ))
+
+            result = run_coroutine(
+                self.rs.set_label(item, "new label")
+            )
+
+        item.to_bookmark.assert_called_once_with()
+        copy.assert_called_once_with(item.to_bookmark())
+        self.assertEqual(copy().name, "new label")
+
+        self.bookmarks.update_bookmark.assert_called_once_with(
+            item.to_bookmark(),
+            copy(),
+        )
+
+        self.assertEqual(result, unittest.mock.sentinel.result)
+
+    def test__on_bookmark_changed_updates_item_and_emits_data_changed(self):
+        with contextlib.ExitStack() as stack:
+            wrap = stack.enter_context(
+                unittest.mock.patch.object(roster.MUCRosterItem, "wrap")
+            )
+
+            self.rs._on_bookmark_added(unittest.mock.sentinel.upstream_item)
+
+        self.writeman.request_writeback.reset_mock()
+
+        wrap.assert_called_once_with(
+            self.account,
+            self.rs,
+            unittest.mock.sentinel.upstream_item,
+        )
+
+        old_item = unittest.mock.Mock()
+        old_item.jid = wrap().address
+
+        new_item = unittest.mock.Mock()
+        new_item.jid = wrap().address
+
+        self.rs._on_bookmark_changed(old_item, new_item)
+
+        wrap().update.assert_called_once_with(new_item)
+
+        self.listener.data_changed.assert_called_once_with(
+            None,
+            0, 0,
+            None, None,
+            None,
+        )
+
+        self.writeman.request_writeback.assert_called_once_with()
 
 
 class TestRosterManager(unittest.TestCase):
