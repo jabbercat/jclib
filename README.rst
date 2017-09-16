@@ -1,10 +1,6 @@
-My Little XMPP Client (working title)
-#####################################
+JabberCat core library
+######################
 
-The XMPP client of the future!
-
-If you are intrigued by modern, non-XMPP and/or non-free chat applications, this
-is for you. We aim to provide Conversations-like chat experience based on XMPP
-for everyone.
-
-.. image:: docs/screenshot1.png
+This library powers JabberCat. Proceed to the
+`JabberCat repository <https://github.com/jabbercat/jabbercat>`_ for more
+details.
