@@ -332,7 +332,7 @@ def angle_to_cbcr_edge(angle):
     else:
         factor = 0.5 / abs(cb)
     # factor = 0.5
-    return cb*factor, cr*factor
+    return cb * factor, cr * factor
 
 
 @functools.lru_cache()
@@ -343,8 +343,12 @@ def text_to_colour(text):
     # data = hash_.digest()
     # hue, = struct.unpack("<H", data[:2])
 
-    data = binascii.crc32(text.encode("utf-8"))
-    hue = (data & 0xffff) ^ (data >> 16)
+    MASK = 0xffff
+
+    # data = binascii.crc32(text.encode("utf-8"))
+    h = hashlib.sha1()
+    h.update(text.encode("utf-8"))
+    hue = (int.from_bytes(h.digest()[:2], "little") & MASK) / MASK
     # hue = data & 0xffff
 
     # first attempt, simply mix with the inverse of in_contrast_with
@@ -394,7 +398,7 @@ def text_to_colour(text):
     # r, g, b, _ = hsva_to_rgba(h, s, v, 1)
     # return r, g, b
 
-    cb, cr = angle_to_cbcr_edge(hue / 65535 * math.pi * 2)
+    cb, cr = angle_to_cbcr_edge(hue * math.pi * 2)
     r, g, b = clip_rgb(*ycbcr_to_rgb(0.5**0.45, cb, cr))
     r *= 0.8
     g *= 0.8
