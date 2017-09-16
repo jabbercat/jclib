@@ -13,7 +13,9 @@
 
 import abc
 import asyncio
+import collections
 import copy
+import itertools
 import logging
 import typing
 
@@ -385,21 +387,6 @@ class AbstractRosterService(
     """
     Abstract service providing roster items.
 
-    It does not provide direct access to the items; items can only be obtained
-    by observing the corresponding signals.
-
-    .. signal:: on_item_added(item)
-
-        Emits when a new item was added to the roster.
-
-    .. signal:: on_item_changed(item)
-
-        Emits when a roster item has changed.
-
-    .. signal:: on_item_removed(item)
-
-        Emits when a roster item has been removed.
-
     .. signal:: on_tag_added(tag)
 
         Emits when a tag is used for the first time on a roster item.
@@ -421,6 +408,9 @@ class AbstractRosterService(
     .. autoattribute:: account
 
     """
+
+    on_tag_added = aioxmpp.callbacks.Signal()
+    on_tag_removed = aioxmpp.callbacks.Signal()
 
     def __init__(self,
                  account: mlxc.identity.Account,
@@ -536,6 +526,8 @@ class ContactRosterService(AbstractRosterService):
         self.__connect(roster.on_entry_name_changed, self._on_entry_changed)
         self.__connect(roster.on_entry_subscription_state_changed,
                        self._on_entry_changed)
+        self.__connect(roster.on_group_added, self._on_tag_added)
+        self.__connect(roster.on_group_removed, self._on_tag_removed)
         contacts_data = contacts_to_json(self)
         roster.import_from_json(contacts_data)
         self._client = client
@@ -588,6 +580,9 @@ class ContactRosterService(AbstractRosterService):
         for item in self._backend:
             self.__addrmap[item.address] = item
 
+        for tag in set(itertools.chain(*(item.tags for item in self._backend))):
+            self.on_tag_added(tag)
+
     def save(self):
         if not self._dirty:
             return
@@ -624,6 +619,12 @@ class ContactRosterService(AbstractRosterService):
         self._backend.refresh_data(slice(index, index + 1), None, None)
         self._dirty = True
         self._writeman.request_writeback()
+
+    def _on_tag_added(self, tag: str):
+        self.on_tag_added(tag)
+
+    def _on_tag_removed(self, tag: str):
+        self.on_tag_removed(tag)
 
 
 class ConferenceBookmarkService(AbstractRosterService):
@@ -717,6 +718,10 @@ class RosterManager(mlxc.instrumentable_list.ModelListView[AbstractRosterItem]):
 
         self._client_svc_map = {}
 
+        self._tags = mlxc.instrumentable_list.ModelList()
+        self._tags_counter = collections.Counter()
+        self._tags_view = mlxc.instrumentable_list.ModelListView(self._tags)
+
     def _prepare_client(self,
                         account: mlxc.identity.Account,
                         client: mlxc.client.Client):
@@ -724,6 +729,8 @@ class RosterManager(mlxc.instrumentable_list.ModelListView[AbstractRosterItem]):
         self._client_svc_map[client] = svcs
         for class_ in [ContactRosterService, ConferenceBookmarkService]:
             instance = class_(account, self._writeman)
+            instance.on_tag_added.connect(self._on_tag_added)
+            instance.on_tag_removed.connect(self._on_tag_removed)
             instance.load()
             instance.prepare_client(client)
             self._backend.append_source(instance)
@@ -740,6 +747,28 @@ class RosterManager(mlxc.instrumentable_list.ModelListView[AbstractRosterItem]):
     def index(self, item: AbstractRosterItem) -> int:
         print(self._backend.source_offset)
         return self._backend.source_offset(item.owner) + item.owner.index(item)
+
+    @property
+    def tags(self) -> mlxc.instrumentable_list.AbstractModelListView[str]:
+        """
+        A model list view containing all tags in the roster.
+
+        The list view contains each tag only once.
+        """
+        return self._tags_view
+
+    def _on_tag_added(self, tag: str):
+        if self._tags_counter[tag] == 0:
+            self._tags.append(tag)
+        self._tags_counter[tag] += 1
+
+    def _on_tag_removed(self, tag: str):
+        ctr = self._tags_counter[tag] - 1
+        if ctr <= 0:
+            del self._tags_counter[tag]
+            self._tags.remove(tag)
+        else:
+            self._tags_counter[tag] = ctr
 
 
 mlxc.storage.xml.register(

@@ -710,6 +710,14 @@ class TestContactRosterService(unittest.TestCase):
                 self.rs._on_entry_changed,
             )
 
+        self.roster.on_group_added.connect.assert_called_once_with(
+            self.rs._on_tag_added,
+        )
+
+        self.roster.on_group_removed.connect.assert_called_once_with(
+            self.rs._on_tag_removed,
+        )
+
     def test_prepare_client_makes_service_writable(self):
         client = self._prep_client()
         self.rs.prepare_client(client)
@@ -737,6 +745,14 @@ class TestContactRosterService(unittest.TestCase):
             .assert_called_once_with(
                 self.roster.on_entry_subscription_state_changed.connect(),
             )
+
+        self.roster.on_group_added.disconnect.assert_called_once_with(
+            self.roster.on_group_added.connect(),
+        )
+
+        self.roster.on_group_removed.disconnect.assert_called_once_with(
+            self.roster.on_group_removed.connect(),
+        )
 
     def test_shutdown_makes_service_non_writable(self):
         client = self._prep_client()
@@ -816,6 +832,18 @@ class TestContactRosterService(unittest.TestCase):
             None,
         )
 
+    def test__on_tag_added_emits_on_tag_added(self):
+        self.rs._on_tag_added(unittest.mock.sentinel.tag)
+        self.listener.on_tag_added.assert_called_once_with(
+            unittest.mock.sentinel.tag,
+        )
+
+    def test__on_tag_removed_emits_on_tag_removed(self):
+        self.rs._on_tag_removed(unittest.mock.sentinel.tag)
+        self.listener.on_tag_removed.assert_called_once_with(
+            unittest.mock.sentinel.tag,
+        )
+
     def test_load(self):
         def generate_results():
             for i, address in enumerate([TEST_JID1, TEST_JID3, TEST_JID4]):
@@ -871,6 +899,59 @@ class TestContactRosterService(unittest.TestCase):
             [
                 "Contact no. {}".format(i)
                 for i in range(3)
+            ]
+        )
+
+    def test_load_emits_on_tag_added_events(self):
+        items = [
+            roster.ContactRosterItem(
+                unittest.mock.sentinel.account,
+                unittest.mock.sentinel.owner,
+                TEST_JID1,
+                tags=["foo", "bar"],
+            ),
+            roster.ContactRosterItem(
+                unittest.mock.sentinel.account,
+                unittest.mock.sentinel.owner,
+                TEST_JID1,
+                tags=["baz"],
+            ),
+            roster.ContactRosterItem(
+                unittest.mock.sentinel.account,
+                unittest.mock.sentinel.owner,
+                TEST_JID1,
+                tags=["fnord", "foo"],
+            )
+        ]
+
+        def generate_results():
+            yield from items
+
+        with contextlib.ExitStack() as stack:
+            get_all = stack.enter_context(unittest.mock.patch.object(
+                mlxc.storage.xml,
+                "get_all",
+            ))
+            get_all.return_value = [
+                getattr(unittest.mock.sentinel, "item{}".format(i))
+                for i in range(3)
+            ]
+
+            from_xso = stack.enter_context(unittest.mock.patch.object(
+                roster.ContactRosterItem,
+                "from_xso",
+            ))
+            from_xso.side_effect = generate_results()
+
+            self.rs.load()
+
+        self.assertCountEqual(
+            self.listener.on_tag_added.mock_calls,
+            [
+                unittest.mock.call("foo"),
+                unittest.mock.call("bar"),
+                unittest.mock.call("baz"),
+                unittest.mock.call("fnord"),
             ]
         )
 
@@ -1394,6 +1475,12 @@ class TestRosterManager(unittest.TestCase):
             ContactRosterService.mock_calls,
             [
                 unittest.mock.call(account, self.writeman),
+                unittest.mock.call().on_tag_added.connect(
+                    self.gr._on_tag_added,
+                ),
+                unittest.mock.call().on_tag_removed.connect(
+                    self.gr._on_tag_removed,
+                ),
                 unittest.mock.call().load(),
                 unittest.mock.call().prepare_client(client),
             ]
@@ -1423,6 +1510,12 @@ class TestRosterManager(unittest.TestCase):
             ConferenceBookmarkService.mock_calls,
             [
                 unittest.mock.call(account, self.writeman),
+                unittest.mock.call().on_tag_added.connect(
+                    self.gr._on_tag_added,
+                ),
+                unittest.mock.call().on_tag_removed.connect(
+                    self.gr._on_tag_removed,
+                ),
                 unittest.mock.call().load(),
                 unittest.mock.call().prepare_client(client),
             ]
@@ -1490,3 +1583,37 @@ class TestRosterManager(unittest.TestCase):
         source_offset().__add__.assert_called_once_with(item.owner.index())
 
         self.assertEqual(index, source_offset().__add__())
+
+    def test_empty_tags(self):
+        self.assertCountEqual(self.gr.tags, [])
+        self.assertIsInstance(
+            self.gr.tags,
+            mlxc.instrumentable_list.ModelListView
+        )
+
+    def test__on_tag_added_makes_tag_appear_in_tags(self):
+        self.gr._on_tag_added("foo")
+        self.assertCountEqual(self.gr.tags, {"foo"})
+
+    def test__on_tag_added_does_not_duplicate_tags(self):
+        self.gr._on_tag_added("foo")
+        self.assertCountEqual(self.gr.tags, {"foo"})
+        self.gr._on_tag_added("bar")
+        self.assertCountEqual(self.gr.tags, {"bar", "foo"})
+        self.gr._on_tag_added("foo")
+        self.assertCountEqual(self.gr.tags, {"bar", "foo"})
+
+    def test__on_tag_removed_makes_tag_disappear_in_tags(self):
+        self.gr._on_tag_added("foo")
+        self.gr._on_tag_added("bar")
+        self.gr._on_tag_removed("foo")
+        self.assertCountEqual(self.gr.tags, {"bar"})
+
+    def test__on_tag_added_and_remove_use_some_counter_mechanism(self):
+        self.gr._on_tag_added("foo")
+        self.gr._on_tag_added("foo")
+        self.gr._on_tag_added("bar")
+        self.gr._on_tag_removed("foo")
+        self.assertCountEqual(self.gr.tags, {"foo", "bar"})
+        self.gr._on_tag_removed("foo")
+        self.assertCountEqual(self.gr.tags, {"bar"})
