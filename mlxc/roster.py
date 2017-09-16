@@ -526,6 +526,10 @@ class ContactRosterService(AbstractRosterService):
         self.__connect(roster.on_entry_name_changed, self._on_entry_changed)
         self.__connect(roster.on_entry_subscription_state_changed,
                        self._on_entry_changed)
+        self.__connect(roster.on_entry_added_to_group,
+                       self._on_entry_changed)
+        self.__connect(roster.on_entry_removed_from_group,
+                       self._on_entry_changed)
         self.__connect(roster.on_group_added, self._on_tag_added)
         self.__connect(roster.on_group_removed, self._on_tag_removed)
         contacts_data = contacts_to_json(self)
@@ -612,7 +616,7 @@ class ContactRosterService(AbstractRosterService):
         self._dirty = True
         self._writeman.request_writeback()
 
-    def _on_entry_changed(self, item):
+    def _on_entry_changed(self, item, _=None):
         wrapped = self.__addrmap[item.jid]
         wrapped.update(item)
         index = self._backend.index(wrapped)

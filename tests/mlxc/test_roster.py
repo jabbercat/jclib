@@ -710,6 +710,16 @@ class TestContactRosterService(unittest.TestCase):
                 self.rs._on_entry_changed,
             )
 
+        self.roster.on_entry_added_to_group.connect\
+            .assert_called_once_with(
+                self.rs._on_entry_changed,
+            )
+
+        self.roster.on_entry_removed_from_group.connect\
+            .assert_called_once_with(
+                self.rs._on_entry_changed,
+            )
+
         self.roster.on_group_added.connect.assert_called_once_with(
             self.rs._on_tag_added,
         )
@@ -744,6 +754,16 @@ class TestContactRosterService(unittest.TestCase):
         self.roster.on_entry_subscription_state_changed.disconnect\
             .assert_called_once_with(
                 self.roster.on_entry_subscription_state_changed.connect(),
+            )
+
+        self.roster.on_entry_added_to_group.disconnect\
+            .assert_called_once_with(
+                self.roster.on_entry_added_to_group.connect(),
+            )
+
+        self.roster.on_entry_removed_from_group.disconnect\
+            .assert_called_once_with(
+                self.roster.on_entry_removed_from_group.connect(),
             )
 
         self.roster.on_group_added.disconnect.assert_called_once_with(
@@ -819,6 +839,37 @@ class TestContactRosterService(unittest.TestCase):
         self.writeman.request_writeback.reset_mock()
         with unittest.mock.patch.object(self.rs[1], "update") as update:
             self.rs._on_entry_changed(upstream_item1_ver2)
+
+        update.assert_called_once_with(upstream_item1_ver2)
+
+        self.assertEqual(len(self.rs), 2)
+
+        self.writeman.request_writeback.assert_called_once_with()
+        self.listener.data_changed.assert_called_once_with(
+            None,
+            1, 1,
+            None, None,
+            None,
+        )
+
+    def test__on_entry_changed_ignores_additional_argument(self):
+        upstream_item1_ver1 = unittest.mock.Mock()
+        upstream_item1_ver1.jid = TEST_JID1
+        upstream_item1_ver1.groups = []
+
+        upstream_item1_ver2 = unittest.mock.Mock()
+        upstream_item1_ver2.jid = TEST_JID1
+
+        upstream_item2 = unittest.mock.Mock()
+        upstream_item2.jid = TEST_JID2
+        upstream_item2.groups = []
+
+        self.rs._on_entry_added(upstream_item2)
+        self.rs._on_entry_added(upstream_item1_ver1)
+
+        self.writeman.request_writeback.reset_mock()
+        with unittest.mock.patch.object(self.rs[1], "update") as update:
+            self.rs._on_entry_changed(upstream_item1_ver2, "fnord")
 
         update.assert_called_once_with(upstream_item1_ver2)
 
