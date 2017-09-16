@@ -9,12 +9,12 @@ from aioxmpp.testutils import (
     run_coroutine,
 )
 
-import mlxc.storage.manager
+import jclib.storage.manager
 
 
 class TestWriteManager(unittest.TestCase):
     def setUp(self):
-        self.m = mlxc.storage.manager.WriteManager(
+        self.m = jclib.storage.manager.WriteManager(
             writeback_interval=timedelta(seconds=0.1)
         )
         self.listener = make_listener(self.m)
@@ -78,7 +78,7 @@ class TestWriteManager(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             flush_all = stack.enter_context(unittest.mock.patch.object(
-                mlxc.storage.xml,
+                jclib.storage.xml,
                 "flush_all",
             ))
 

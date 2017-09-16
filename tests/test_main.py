@@ -12,8 +12,8 @@ from aioxmpp.testutils import (
     CoroutineMock
 )
 
-import mlxc.main as main
-import mlxc.config as config
+import jclib.main as main
+import jclib.config as config
 
 
 skip_without_unix = unittest.skipUnless(
@@ -625,7 +625,7 @@ class Testget_singleton_impl(unittest.TestCase):
         loop = unittest.mock.Mock()
 
         with unittest.mock.patch(
-                "mlxc.main._UnixGlobalSingleton"
+                "jclib.main._UnixGlobalSingleton"
         ) as Singleton:
             result = main.get_singleton_impl(loop)
 
@@ -715,7 +715,7 @@ class TestMain(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             get_singleton_impl = stack.enter_context(unittest.mock.patch(
-                "mlxc.main.get_singleton_impl",
+                "jclib.main.get_singleton_impl",
                 new=base.get_singleton_impl
             ))
 
@@ -744,7 +744,7 @@ class TestMain(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             get_singleton_impl = stack.enter_context(unittest.mock.patch(
-                "mlxc.main.get_singleton_impl",
+                "jclib.main.get_singleton_impl",
                 new=base.get_singleton_impl
             ))
 
@@ -773,7 +773,7 @@ class TestMain(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             get_singleton_impl = stack.enter_context(unittest.mock.patch(
-                "mlxc.main.get_singleton_impl",
+                "jclib.main.get_singleton_impl",
                 new=base.get_singleton_impl
             ))
 
@@ -805,7 +805,7 @@ class TestMain(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             get_singleton_impl = stack.enter_context(unittest.mock.patch(
-                "mlxc.main.get_singleton_impl",
+                "jclib.main.get_singleton_impl",
                 new=base.get_singleton_impl
             ))
 

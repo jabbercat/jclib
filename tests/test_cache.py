@@ -1,6 +1,6 @@
 import unittest
 
-import mlxc.cache as cache
+import jclib.cache as cache
 
 from aioxmpp.testutils import (
     run_coroutine,

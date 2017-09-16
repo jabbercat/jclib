@@ -1,11 +1,11 @@
 import aioxmpp.stringprep
 import aioxmpp.xso as xso
 
-from .utils import mlxc_namespaces
+from .utils import jabbercat_ns
 
 
 class AccountSettings(xso.XSO):
-    TAG = (mlxc_namespaces.account, "account")
+    TAG = (jabbercat_ns.account, "account")
 
     jid = xso.Attr(
         "jid",
@@ -37,7 +37,7 @@ class AccountSettings(xso.XSO):
 
 
 class RosterItemTag(xso.XSO):
-    TAG = (mlxc_namespaces.roster, "tag")
+    TAG = (jabbercat_ns.roster, "tag")
 
     label = xso.Text()
 
@@ -91,7 +91,7 @@ class RosterItemBase(xso.XSO):
 
 
 class RosterContact(RosterItemBase):
-    TAG = (mlxc_namespaces.roster, "contact")
+    TAG = (jabbercat_ns.roster, "contact")
 
     subscription = xso.Attr(
         "subscription",
@@ -112,13 +112,13 @@ class RosterContact(RosterItemBase):
 
 
 class RosterContacts(xso.XSO):
-    TAG = (mlxc_namespaces.roster, "contacts")
+    TAG = (jabbercat_ns.roster, "contacts")
 
     contacts = xso.ChildList([RosterContact])
 
 
 class RosterMUC(RosterItemBase):
-    TAG = (mlxc_namespaces.roster, "muc")
+    TAG = (jabbercat_ns.roster, "muc")
 
     autojoin = xso.Attr(
         "autojoin",
@@ -148,7 +148,7 @@ class _AbstractPresence(xso.XSO):
 
 
 class SinglePresenceState(_AbstractPresence):
-    TAG = (mlxc_namespaces.presence, "presence")
+    TAG = (jabbercat_ns.presence, "presence")
 
     jid = xso.Attr(
         "jid",
@@ -157,7 +157,7 @@ class SinglePresenceState(_AbstractPresence):
 
 
 class ComplexPresenceState(_AbstractPresence):
-    TAG = (mlxc_namespaces.presence, "complex-presence")
+    TAG = (jabbercat_ns.presence, "complex-presence")
 
     name = xso.Attr(
         "name",
@@ -169,6 +169,6 @@ class ComplexPresenceState(_AbstractPresence):
 
 
 class AccountsSettings(xso.XSO):
-    TAG = (mlxc_namespaces.identity, "accounts")
+    TAG = (jabbercat_ns.identity, "accounts")
 
     accounts = xso.ChildList([AccountSettings])

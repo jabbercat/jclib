@@ -5,9 +5,9 @@ import unittest.mock
 
 import aioxmpp
 
-import mlxc.identity as identity
-import mlxc.instrumentable_list
-import mlxc.xso
+import jclib.identity as identity
+import jclib.instrumentable_list
+import jclib.xso
 
 from aioxmpp.testutils import (
     make_listener,
@@ -38,7 +38,7 @@ class TestAccount(unittest.TestCase):
             self.a.jid = TEST_JID
 
     def test_from_xso(self):
-        x = mlxc.xso.AccountSettings(TEST_JID)
+        x = jclib.xso.AccountSettings(TEST_JID)
         x.disabled = True
         x.allow_unencrypted = True
         x.colour = "127 127 127"
@@ -60,7 +60,7 @@ class TestAccount(unittest.TestCase):
         self.a.colour = (123, 456, 789)
 
         x = self.a.to_xso()
-        self.assertIsInstance(x, mlxc.xso.AccountSettings)
+        self.assertIsInstance(x, jclib.xso.AccountSettings)
         self.assertEqual(x.jid, self.a.jid)
         self.assertEqual(x.disabled, not self.a.enabled)
         self.assertEqual(x.allow_unencrypted,
@@ -81,14 +81,14 @@ class TestAccounts(unittest.TestCase):
     def test_is_model_list_view(self):
         self.assertIsInstance(
             self.c,
-            mlxc.instrumentable_list.ModelListView
+            jclib.instrumentable_list.ModelListView
         )
 
     def test_new_account(self):
         with contextlib.ExitStack() as stack:
             Account = stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.identity.Account"
+                    "jclib.identity.Account"
                 )
             )
 
@@ -111,7 +111,7 @@ class TestAccounts(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             Account = stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.identity.Account"
+                    "jclib.identity.Account"
                 )
             )
 
@@ -128,7 +128,7 @@ class TestAccounts(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             Account = stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.identity.Account"
+                    "jclib.identity.Account"
                 )
             )
 

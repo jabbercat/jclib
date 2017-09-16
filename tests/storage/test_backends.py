@@ -3,7 +3,7 @@ import itertools
 import unittest
 import unittest.mock
 
-import mlxc.storage.backends as backends
+import jclib.storage.backends as backends
 
 
 class TestXDGBackend(unittest.TestCase):

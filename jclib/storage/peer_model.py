@@ -8,7 +8,7 @@ from sqlalchemy.ext.declarative import declarative_base
 import aioxmpp.xso
 
 from .common import UUID, JID, SmallBlobMixin
-from ..utils import mlxc_namespaces
+from ..utils import jabbercat_ns
 
 
 class Base(declarative_base()):
@@ -56,7 +56,7 @@ class SmallBlob(SmallBlobMixin, Base):
 
 
 class XMLStorageItem(aioxmpp.xso.XSO):
-    TAG = mlxc_namespaces.xml_storage_peer, "peer"
+    TAG = jabbercat_ns.xml_storage_peer, "peer"
 
     peer = aioxmpp.xso.Attr(
         "peer",
@@ -91,7 +91,7 @@ class XMLStorageItemType(aioxmpp.xso.AbstractElementType):
 
 
 class XMLStorage(aioxmpp.xso.XSO):
-    TAG = mlxc_namespaces.xml_storage_peer, "peers"
+    TAG = jabbercat_ns.xml_storage_peer, "peers"
 
     items = aioxmpp.xso.ChildValueMap(
         type_=XMLStorageItemType()

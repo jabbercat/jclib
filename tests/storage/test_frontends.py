@@ -11,25 +11,25 @@ from datetime import datetime
 
 import aioxmpp
 
-import mlxc.storage.account_model
-import mlxc.storage.common
-import mlxc.storage.peer_model
-import mlxc.storage.frontends as frontends
+import jclib.storage.account_model
+import jclib.storage.common
+import jclib.storage.peer_model
+import jclib.storage.frontends as frontends
 
 from aioxmpp.testutils import (
     run_coroutine,
     CoroutineMock,
 )
 
-from mlxc.testutils import (
+from jclib.testutils import (
     inmemory_database,
 )
 
 
-NS = "https://xmlns.zombofant.net/test/mlxc.storage.frontends"
+NS = "https://xmlns.jabbercat.org/test/jclib.storage.frontends"
 
 
-class MockBackend(mlxc.storage.backends.Backend):
+class MockBackend(jclib.storage.backends.Backend):
     def __init__(self):
         self.__tempdir = tempfile.TemporaryDirectory()
         self.__dirname = None
@@ -194,7 +194,7 @@ class TestAccountLevel(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             encode_jid = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.encode_jid")
+                unittest.mock.patch("jclib.storage.frontends.encode_jid")
             )
 
             result = il.key_path
@@ -226,7 +226,7 @@ class TestPeerLevel(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             encode_jid = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.encode_jid")
+                unittest.mock.patch("jclib.storage.frontends.encode_jid")
             )
             encode_jid.side_effect = generate_results()
 
@@ -263,7 +263,7 @@ class Test_PerLevelMixin(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             escape_path_part = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.escape_path_part")
+                unittest.mock.patch("jclib.storage.frontends.escape_path_part")
             )
 
             result = self.f._get_path(
@@ -324,7 +324,7 @@ class Test_PerLevelKeyFileMixin(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             escape_path_part = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.escape_path_part")
+                unittest.mock.patch("jclib.storage.frontends.escape_path_part")
             )
 
             result = self.f._get_path(
@@ -372,7 +372,7 @@ class Test_get_engine(unittest.TestCase):
             )
 
             mkdir_exist_ok = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+                unittest.mock.patch("jclib.utils.mkdir_exist_ok")
             )
 
             listens_for = stack.enter_context(
@@ -415,7 +415,7 @@ class TestDatabaseFrontend(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             escape_path_part = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.escape_path_part")
+                unittest.mock.patch("jclib.storage.frontends.escape_path_part")
             )
 
             result = self.f._get_path(
@@ -457,7 +457,7 @@ class TestDatabaseFrontend(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             _get_engine = stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.storage.frontends._get_engine"
+                    "jclib.storage.frontends._get_engine"
                 )
             )
 
@@ -520,7 +520,7 @@ class TestLargeBlobFrontend(unittest.TestCase):
                 )
 
                 mkdir_exist_ok = stack.enter_context(
-                    unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+                    unittest.mock.patch("jclib.utils.mkdir_exist_ok")
                 )
 
                 result = run_coroutine(self.f.open(
@@ -558,7 +558,7 @@ class TestLargeBlobFrontend(unittest.TestCase):
             )
 
             mkdir_exist_ok = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+                unittest.mock.patch("jclib.utils.mkdir_exist_ok")
             )
 
             result = run_coroutine(self.f.open(
@@ -601,7 +601,7 @@ class TestLargeBlobFrontend(unittest.TestCase):
                 )
 
                 mkdir_exist_ok = stack.enter_context(
-                    unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+                    unittest.mock.patch("jclib.utils.mkdir_exist_ok")
                 )
 
                 result = run_coroutine(self.f.open(
@@ -640,7 +640,7 @@ class TestLargeBlobFrontend(unittest.TestCase):
             )
 
             mkdir_exist_ok = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+                unittest.mock.patch("jclib.utils.mkdir_exist_ok")
             )
 
             result = run_coroutine(self.f.stat(
@@ -671,7 +671,7 @@ class TestLargeBlobFrontend(unittest.TestCase):
             )
 
             mkdir_exist_ok = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+                unittest.mock.patch("jclib.utils.mkdir_exist_ok")
             )
 
             run_coroutine(self.f.unlink(
@@ -744,14 +744,14 @@ class TestSmallBlobFrontend(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             peer_metadata = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.peer_model.Base,
+                    jclib.storage.peer_model.Base,
                     "metadata"
                 )
             )
 
             account_metadata = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.account_model.Base,
+                    jclib.storage.account_model.Base,
                     "metadata"
                 )
             )
@@ -771,14 +771,14 @@ class TestSmallBlobFrontend(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             peer_metadata = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.peer_model.Base,
+                    jclib.storage.peer_model.Base,
                     "metadata"
                 )
             )
 
             account_metadata = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.account_model.Base,
+                    jclib.storage.account_model.Base,
                     "metadata"
                 )
             )
@@ -798,14 +798,14 @@ class TestSmallBlobFrontend(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             peer_metadata = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.peer_model.Base,
+                    jclib.storage.peer_model.Base,
                     "metadata"
                 )
             )
 
             account_metadata = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.account_model.Base,
+                    jclib.storage.account_model.Base,
                     "metadata"
                 )
             )
@@ -825,14 +825,14 @@ class TestSmallBlobFrontend(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             peer_metadata = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.peer_model.Base,
+                    jclib.storage.peer_model.Base,
                     "metadata"
                 )
             )
 
             account_metadata = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.account_model.Base,
+                    jclib.storage.account_model.Base,
                     "metadata"
                 )
             )
@@ -852,7 +852,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             _get_engine = stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.storage.frontends._get_engine"
+                    "jclib.storage.frontends._get_engine"
                 )
             )
 
@@ -904,17 +904,17 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             session_scope = unittest.mock.MagicMock()
-            session_scope.side_effect = mlxc.storage.common.session_scope
+            session_scope.side_effect = jclib.storage.common.session_scope
             stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.storage.common.session_scope",
+                    "jclib.storage.common.session_scope",
                     new=session_scope
                 )
             )
 
             touch_mtime = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.peer_model.SmallBlob,
+                    jclib.storage.peer_model.SmallBlob,
                     "touch_mtime",
                 )
             )
@@ -932,7 +932,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             _get_sessionmaker.assert_called_once_with(
                 unittest.mock.sentinel.type_,
-                mlxc.storage.common.StorageLevel.PEER,
+                jclib.storage.common.StorageLevel.PEER,
                 unittest.mock.sentinel.namespace,
             )
 
@@ -950,7 +950,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             self.assertIsInstance(
                 blob,
-                mlxc.storage.peer_model.SmallBlob,
+                jclib.storage.peer_model.SmallBlob,
             )
 
             self.assertEqual(
@@ -980,17 +980,17 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             session_scope = unittest.mock.MagicMock()
-            session_scope.side_effect = mlxc.storage.common.session_scope
+            session_scope.side_effect = jclib.storage.common.session_scope
             stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.storage.common.session_scope",
+                    "jclib.storage.common.session_scope",
                     new=session_scope
                 )
             )
 
             touch_mtime = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.account_model.SmallBlob,
+                    jclib.storage.account_model.SmallBlob,
                     "touch_mtime",
                 )
             )
@@ -1007,7 +1007,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             _get_sessionmaker.assert_called_once_with(
                 unittest.mock.sentinel.type_,
-                mlxc.storage.common.StorageLevel.ACCOUNT,
+                jclib.storage.common.StorageLevel.ACCOUNT,
                 unittest.mock.sentinel.namespace,
             )
 
@@ -1025,7 +1025,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             self.assertIsInstance(
                 blob,
-                mlxc.storage.account_model.SmallBlob,
+                jclib.storage.account_model.SmallBlob,
             )
 
             self.assertEqual(
@@ -1083,17 +1083,17 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             session_scope = unittest.mock.MagicMock()
-            session_scope.side_effect = mlxc.storage.common.session_scope
+            session_scope.side_effect = jclib.storage.common.session_scope
             stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.storage.common.session_scope",
+                    "jclib.storage.common.session_scope",
                     new=session_scope
                 )
             )
 
             get = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.peer_model.SmallBlob,
+                    jclib.storage.peer_model.SmallBlob,
                     "get",
                 )
             )
@@ -1113,7 +1113,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             _get_sessionmaker.assert_called_once_with(
                 unittest.mock.sentinel.type_,
-                mlxc.storage.common.StorageLevel.PEER,
+                jclib.storage.common.StorageLevel.PEER,
                 unittest.mock.sentinel.namespace,
             )
 
@@ -1148,17 +1148,17 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             session_scope = unittest.mock.MagicMock()
-            session_scope.side_effect = mlxc.storage.common.session_scope
+            session_scope.side_effect = jclib.storage.common.session_scope
             stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.storage.common.session_scope",
+                    "jclib.storage.common.session_scope",
                     new=session_scope
                 )
             )
 
             get = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.peer_model.SmallBlob,
+                    jclib.storage.peer_model.SmallBlob,
                     "get",
                 )
             )
@@ -1180,7 +1180,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             _get_sessionmaker.assert_called_once_with(
                 unittest.mock.sentinel.type_,
-                mlxc.storage.common.StorageLevel.PEER,
+                jclib.storage.common.StorageLevel.PEER,
                 unittest.mock.sentinel.namespace,
             )
 
@@ -1217,17 +1217,17 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             session_scope = unittest.mock.MagicMock()
-            session_scope.side_effect = mlxc.storage.common.session_scope
+            session_scope.side_effect = jclib.storage.common.session_scope
             stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.storage.common.session_scope",
+                    "jclib.storage.common.session_scope",
                     new=session_scope
                 )
             )
 
             get = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.account_model.SmallBlob,
+                    jclib.storage.account_model.SmallBlob,
                     "get",
                 )
             )
@@ -1246,7 +1246,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             _get_sessionmaker.assert_called_once_with(
                 unittest.mock.sentinel.type_,
-                mlxc.storage.common.StorageLevel.ACCOUNT,
+                jclib.storage.common.StorageLevel.ACCOUNT,
                 unittest.mock.sentinel.namespace,
             )
 
@@ -1359,17 +1359,17 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             session_scope = unittest.mock.MagicMock()
-            session_scope.side_effect = mlxc.storage.common.session_scope
+            session_scope.side_effect = jclib.storage.common.session_scope
             stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.storage.common.session_scope",
+                    "jclib.storage.common.session_scope",
                     new=session_scope
                 )
             )
 
             filter_by = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.peer_model.SmallBlob,
+                    jclib.storage.peer_model.SmallBlob,
                     "filter_by",
                 )
             )
@@ -1388,7 +1388,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             _get_sessionmaker.assert_called_once_with(
                 unittest.mock.sentinel.type_,
-                mlxc.storage.common.StorageLevel.PEER,
+                jclib.storage.common.StorageLevel.PEER,
                 unittest.mock.sentinel.namespace,
             )
 
@@ -1398,7 +1398,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             session = _get_sessionmaker()()
             session.query.assert_called_once_with(
-                mlxc.storage.peer_model.SmallBlob,
+                jclib.storage.peer_model.SmallBlob,
             )
             filter_by.assert_called_once_with(
                 session.query(),
@@ -1419,17 +1419,17 @@ class TestSmallBlobFrontend(unittest.TestCase):
             )
 
             session_scope = unittest.mock.MagicMock()
-            session_scope.side_effect = mlxc.storage.common.session_scope
+            session_scope.side_effect = jclib.storage.common.session_scope
             stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.storage.common.session_scope",
+                    "jclib.storage.common.session_scope",
                     new=session_scope
                 )
             )
 
             filter_by = stack.enter_context(
                 unittest.mock.patch.object(
-                    mlxc.storage.account_model.SmallBlob,
+                    jclib.storage.account_model.SmallBlob,
                     "filter_by",
                 )
             )
@@ -1447,7 +1447,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             _get_sessionmaker.assert_called_once_with(
                 unittest.mock.sentinel.type_,
-                mlxc.storage.common.StorageLevel.ACCOUNT,
+                jclib.storage.common.StorageLevel.ACCOUNT,
                 unittest.mock.sentinel.namespace,
             )
 
@@ -1457,7 +1457,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
 
             session = _get_sessionmaker()()
             session.query.assert_called_once_with(
-                mlxc.storage.account_model.SmallBlob,
+                jclib.storage.account_model.SmallBlob,
             )
             filter_by.assert_called_once_with(
                 session.query(),
@@ -1527,7 +1527,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.namespace,
                 unittest.mock.sentinel.name,
                 [
-                    mlxc.storage.common.SmallBlobMixin.data,
+                    jclib.storage.common.SmallBlobMixin.data,
                 ],
                 touch=True,
             )
@@ -1821,9 +1821,9 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.sentinel.namespace,
                 unittest.mock.sentinel.name,
                 [
-                    mlxc.storage.common.SmallBlobMixin.accessed,
-                    mlxc.storage.common.SmallBlobMixin.created,
-                    mlxc.storage.common.SmallBlobMixin.modified,
+                    jclib.storage.common.SmallBlobMixin.accessed,
+                    jclib.storage.common.SmallBlobMixin.created,
+                    jclib.storage.common.SmallBlobMixin.modified,
                     unittest.mock.ANY,
                 ]
             )
@@ -1886,9 +1886,9 @@ class TestSmallBlobFrontend(unittest.TestCase):
             unittest.mock.sentinel.namespace,
             unittest.mock.sentinel.name,
             [
-                mlxc.storage.common.SmallBlobMixin.accessed,
-                mlxc.storage.common.SmallBlobMixin.created,
-                mlxc.storage.common.SmallBlobMixin.modified,
+                jclib.storage.common.SmallBlobMixin.accessed,
+                jclib.storage.common.SmallBlobMixin.created,
+                jclib.storage.common.SmallBlobMixin.modified,
                 unittest.mock.ANY,
             ]
         )
@@ -1966,7 +1966,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.patch.object(self.f, "_get_sessionmaker")
             )
             _get_sessionmaker.return_value = inmemory_database(
-                mlxc.storage.peer_model.Base,
+                jclib.storage.peer_model.Base,
             )
 
             run_coroutine(self.f.store(
@@ -2002,7 +2002,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.patch.object(self.f, "_get_sessionmaker")
             )
             _get_sessionmaker.return_value = inmemory_database(
-                mlxc.storage.peer_model.Base,
+                jclib.storage.peer_model.Base,
             )
 
             run_coroutine(self.f.store(
@@ -2052,7 +2052,7 @@ class TestSmallBlobFrontend(unittest.TestCase):
                 unittest.mock.patch.object(self.f, "_get_sessionmaker")
             )
             _get_sessionmaker.return_value = inmemory_database(
-                mlxc.storage.peer_model.Base,
+                jclib.storage.peer_model.Base,
             )
 
             run_coroutine(self.f.store(
@@ -2127,11 +2127,11 @@ class TestAppendFrontend(unittest.TestCase):
                 unittest.mock.Mock()
 
             datetime = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.datetime")
+                unittest.mock.patch("jclib.storage.frontends.datetime")
             )
 
             mkdir_exist_ok = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+                unittest.mock.patch("jclib.utils.mkdir_exist_ok")
             )
 
             self.f.submit(
@@ -2182,7 +2182,7 @@ class TestAppendFrontend(unittest.TestCase):
                 unittest.mock.Mock()
 
             datetime = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.datetime")
+                unittest.mock.patch("jclib.storage.frontends.datetime")
             )
             datetime.utcnow.return_value = ts
 
@@ -2222,7 +2222,7 @@ class TestXMLFrontend(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             escape_path_part = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.escape_path_part")
+                unittest.mock.patch("jclib.storage.frontends.escape_path_part")
             )
 
             result = self.f._get_path(
@@ -2236,7 +2236,7 @@ class TestXMLFrontend(unittest.TestCase):
         )
 
         escape_path_part.assert_called_once_with(
-            "dns:mlxc.zombofant.net"
+            "dns:jabbercat.org"
         )
 
         path_mock.__truediv__.assert_called_once_with(
@@ -2266,11 +2266,11 @@ class TestXMLFrontend(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             escape_path_part = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.escape_path_part")
+                unittest.mock.patch("jclib.storage.frontends.escape_path_part")
             )
 
             encode_jid = stack.enter_context(
-                unittest.mock.patch("mlxc.storage.frontends.encode_jid")
+                unittest.mock.patch("jclib.storage.frontends.encode_jid")
             )
 
             result = self.f._get_path(
@@ -2285,7 +2285,7 @@ class TestXMLFrontend(unittest.TestCase):
         )
 
         escape_path_part.assert_called_once_with(
-            "dns:mlxc.zombofant.net"
+            "dns:jabbercat.org"
         )
 
         encode_jid.assert_called_once_with(unittest.mock.sentinel.account)
@@ -2347,7 +2347,7 @@ class TestXMLFrontend(unittest.TestCase):
 
         read_single_xso.assert_called_once_with(
             _get_path().open().__enter__(),
-            mlxc.storage.account_model.XMLStorage,
+            jclib.storage.account_model.XMLStorage,
         )
 
         self.assertEqual(
@@ -2390,7 +2390,7 @@ class TestXMLFrontend(unittest.TestCase):
 
         self.assertIsInstance(
             result,
-            mlxc.storage.account_model.XMLStorage,
+            jclib.storage.account_model.XMLStorage,
         )
 
     def test__load_peer(self):
@@ -2426,7 +2426,7 @@ class TestXMLFrontend(unittest.TestCase):
 
         read_single_xso.assert_called_once_with(
             _get_path().open().__enter__(),
-            mlxc.storage.peer_model.XMLStorage,
+            jclib.storage.peer_model.XMLStorage,
         )
 
         self.assertEqual(
@@ -2470,7 +2470,7 @@ class TestXMLFrontend(unittest.TestCase):
 
         self.assertIsInstance(
             result,
-            mlxc.storage.peer_model.XMLStorage,
+            jclib.storage.peer_model.XMLStorage,
         )
 
     def test__open_uses__load_to_obtain_data(self):
@@ -3122,11 +3122,11 @@ class TestXMLFrontend(unittest.TestCase):
             )
 
             mkdir_exist_ok = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.mkdir_exist_ok")
+                unittest.mock.patch("jclib.utils.mkdir_exist_ok")
             )
 
             safe_writer = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.safe_writer")
+                unittest.mock.patch("jclib.utils.safe_writer")
             )
             safe_writer.return_value = unittest.mock.MagicMock([
                 "__enter__",
@@ -3306,12 +3306,12 @@ class TestXMLFrontend(unittest.TestCase):
 
         self.assertIn(
             Foo.TAG,
-            mlxc.storage.account_model.XMLStorageItem.CHILD_MAP,
+            jclib.storage.account_model.XMLStorageItem.CHILD_MAP,
         )
 
         self.assertIn(
             Foo,
-            mlxc.storage.account_model.XMLStorageItem.data._classes,
+            jclib.storage.account_model.XMLStorageItem.data._classes,
         )
 
     def test_register_registers_XSO_child_for_peer(self):
@@ -3325,12 +3325,12 @@ class TestXMLFrontend(unittest.TestCase):
 
         self.assertIn(
             Foo.TAG,
-            mlxc.storage.peer_model.XMLStorageItem.CHILD_MAP,
+            jclib.storage.peer_model.XMLStorageItem.CHILD_MAP,
         )
 
         self.assertIn(
             Foo,
-            mlxc.storage.peer_model.XMLStorageItem.data._classes,
+            jclib.storage.peer_model.XMLStorageItem.data._classes,
         )
 
     def test_put_get_cycle_account(self):
@@ -3348,13 +3348,13 @@ class TestXMLFrontend(unittest.TestCase):
                 d1s.append(d1)
 
             self.f.put(
-                mlxc.storage.common.StorageType.CACHE,
+                jclib.storage.common.StorageType.CACHE,
                 frontends.AccountLevel(j1),
                 [d1s[0], d1s[1]]
             )
 
             self.f.put(
-                mlxc.storage.common.StorageType.CACHE,
+                jclib.storage.common.StorageType.CACHE,
                 frontends.AccountLevel(j2),
                 [d1s[2]],
             )
@@ -3364,7 +3364,7 @@ class TestXMLFrontend(unittest.TestCase):
             self.f = frontends.XMLFrontend(backend)
 
             for i, d1 in enumerate(self.f.get_all(
-                    mlxc.storage.common.StorageType.CACHE,
+                    jclib.storage.common.StorageType.CACHE,
                     frontends.AccountLevel(j1), Data1)):
                 self.assertEqual(
                     d1.foo,
@@ -3378,7 +3378,7 @@ class TestXMLFrontend(unittest.TestCase):
                 )
 
             for i, d1 in enumerate(self.f.get_all(
-                    mlxc.storage.common.StorageType.CACHE,
+                    jclib.storage.common.StorageType.CACHE,
                     frontends.AccountLevel(j2), Data1), 2):
                 self.assertEqual(
                     d1.foo,
@@ -3408,13 +3408,13 @@ class TestXMLFrontend(unittest.TestCase):
                 d1s.append(d1)
 
             self.f.put(
-                mlxc.storage.common.StorageType.CACHE,
+                jclib.storage.common.StorageType.CACHE,
                 frontends.PeerLevel(i1, j1),
                 [d1s[0], d1s[1]]
             )
 
             self.f.put(
-                mlxc.storage.common.StorageType.CACHE,
+                jclib.storage.common.StorageType.CACHE,
                 frontends.PeerLevel(i2, j2),
                 [d1s[2]],
             )
@@ -3424,7 +3424,7 @@ class TestXMLFrontend(unittest.TestCase):
             self.f = frontends.XMLFrontend(backend)
 
             for i, d1 in enumerate(self.f.get_all(
-                    mlxc.storage.common.StorageType.CACHE,
+                    jclib.storage.common.StorageType.CACHE,
                     frontends.PeerLevel(i1, j1), Data1)):
                 self.assertEqual(
                     d1.foo,
@@ -3438,7 +3438,7 @@ class TestXMLFrontend(unittest.TestCase):
                 )
 
             for i, d1 in enumerate(self.f.get_all(
-                    mlxc.storage.common.StorageType.CACHE,
+                    jclib.storage.common.StorageType.CACHE,
                     frontends.PeerLevel(i2, j2), Data1), 2):
                 self.assertEqual(
                     d1.foo,

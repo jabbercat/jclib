@@ -10,7 +10,7 @@ from aioxmpp.testutils import (
     make_listener,
 )
 
-from mlxc.instrumentable_list import (
+from jclib.instrumentable_list import (
     IList,
     ModelList,
     ModelListView,

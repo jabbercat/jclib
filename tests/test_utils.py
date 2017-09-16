@@ -10,7 +10,7 @@ import xdg.BaseDirectory
 import aioxmpp.errors
 import aioxmpp.utils as aioxmpp_utils
 
-import mlxc.utils as utils
+import jclib.utils as utils
 
 
 class Test_imports_from_aioxmpp(unittest.TestCase):
@@ -21,25 +21,25 @@ class Test_imports_from_aioxmpp(unittest.TestCase):
         )
 
 
-class Testmlxc_namespaces(unittest.TestCase):
+class Testjabbercat_ns(unittest.TestCase):
     def test_account_namespace(self):
         self.assertEqual(
-            "https://xmlns.zombofant.net/mlxc/core/account/1.0",
-            utils.mlxc_namespaces.account
+            "https://xmlns.jabbercat.org/core/account/1.0",
+            utils.jabbercat_ns.account
         )
 
     def test_roster_namespace(self):
         self.assertEqual(
-            "https://xmlns.zombofant.net/mlxc/core/roster/1.0",
-            utils.mlxc_namespaces.roster
+            "https://xmlns.jabbercat.org/core/roster/1.0",
+            utils.jabbercat_ns.roster
         )
 
 
-class Testmlxc_uid(unittest.TestCase):
+class Testjclib_uid(unittest.TestCase):
     def test_uid(self):
         self.assertEqual(
-            utils.mlxc_uid,
-            "dns:mlxc.zombofant.net"
+            utils.jclib_uid,
+            "dns:jabbercat.org"
         )
 
 
@@ -175,11 +175,11 @@ class Testxdgopen_generic(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             multiopen = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.multiopen",
+                unittest.mock.patch("jclib.utils.multiopen",
                                     new=base.multiopen)
             )
             is_write_mode = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.is_write_mode",
+                unittest.mock.patch("jclib.utils.is_write_mode",
                                     new=base.is_write_mode)
             )
             is_write_mode.return_value = False
@@ -222,7 +222,7 @@ class Testxdgopen_generic(unittest.TestCase):
                                     new=base.open_)
             )
             is_write_mode = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.is_write_mode",
+                unittest.mock.patch("jclib.utils.is_write_mode",
                                     new=base.is_write_mode)
             )
             is_write_mode.return_value = True
@@ -257,7 +257,7 @@ class Testxdgdataopen(unittest.TestCase):
         resource = object()
 
         with unittest.mock.patch(
-                "mlxc.utils.xdgopen_generic"
+                "jclib.utils.xdgopen_generic"
         ) as xdgopen_generic:
             utils.xdgdataopen(resource, "baz.xml",
                               mode=mode,
@@ -448,7 +448,7 @@ class Testlogged_async(unittest.TestCase):
 
         task = unittest.mock.Mock()
 
-        with unittest.mock.patch("mlxc.utils.logger") as logger:
+        with unittest.mock.patch("jclib.utils.logger") as logger:
             utils._logged_task_done(task, name=name)
 
         self.assertSequenceEqual(
@@ -465,7 +465,7 @@ class Testlogged_async(unittest.TestCase):
         task = unittest.mock.Mock()
         task.result.side_effect = asyncio.CancelledError()
 
-        with unittest.mock.patch("mlxc.utils.logger") as logger:
+        with unittest.mock.patch("jclib.utils.logger") as logger:
             utils._logged_task_done(task, name=name)
 
         self.assertSequenceEqual(
@@ -482,7 +482,7 @@ class Testlogged_async(unittest.TestCase):
         task = unittest.mock.Mock()
         task.result.side_effect = Exception()
 
-        with unittest.mock.patch("mlxc.utils.logger") as logger:
+        with unittest.mock.patch("jclib.utils.logger") as logger:
             utils._logged_task_done(task, name=name)
 
         self.assertSequenceEqual(

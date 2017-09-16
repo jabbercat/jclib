@@ -732,13 +732,13 @@ class XMLFrontend(Frontend):
             return (self._backend.type_base_paths(type_, True)[0] /
                     StorageLevel.ACCOUNT.value /
                     encode_jid(account) /
-                    escape_path_part(utils.mlxc_namespaces.core) /
+                    escape_path_part(utils.jabbercat_ns.core) /
                     "xml-storage" /
                     "{}.xml".format(level_type.value))
         else:
             return (self._backend.type_base_paths(type_, True)[0] /
                     StorageLevel.GLOBAL.value /
-                    escape_path_part(utils.mlxc_namespaces.core) /
+                    escape_path_part(utils.jabbercat_ns.core) /
                     "xml-storage" /
                     "{}.xml".format(level_type.value))
 

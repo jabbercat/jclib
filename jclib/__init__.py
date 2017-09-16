@@ -1,5 +1,4 @@
 """
-:mod:`mlxc` --- The MLXC core package
-#####################################
-
+:mod:`jclib` --- The JabberCat core package
+###########################################
 """

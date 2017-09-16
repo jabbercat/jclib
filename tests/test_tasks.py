@@ -11,7 +11,7 @@ from aioxmpp.testutils import (
 
 from aioxmpp.e2etest import blocking
 
-import mlxc.tasks as tasks
+import jclib.tasks as tasks
 
 
 class TestAnnotatedTask(unittest.TestCase):
@@ -107,7 +107,7 @@ class TestTaskManager(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             AnnotatedTask = stack.enter_context(
-                unittest.mock.patch("mlxc.tasks.AnnotatedTask")
+                unittest.mock.patch("jclib.tasks.AnnotatedTask")
             )
 
             result = self.tm.add(task)
@@ -182,7 +182,7 @@ class TestTaskManager(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             stack.enter_context(
-                unittest.mock.patch("mlxc.tasks.AnnotatedTask")
+                unittest.mock.patch("jclib.tasks.AnnotatedTask")
             )
 
             self.tm.add(task)

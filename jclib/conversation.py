@@ -8,10 +8,10 @@ import aioxmpp.muc
 import aioxmpp.im.conversation
 import aioxmpp.im.service
 
-import mlxc.client
-import mlxc.identity
-import mlxc.instrumentable_list
-import mlxc.tasks
+import jclib.client
+import jclib.identity
+import jclib.instrumentable_list
+import jclib.tasks
 
 
 def _connect_and_store_token(tokens, signal, handler):
@@ -25,7 +25,7 @@ class ConversationNode(metaclass=abc.ABCMeta):
     on_stale = aioxmpp.callbacks.Signal()
 
     def __init__(self,
-                 account: mlxc.identity.Account,
+                 account: jclib.identity.Account,
                  *,
                  conversation: typing.Optional[
                      aioxmpp.im.conversation.AbstractConversation]=None):
@@ -77,7 +77,7 @@ class ConversationNode(metaclass=abc.ABCMeta):
     @classmethod
     def for_conversation(
             cls,
-            account: mlxc.identity.Account,
+            account: jclib.identity.Account,
             conversation: aioxmpp.im.conversation.AbstractConversation):
         """
         Create a conversation node for the given :mod:`aioxmpp` conversation
@@ -99,7 +99,7 @@ class ConversationNode(metaclass=abc.ABCMeta):
 
 class P2PConversationNode(ConversationNode):
     def __init__(self,
-                 account: mlxc.identity.Account,
+                 account: jclib.identity.Account,
                  peer_jid: aioxmpp.JID,
                  *,
                  conversation: typing.Optional[
@@ -121,7 +121,7 @@ class P2PConversationNode(ConversationNode):
 
 class MUCConversationNode(ConversationNode):
     def __init__(self,
-                 account: mlxc.identity.Account,
+                 account: jclib.identity.Account,
                  muc_jid: aioxmpp.JID,
                  nickname: str,
                  *,
@@ -144,7 +144,7 @@ class MUCConversationNode(ConversationNode):
         return room
 
 
-class ConversationManager(mlxc.instrumentable_list.ModelListView):
+class ConversationManager(jclib.instrumentable_list.ModelListView):
     """
     Manage the tree holding the conversations.
 
@@ -163,7 +163,7 @@ class ConversationManager(mlxc.instrumentable_list.ModelListView):
 
     .. attribute:: tree
 
-       The :class:`mlxc.instrumentable_list.ModelTree` holding the identities
+       The :class:`jclib.instrumentable_list.ModelTree` holding the identities
        and their conversations.
 
     """
@@ -171,9 +171,9 @@ class ConversationManager(mlxc.instrumentable_list.ModelListView):
     on_conversation_added = aioxmpp.callbacks.Signal()
 
     def __init__(self,
-                 accounts: mlxc.identity.Accounts,
-                 client: mlxc.client.Client, **kwargs):
-        super().__init__(mlxc.instrumentable_list.ModelList(), **kwargs)
+                 accounts: jclib.identity.Accounts,
+                 client: jclib.client.Client, **kwargs):
+        super().__init__(jclib.instrumentable_list.ModelList(), **kwargs)
 
         client.on_client_prepare.connect(
             self.handle_client_prepare,
@@ -212,7 +212,7 @@ class ConversationManager(mlxc.instrumentable_list.ModelListView):
 
     def _spontaneous_p2p_conversation(
             self,
-            account: mlxc.identity.Account,
+            account: jclib.identity.Account,
             conversation: aioxmpp.im.p2p.Conversation):
         wrapper = P2PConversationNode(account,
                                       conversation.jid,
@@ -221,14 +221,14 @@ class ConversationManager(mlxc.instrumentable_list.ModelListView):
         self.on_conversation_added(wrapper)
 
     def _require_conversation(self, conv):
-        mlxc.tasks.manager.update_text(
+        jclib.tasks.manager.update_text(
             "Starting {}".format(conv.label)
         )
         yield from conv.require_conversation()
 
     @asyncio.coroutine
     def _join_conversation(self, conv):
-        mlxc.tasks.manager.update_text(
+        jclib.tasks.manager.update_text(
             "Starting {}".format(conv.label),
         )
         yield from aioxmpp.callbacks.first_signal(
@@ -238,7 +238,7 @@ class ConversationManager(mlxc.instrumentable_list.ModelListView):
 
     def start_soon(self, conv):
         if conv.conversation is None:
-            mlxc.tasks.manager.start(self._require_conversation(conv))
+            jclib.tasks.manager.start(self._require_conversation(conv))
 
     def adopt_conversation(self, account, conversation):
         key = account, conversation.jid
@@ -248,7 +248,7 @@ class ConversationManager(mlxc.instrumentable_list.ModelListView):
             node = ConversationNode.for_conversation(account, conversation)
             self._backend.append(node)
             self.on_conversation_added(node)
-            mlxc.tasks.manager.start(self._join_conversation(conversation))
+            jclib.tasks.manager.start(self._join_conversation(conversation))
             self.__convaddrmap[key] = node
         return node
 

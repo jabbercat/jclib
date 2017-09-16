@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import aioxmpp.callbacks
 
-import mlxc.storage
+import jclib.storage
 
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ class WriteManager:
             self._wakeup.clear()
             logger.debug("writeback triggered")
             self.on_writeback()
-            mlxc.storage.xml.flush_all()
+            jclib.storage.xml.flush_all()
 
     def close(self):
         """

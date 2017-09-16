@@ -2,7 +2,7 @@ import abc
 import unittest
 import unittest.mock
 
-import mlxc.visitor as visitor
+import jclib.visitor as visitor
 
 
 class Testfor_class(unittest.TestCase):

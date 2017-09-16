@@ -11,8 +11,8 @@ import xdg.BaseDirectory
 
 from datetime import timedelta
 
-import mlxc.config
-import mlxc.storage
+import jclib.config
+import jclib.storage
 
 from . import identity, client, conversation, utils
 
@@ -49,7 +49,7 @@ class _UnixGlobalSingleton:
     def get_socket_path(cls):
         return os.path.join(
             xdg.BaseDirectory.get_runtime_dir(),
-            mlxc.config.UNIX_APPNAME
+            jclib.config.UNIX_APPNAME
         )
 
     @classmethod
@@ -129,7 +129,7 @@ class Main:
         self.loop = loop
         self.accounts = self.Accounts()
         self.client = self.Client(self.accounts)
-        self.writeman = mlxc.storage.WriteManager(timedelta(seconds=5))
+        self.writeman = jclib.storage.WriteManager(timedelta(seconds=5))
 
         self._terminated_at = None
 
@@ -210,7 +210,7 @@ class Main:
             try:
                 returncode = yield from self.run_core()
             finally:
-                mlxc.config.config_manager.writeback()
+                jclib.config.config_manager.writeback()
                 if singleton is not None:
                     yield from singleton.stop()
         except Exception as exc:

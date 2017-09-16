@@ -3,11 +3,11 @@ import itertools
 import unittest
 import unittest.mock
 
-import mlxc.client
-import mlxc.identity
-import mlxc.roster as roster
-import mlxc.storage
-import mlxc.xso
+import jclib.client
+import jclib.identity
+import jclib.roster as roster
+import jclib.storage
+import jclib.xso
 
 import aioxmpp
 
@@ -85,7 +85,7 @@ class TestContactRosterItem(unittest.TestCase):
         )
 
     def test_from_xso(self):
-        obj = mlxc.xso.RosterContact()
+        obj = jclib.xso.RosterContact()
         obj.address = TEST_JID2
         obj.label = "Juliet Capulet"
         obj.tags.update(["foo", "bar"])
@@ -144,7 +144,7 @@ class TestContactRosterItem(unittest.TestCase):
 
         obj = item.to_xso()
 
-        self.assertIsInstance(obj, mlxc.xso.RosterContact)
+        self.assertIsInstance(obj, jclib.xso.RosterContact)
         self.assertEqual(obj.address, TEST_JID1)
         self.assertIsNone(obj.label)
         self.assertSetEqual(obj.tags, {"foo", "bar"})
@@ -671,7 +671,7 @@ class TestContactRosterService(unittest.TestCase):
             spec=aioxmpp.RosterClient,
         )
         self.roster.set_entry = CoroutineMock()
-        self.writeman = unittest.mock.Mock(spec=mlxc.storage.WriteManager)
+        self.writeman = unittest.mock.Mock(spec=jclib.storage.WriteManager)
         self.rs = roster.ContactRosterService(self.account, self.writeman)
         self.listener = make_listener(self.rs)
 
@@ -907,7 +907,7 @@ class TestContactRosterService(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             get_all = stack.enter_context(unittest.mock.patch.object(
-                mlxc.storage.xml,
+                jclib.storage.xml,
                 "get_all",
             ))
             get_all.return_value = [
@@ -924,9 +924,9 @@ class TestContactRosterService(unittest.TestCase):
             self.rs.load()
 
         get_all.assert_called_once_with(
-            mlxc.storage.StorageType.CACHE,
-            mlxc.storage.AccountLevel(self.account.jid),
-            mlxc.xso.RosterContact,
+            jclib.storage.StorageType.CACHE,
+            jclib.storage.AccountLevel(self.account.jid),
+            jclib.xso.RosterContact,
         )
 
         self.assertCountEqual(
@@ -980,7 +980,7 @@ class TestContactRosterService(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             get_all = stack.enter_context(unittest.mock.patch.object(
-                mlxc.storage.xml,
+                jclib.storage.xml,
                 "get_all",
             ))
             get_all.return_value = [
@@ -1027,7 +1027,7 @@ class TestContactRosterService(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             get_all = stack.enter_context(unittest.mock.patch.object(
-                mlxc.storage.xml,
+                jclib.storage.xml,
                 "get_all",
             ))
             get_all.return_value = [
@@ -1065,7 +1065,7 @@ class TestContactRosterService(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             get_all = stack.enter_context(unittest.mock.patch.object(
-                mlxc.storage.xml,
+                jclib.storage.xml,
                 "get_all",
             ))
             get_all.return_value = [
@@ -1082,7 +1082,7 @@ class TestContactRosterService(unittest.TestCase):
             self.rs.load()
 
             contacts_to_json = stack.enter_context(unittest.mock.patch(
-                "mlxc.roster.contacts_to_json"
+                "jclib.roster.contacts_to_json"
             ))
 
             client = self._prep_client()
@@ -1112,7 +1112,7 @@ class TestContactRosterService(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             get_all = stack.enter_context(unittest.mock.patch.object(
-                mlxc.storage.xml,
+                jclib.storage.xml,
                 "get_all",
             ))
             get_all.return_value = [
@@ -1173,15 +1173,15 @@ class TestContactRosterService(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             put = stack.enter_context(unittest.mock.patch.object(
-                mlxc.storage.xml,
+                jclib.storage.xml,
                 "put",
             ))
 
             self.rs.save()
 
         put.assert_called_once_with(
-            mlxc.storage.StorageType.CACHE,
-            mlxc.storage.AccountLevel(self.account.jid),
+            jclib.storage.StorageType.CACHE,
+            jclib.storage.AccountLevel(self.account.jid),
             [
                 unittest.mock.sentinel.xso0,
                 unittest.mock.sentinel.xso1,
@@ -1221,7 +1221,7 @@ class TestContactRosterService(unittest.TestCase):
 
         with contextlib.ExitStack() as stack:
             put = stack.enter_context(unittest.mock.patch.object(
-                mlxc.storage.xml,
+                jclib.storage.xml,
                 "put",
             ))
 
@@ -1258,7 +1258,7 @@ class TestContactRosterService(unittest.TestCase):
             wrap.side_effect = generate_items()
 
             put = stack.enter_context(unittest.mock.patch.object(
-                mlxc.storage.xml,
+                jclib.storage.xml,
                 "put",
             ))
 
@@ -1273,8 +1273,8 @@ class TestContactRosterService(unittest.TestCase):
             self.rs.save()
 
             put.assert_called_once_with(
-                mlxc.storage.StorageType.CACHE,
-                mlxc.storage.AccountLevel(self.account.jid),
+                jclib.storage.StorageType.CACHE,
+                jclib.storage.AccountLevel(self.account.jid),
                 [
                     unittest.mock.sentinel.xso1,
                     unittest.mock.sentinel.xso2,
@@ -1322,7 +1322,7 @@ class TestConferenceBookmarkService(unittest.TestCase):
         self.bookmarks = unittest.mock.Mock(
             spec=aioxmpp.BookmarkClient,
         )
-        self.writeman = unittest.mock.Mock(spec=mlxc.storage.WriteManager)
+        self.writeman = unittest.mock.Mock(spec=jclib.storage.WriteManager)
         self.rs = roster.ConferenceBookmarkService(self.account, self.writeman)
         self.listener = make_listener(self.rs)
 
@@ -1492,9 +1492,9 @@ class TestConferenceBookmarkService(unittest.TestCase):
 
 class TestRosterManager(unittest.TestCase):
     def setUp(self):
-        self.accounts = unittest.mock.Mock(spec=mlxc.identity.Accounts)
-        self.client = unittest.mock.Mock(spec=mlxc.client.Client)
-        self.writeman = unittest.mock.Mock(spec=mlxc.storage.WriteManager)
+        self.accounts = unittest.mock.Mock(spec=jclib.identity.Accounts)
+        self.client = unittest.mock.Mock(spec=jclib.client.Client)
+        self.writeman = unittest.mock.Mock(spec=jclib.storage.WriteManager)
         self.gr = roster.RosterManager(self.accounts, self.client,
                                        self.writeman)
 
@@ -1509,11 +1509,11 @@ class TestRosterManager(unittest.TestCase):
 
     def test__prepare_client_creates_contact_service_and_links_it(self):
         client = unittest.mock.Mock(spec=aioxmpp.Client)
-        account = unittest.mock.Mock(spec=mlxc.identity.Account)
+        account = unittest.mock.Mock(spec=jclib.identity.Account)
 
         with contextlib.ExitStack() as stack:
             ContactRosterService = stack.enter_context(
-                unittest.mock.patch("mlxc.roster.ContactRosterService")
+                unittest.mock.patch("jclib.roster.ContactRosterService")
             )
 
             _items = stack.enter_context(
@@ -1544,11 +1544,11 @@ class TestRosterManager(unittest.TestCase):
 
     def test__prepare_client_creates_bookmark_service_and_links_it(self):
         client = unittest.mock.Mock(spec=aioxmpp.Client)
-        account = unittest.mock.Mock(spec=mlxc.identity.Account)
+        account = unittest.mock.Mock(spec=jclib.identity.Account)
 
         with contextlib.ExitStack() as stack:
             ConferenceBookmarkService = stack.enter_context(
-                unittest.mock.patch("mlxc.roster.ConferenceBookmarkService")
+                unittest.mock.patch("jclib.roster.ConferenceBookmarkService")
             )
 
             _items = stack.enter_context(
@@ -1579,15 +1579,15 @@ class TestRosterManager(unittest.TestCase):
 
     def test__shutdown_client_cleans_up_previously_created_services(self):
         client = unittest.mock.Mock(spec=aioxmpp.Client)
-        account = unittest.mock.Mock(spec=mlxc.identity.Account)
+        account = unittest.mock.Mock(spec=jclib.identity.Account)
 
         with contextlib.ExitStack() as stack:
             ContactRosterService = stack.enter_context(
-                unittest.mock.patch("mlxc.roster.ContactRosterService")
+                unittest.mock.patch("jclib.roster.ContactRosterService")
             )
 
             ConferenceBookmarkService = stack.enter_context(
-                unittest.mock.patch("mlxc.roster.ConferenceBookmarkService")
+                unittest.mock.patch("jclib.roster.ConferenceBookmarkService")
             )
 
             _items = stack.enter_context(
@@ -1639,7 +1639,7 @@ class TestRosterManager(unittest.TestCase):
         self.assertCountEqual(self.gr.tags, [])
         self.assertIsInstance(
             self.gr.tags,
-            mlxc.instrumentable_list.ModelListView
+            jclib.instrumentable_list.ModelListView
         )
 
     def test__on_tag_added_makes_tag_appear_in_tags(self):

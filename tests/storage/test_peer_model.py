@@ -6,13 +6,13 @@ import aioxmpp
 
 import sqlalchemy.sql
 
-import mlxc.storage.common
-import mlxc.storage.frontends
-import mlxc.storage.peer_model as peer_model
+import jclib.storage.common
+import jclib.storage.frontends
+import jclib.storage.peer_model as peer_model
 
-from mlxc.storage.common import session_scope
+from jclib.storage.common import session_scope
 
-from mlxc.testutils import (
+from jclib.testutils import (
     inmemory_database
 )
 
@@ -34,7 +34,7 @@ class TestSmallBlob(unittest.TestCase):
         self.assertEqual(blob.peer, descriptor.peer)
 
     def test_filter_selects_by_primary_key(self):
-        descriptor = mlxc.storage.frontends.PeerLevel(
+        descriptor = jclib.storage.frontends.PeerLevel(
             self.account,
             self.peer,
         )
@@ -58,7 +58,7 @@ class TestSmallBlob(unittest.TestCase):
 
             q = peer_model.SmallBlob.filter_by(
                 q_base,
-                mlxc.storage.frontends.PeerLevel(
+                jclib.storage.frontends.PeerLevel(
                     self.account,
                     aioxmpp.JID.fromstr("juliet@capulet.lit"),
                 ),
@@ -69,7 +69,7 @@ class TestSmallBlob(unittest.TestCase):
 
             q = peer_model.SmallBlob.filter_by(
                 q_base,
-                mlxc.storage.frontends.PeerLevel(
+                jclib.storage.frontends.PeerLevel(
                     other_jid,
                     self.peer,
                 ),
@@ -79,7 +79,7 @@ class TestSmallBlob(unittest.TestCase):
                 q.one()
 
     def test_get_finds_by_primary_key(self):
-        descriptor = mlxc.storage.frontends.PeerLevel(
+        descriptor = jclib.storage.frontends.PeerLevel(
             self.account,
             self.peer,
         )
@@ -95,7 +95,7 @@ class TestSmallBlob(unittest.TestCase):
             self.assertEqual(otherblob.data, b"foo")
 
     def test_get_allows_specification_of_query(self):
-        descriptor = mlxc.storage.frontends.PeerLevel(
+        descriptor = jclib.storage.frontends.PeerLevel(
             self.account,
             self.peer,
         )
@@ -112,9 +112,9 @@ class TestSmallBlob(unittest.TestCase):
                 descriptor,
                 "name",
                 [
-                    mlxc.storage.common.SmallBlobMixin.accessed,
+                    jclib.storage.common.SmallBlobMixin.accessed,
                     sqlalchemy.sql.func.length(
-                        mlxc.storage.common.SmallBlobMixin.data
+                        jclib.storage.common.SmallBlobMixin.data
                     ),
                 ]
             )
@@ -128,7 +128,7 @@ class TestSmallBlob(unittest.TestCase):
             )
 
     def test_get_raises_KeyError_if_not_found(self):
-        descriptor = mlxc.storage.frontends.PeerLevel(
+        descriptor = jclib.storage.frontends.PeerLevel(
             self.account,
             self.peer,
         )
@@ -143,7 +143,7 @@ class TestSmallBlob(unittest.TestCase):
             with self.assertRaises(KeyError):
                 peer_model.SmallBlob.get(
                     session,
-                    mlxc.storage.frontends.PeerLevel(
+                    jclib.storage.frontends.PeerLevel(
                         self.account,
                         aioxmpp.JID.fromstr("juliet@capulet.lit")
                     ),

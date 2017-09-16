@@ -7,7 +7,7 @@ import traceback
 import aioxmpp.callbacks
 import aioxmpp.errors
 
-import mlxc.config as config
+import jclib.config as config
 
 try:
     import xdg.BaseDirectory
@@ -100,7 +100,7 @@ class TestConfigManager(unittest.TestCase):
         self.cm = config.ConfigManager(self.base.pathprovider)
 
     def test_get_config_paths(self):
-        with unittest.mock.patch("mlxc.config.escape_dirname") as escape_dirname:
+        with unittest.mock.patch("jclib.config.escape_dirname") as escape_dirname:
             result = self.cm.get_config_paths(
                 self.uid,
                 "foo.xml"
@@ -196,7 +196,7 @@ class TestConfigManager(unittest.TestCase):
                 unittest.mock.patch.object(self.cm, "get_config_paths")
             )
             is_write_mode = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.is_write_mode")
+                unittest.mock.patch("jclib.utils.is_write_mode")
             )
             is_write_mode.return_value = False
 
@@ -243,11 +243,11 @@ class TestConfigManager(unittest.TestCase):
             )
             mkdir_exist_ok = stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.utils.mkdir_exist_ok",
+                    "jclib.utils.mkdir_exist_ok",
                     new=base.mkdir_exist_ok)
             )
             is_write_mode = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.is_write_mode")
+                unittest.mock.patch("jclib.utils.is_write_mode")
             )
             is_write_mode.return_value = True
 
@@ -291,11 +291,11 @@ class TestConfigManager(unittest.TestCase):
             )
             mkdir_exist_ok = stack.enter_context(
                 unittest.mock.patch(
-                    "mlxc.utils.mkdir_exist_ok",
+                    "jclib.utils.mkdir_exist_ok",
                     new=base.mkdir_exist_ok)
             )
             is_write_mode = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.is_write_mode")
+                unittest.mock.patch("jclib.utils.is_write_mode")
             )
             is_write_mode.return_value = True
 
@@ -415,7 +415,7 @@ class TestConfigManager(unittest.TestCase):
                 unittest.mock.patch.object(self.cm, "get_config_paths")
             )
             is_write_mode = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.is_write_mode")
+                unittest.mock.patch("jclib.utils.is_write_mode")
             )
             is_write_mode.return_value = False
 
@@ -462,7 +462,7 @@ class TestConfigManager(unittest.TestCase):
                 unittest.mock.patch.object(self.cm, "get_config_paths")
             )
             is_write_mode = stack.enter_context(
-                unittest.mock.patch("mlxc.utils.is_write_mode")
+                unittest.mock.patch("jclib.utils.is_write_mode")
             )
             is_write_mode.return_value = True
 
@@ -650,7 +650,7 @@ class Testglobals(unittest.TestCase):
     def test_UNIX_APPNAME(self):
         self.assertEqual(
             config.UNIX_APPNAME,
-            "mlxc.zombofant.net"
+            "jabbercat.org"
         )
 
 
@@ -658,10 +658,10 @@ class Testmake_config_manager(unittest.TestCase):
     def test_uses_XDGProvider_if_available(self):
         with contextlib.ExitStack() as stack:
             XDGProvider = stack.enter_context(
-                unittest.mock.patch("mlxc.config.XDGProvider")
+                unittest.mock.patch("jclib.config.XDGProvider")
             )
             ConfigManager = stack.enter_context(
-                unittest.mock.patch("mlxc.config.ConfigManager")
+                unittest.mock.patch("jclib.config.ConfigManager")
             )
 
             result = config.make_config_manager()
@@ -677,7 +677,7 @@ class Testmake_config_manager(unittest.TestCase):
     def test_raises_RuntimeError_if_all_providers_fail(self):
         with contextlib.ExitStack() as stack:
             XDGProvider = stack.enter_context(
-                unittest.mock.patch("mlxc.config.XDGProvider")
+                unittest.mock.patch("jclib.config.XDGProvider")
             )
             XDGProvider.side_effect = ImportError()
 

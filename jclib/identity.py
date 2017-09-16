@@ -5,10 +5,10 @@ import aioxmpp.xml
 
 from aioxmpp import JID
 
-import mlxc.config
-import mlxc.instrumentable_list
-import mlxc.utils
-import mlxc.xso
+import jclib.config
+import jclib.instrumentable_list
+import jclib.utils
+import jclib.xso
 
 
 class Account:
@@ -26,7 +26,7 @@ class Account:
         return self._jid
 
     def to_xso(self):
-        result = mlxc.xso.AccountSettings(self._jid)
+        result = jclib.xso.AccountSettings(self._jid)
         result.disabled = not self.enabled
         result.allow_unencrypted = self.allow_unencrypted
         result.colour = " ".join(map(str, self.colour))
@@ -43,9 +43,9 @@ class Account:
         return result
 
 
-class Accounts(mlxc.config.SimpleConfigurable,
-               mlxc.instrumentable_list.ModelListView):
-    UID = mlxc.utils.mlxc_uid
+class Accounts(jclib.config.SimpleConfigurable,
+               jclib.instrumentable_list.ModelListView):
+    UID = jclib.utils.jclib_uid
     FILENAME = "accounts.xml"
 
     on_account_enabled = aioxmpp.callbacks.Signal()
@@ -55,7 +55,7 @@ class Accounts(mlxc.config.SimpleConfigurable,
     on_account_removed = aioxmpp.callbacks.Signal()
 
     def __init__(self):
-        super().__init__(mlxc.instrumentable_list.ModelList())
+        super().__init__(jclib.instrumentable_list.ModelList())
         self._jidmap = {}
 
     def _require_unique_jid(self, jid: JID) -> JID:
@@ -96,7 +96,7 @@ class Accounts(mlxc.config.SimpleConfigurable,
         self._backend.refresh_data(slice(index, index + 1), None)
 
     def _do_save_xso(self):
-        xso = mlxc.xso.AccountsSettings()
+        xso = jclib.xso.AccountsSettings()
         xso.accounts[:] = [
             account.to_xso() for account in self._backend
         ]
@@ -119,6 +119,6 @@ class Accounts(mlxc.config.SimpleConfigurable,
         assert not self._backend
         xso = aioxmpp.xml.read_single_xso(
             f,
-            mlxc.xso.AccountsSettings
+            jclib.xso.AccountsSettings
         )
         self._do_load_xso(xso)

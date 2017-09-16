@@ -23,22 +23,22 @@ from datetime import datetime
 
 import aioxmpp.callbacks
 
-import mlxc.client
-import mlxc.conversation
-import mlxc.identity
-import mlxc.instrumentable_list
-import mlxc.storage
-import mlxc.xso
+import jclib.client
+import jclib.conversation
+import jclib.identity
+import jclib.instrumentable_list
+import jclib.storage
+import jclib.xso
 
 
 class AbstractRosterItem(metaclass=abc.ABCMeta):
     def __init__(self,
-                 account: mlxc.identity.Account,
+                 account: jclib.identity.Account,
                  owner: "AbstractRosterService",
                  address: aioxmpp.JID,
                  *,
                  conversation_node:
-                     typing.Optional[mlxc.conversation.ConversationNode]=None):
+                     typing.Optional[jclib.conversation.ConversationNode]=None):
         super().__init__()
         self._account = account
         self._owner = owner
@@ -50,7 +50,7 @@ class AbstractRosterItem(metaclass=abc.ABCMeta):
         return self._address
 
     @property
-    def account(self) -> mlxc.identity.Account:
+    def account(self) -> jclib.identity.Account:
         return self._account
 
     # these do not belong in the roster, these belong into conversation nodes
@@ -171,7 +171,7 @@ class AbstractRosterItem(metaclass=abc.ABCMeta):
 
 class ContactRosterItem(AbstractRosterItem):
     def __init__(self,
-                 account: mlxc.identity.Account,
+                 account: jclib.identity.Account,
                  owner: "AbstractRosterService",
                  address: aioxmpp.JID,
                  label: typing.Optional[str]=None,
@@ -238,7 +238,7 @@ class ContactRosterItem(AbstractRosterItem):
         )
 
     def to_xso(self):
-        obj = mlxc.xso.RosterContact()
+        obj = jclib.xso.RosterContact()
         obj.address = self._address
         obj.label = self._label
         obj.subscription = self._subscription
@@ -299,7 +299,7 @@ def contacts_to_json(contacts, ver=None):
 
 class MUCRosterItem(AbstractRosterItem):
     def __init__(self,
-                 account: mlxc.identity.Account,
+                 account: jclib.identity.Account,
                  owner: "AbstractRosterService",
                  address: aioxmpp.JID,
                  label: typing.Optional[str]=None,
@@ -345,7 +345,7 @@ class MUCRosterItem(AbstractRosterItem):
 
     @classmethod
     def wrap(cls,
-             account: mlxc.identity.Account,
+             account: jclib.identity.Account,
              owner: "AbstractRosterService",
              obj: aioxmpp.bookmarks.xso.Conference):
         return cls(
@@ -383,7 +383,7 @@ class MUCRosterItem(AbstractRosterItem):
 
 
 class AbstractRosterService(
-        mlxc.instrumentable_list.ModelListView[AbstractRosterItem]):
+        jclib.instrumentable_list.ModelListView[AbstractRosterItem]):
     """
     Abstract service providing roster items.
 
@@ -413,9 +413,9 @@ class AbstractRosterService(
     on_tag_removed = aioxmpp.callbacks.Signal()
 
     def __init__(self,
-                 account: mlxc.identity.Account,
-                 writeman: mlxc.storage.WriteManager):
-        super().__init__(mlxc.instrumentable_list.ModelList())
+                 account: jclib.identity.Account,
+                 writeman: jclib.storage.WriteManager):
+        super().__init__(jclib.instrumentable_list.ModelList())
         self._writeman = writeman
         self._writeman.on_writeback.connect(
             self.save,
@@ -498,8 +498,8 @@ class AbstractRosterService(
 
 class ContactRosterService(AbstractRosterService):
     def __init__(self,
-                 account: mlxc.identity.Account,
-                 writeman: mlxc.storage.WriteManager):
+                 account: jclib.identity.Account,
+                 writeman: jclib.storage.WriteManager):
         super().__init__(account, writeman)
         self.__tokens = []
         self.__addrmap = {}
@@ -570,10 +570,10 @@ class ContactRosterService(AbstractRosterService):
                 "load cannot be called when there are already contacts loaded"
             )
 
-        contacts = mlxc.storage.xml.get_all(
-            mlxc.storage.StorageType.CACHE,
-            mlxc.storage.AccountLevel(self.account.jid),
-            mlxc.xso.RosterContact,
+        contacts = jclib.storage.xml.get_all(
+            jclib.storage.StorageType.CACHE,
+            jclib.storage.AccountLevel(self.account.jid),
+            jclib.xso.RosterContact,
         )
         self.logger.debug("obtained %d items from XML cache",
                           len(contacts))
@@ -595,9 +595,9 @@ class ContactRosterService(AbstractRosterService):
             contact.to_xso()
             for contact in self
         ]
-        mlxc.storage.xml.put(
-            mlxc.storage.StorageType.CACHE,
-            mlxc.storage.AccountLevel(self.account.jid),
+        jclib.storage.xml.put(
+            jclib.storage.StorageType.CACHE,
+            jclib.storage.AccountLevel(self.account.jid),
             items,
         )
 
@@ -633,8 +633,8 @@ class ContactRosterService(AbstractRosterService):
 
 class ConferenceBookmarkService(AbstractRosterService):
     def __init__(self,
-                 account: mlxc.identity.Account,
-                 writeman: mlxc.storage.WriteManager):
+                 account: jclib.identity.Account,
+                 writeman: jclib.storage.WriteManager):
         super().__init__(account, writeman)
         self.__tokens = []
         self.__addrmap = {}
@@ -706,12 +706,12 @@ class ConferenceBookmarkService(AbstractRosterService):
         self._writeman.request_writeback()
 
 
-class RosterManager(mlxc.instrumentable_list.ModelListView[AbstractRosterItem]):
+class RosterManager(jclib.instrumentable_list.ModelListView[AbstractRosterItem]):
     def __init__(self,
-                 accounts: mlxc.identity.Accounts,
-                 client: mlxc.client.Client,
-                 writeman: mlxc.storage.WriteManager):
-        super().__init__(mlxc.instrumentable_list.JoinedModelListView())
+                 accounts: jclib.identity.Accounts,
+                 client: jclib.client.Client,
+                 writeman: jclib.storage.WriteManager):
+        super().__init__(jclib.instrumentable_list.JoinedModelListView())
         self._accounts = accounts
         self._client = client
         self._writeman = writeman
@@ -722,13 +722,13 @@ class RosterManager(mlxc.instrumentable_list.ModelListView[AbstractRosterItem]):
 
         self._client_svc_map = {}
 
-        self._tags = mlxc.instrumentable_list.ModelList()
+        self._tags = jclib.instrumentable_list.ModelList()
         self._tags_counter = collections.Counter()
-        self._tags_view = mlxc.instrumentable_list.ModelListView(self._tags)
+        self._tags_view = jclib.instrumentable_list.ModelListView(self._tags)
 
     def _prepare_client(self,
-                        account: mlxc.identity.Account,
-                        client: mlxc.client.Client):
+                        account: jclib.identity.Account,
+                        client: jclib.client.Client):
         svcs = []
         self._client_svc_map[client] = svcs
         for class_ in [ContactRosterService, ConferenceBookmarkService]:
@@ -741,8 +741,8 @@ class RosterManager(mlxc.instrumentable_list.ModelListView[AbstractRosterItem]):
             svcs.append(instance)
 
     def _shutdown_client(self,
-                         account: mlxc.identity.Account,
-                         client: mlxc.client.Client):
+                         account: jclib.identity.Account,
+                         client: jclib.client.Client):
         svcs = self._client_svc_map.pop(client)
         for svc in svcs:
             svc.shutdown_client(client)
@@ -753,7 +753,7 @@ class RosterManager(mlxc.instrumentable_list.ModelListView[AbstractRosterItem]):
         return self._backend.source_offset(item.owner) + item.owner.index(item)
 
     @property
-    def tags(self) -> mlxc.instrumentable_list.AbstractModelListView[str]:
+    def tags(self) -> jclib.instrumentable_list.AbstractModelListView[str]:
         """
         A model list view containing all tags in the roster.
 
@@ -775,7 +775,7 @@ class RosterManager(mlxc.instrumentable_list.ModelListView[AbstractRosterItem]):
             self._tags_counter[tag] = ctr
 
 
-mlxc.storage.xml.register(
-    mlxc.storage.StorageLevel.ACCOUNT,
-    mlxc.xso.RosterContact,
+jclib.storage.xml.register(
+    jclib.storage.StorageLevel.ACCOUNT,
+    jclib.xso.RosterContact,
 )

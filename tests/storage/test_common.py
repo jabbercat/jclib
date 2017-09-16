@@ -2,7 +2,7 @@ import contextlib
 import unittest
 import unittest.mock
 
-import mlxc.storage.common as common
+import jclib.storage.common as common
 
 
 class Testsession_scope(unittest.TestCase):

@@ -10,7 +10,7 @@ from .frontends import (
 )
 from .common import StorageLevel, StorageType
 
-UNIX_APPNAME = "mlxc.zombofant.net"
+UNIX_APPNAME = "jabbercat.org"
 
 _backend = XDGBackend(UNIX_APPNAME)
 

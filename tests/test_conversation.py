@@ -5,10 +5,10 @@ import unittest.mock
 
 import aioxmpp.im.p2p
 
-import mlxc.client
-import mlxc.identity
+import jclib.client
+import jclib.identity
 
-import mlxc.conversation as conversation
+import jclib.conversation as conversation
 
 from aioxmpp.testutils import (
     CoroutineMock,
@@ -25,7 +25,7 @@ class TestConversationNode(unittest.TestCase):
         conv = unittest.mock.Mock(spec=aioxmpp.im.p2p.Conversation)
         with contextlib.ExitStack() as stack:
             P2PConversationNode = stack.enter_context(unittest.mock.patch(
-                "mlxc.conversation.P2PConversationNode"
+                "jclib.conversation.P2PConversationNode"
             ))
 
             result = conversation.ConversationNode.for_conversation(
@@ -45,7 +45,7 @@ class TestConversationNode(unittest.TestCase):
         conv = unittest.mock.Mock(spec=aioxmpp.muc.Room)
         with contextlib.ExitStack() as stack:
             MUCConversationNode = stack.enter_context(unittest.mock.patch(
-                "mlxc.conversation.MUCConversationNode"
+                "jclib.conversation.MUCConversationNode"
             ))
 
             result = conversation.ConversationNode.for_conversation(
@@ -74,11 +74,11 @@ class TestConversationNode(unittest.TestCase):
 
 class TestConversationManager(unittest.TestCase):
     def setUp(self):
-        self.accounts = unittest.mock.Mock(spec=mlxc.identity.Accounts)
-        self.client = unittest.mock.Mock(spec=mlxc.client.Client)
+        self.accounts = unittest.mock.Mock(spec=jclib.identity.Accounts)
+        self.client = unittest.mock.Mock(spec=jclib.client.Client)
         self.task_manager_patch = unittest.mock.patch(
-            "mlxc.tasks.manager",
-            spec=mlxc.tasks.TaskManager,
+            "jclib.tasks.manager",
+            spec=jclib.tasks.TaskManager,
         )
         self.task_manager = self.task_manager_patch.start()
         self.cm = conversation.ConversationManager(

@@ -3,7 +3,7 @@ import unittest
 import aioxmpp.service as service
 import aioxmpp.testutils as testutils
 
-import mlxc.plugin as plugin
+import jclib.plugin as plugin
 
 
 class TestBase(unittest.TestCase):

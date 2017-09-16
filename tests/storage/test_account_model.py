@@ -5,12 +5,12 @@ import sqlalchemy.sql
 
 import aioxmpp
 
-import mlxc.storage.frontends
-import mlxc.storage.account_model as account_model
+import jclib.storage.frontends
+import jclib.storage.account_model as account_model
 
-from mlxc.storage.common import session_scope
+from jclib.storage.common import session_scope
 
-from mlxc.testutils import (
+from jclib.testutils import (
     inmemory_database
 )
 
@@ -27,7 +27,7 @@ class TestSmallBlob(unittest.TestCase):
         self.assertEqual(blob.account, descriptor.account)
 
     def test_filter_selects_by_primary_key(self):
-        descriptor = mlxc.storage.frontends.AccountLevel(
+        descriptor = jclib.storage.frontends.AccountLevel(
             self.account,
         )
 
@@ -50,7 +50,7 @@ class TestSmallBlob(unittest.TestCase):
 
             q = account_model.SmallBlob.filter_by(
                 q_base,
-                mlxc.storage.frontends.AccountLevel(
+                jclib.storage.frontends.AccountLevel(
                     aioxmpp.JID.fromstr("juliet@capulet.lit"),
                 ),
                 "other name"
@@ -59,7 +59,7 @@ class TestSmallBlob(unittest.TestCase):
                 q.one()
 
     def test_get_finds_by_primary_key(self):
-        descriptor = mlxc.storage.frontends.AccountLevel(
+        descriptor = jclib.storage.frontends.AccountLevel(
             self.account,
         )
 
@@ -75,7 +75,7 @@ class TestSmallBlob(unittest.TestCase):
             self.assertEqual(otherblob.data, b"foo")
 
     def test_get_allows_specification_of_query(self):
-        descriptor = mlxc.storage.frontends.AccountLevel(
+        descriptor = jclib.storage.frontends.AccountLevel(
             self.account,
         )
 
@@ -91,9 +91,9 @@ class TestSmallBlob(unittest.TestCase):
                 descriptor,
                 "name",
                 [
-                    mlxc.storage.common.SmallBlobMixin.accessed,
+                    jclib.storage.common.SmallBlobMixin.accessed,
                     sqlalchemy.sql.func.length(
-                        mlxc.storage.common.SmallBlobMixin.data
+                        jclib.storage.common.SmallBlobMixin.data
                     ),
                 ]
             )
@@ -107,7 +107,7 @@ class TestSmallBlob(unittest.TestCase):
             )
 
     def test_get_raises_KeyError_if_not_found(self):
-        descriptor = mlxc.storage.frontends.AccountLevel(
+        descriptor = jclib.storage.frontends.AccountLevel(
             self.account,
         )
 
@@ -121,7 +121,7 @@ class TestSmallBlob(unittest.TestCase):
             with self.assertRaises(KeyError):
                 account_model.SmallBlob.get(
                     session,
-                    mlxc.storage.frontends.AccountLevel(
+                    jclib.storage.frontends.AccountLevel(
                         aioxmpp.JID.fromstr("juliet@capulet.lit")
                     ),
                     "name"

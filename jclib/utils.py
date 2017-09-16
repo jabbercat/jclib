@@ -22,17 +22,17 @@ import aioxmpp.xso
 from aioxmpp.utils import namespaces
 
 
-mlxc_namespaces = types.SimpleNamespace()
-mlxc_namespaces.core = "dns:mlxc.zombofant.net"
-mlxc_namespaces.roster = "https://xmlns.zombofant.net/mlxc/core/roster/1.0"
-mlxc_namespaces.account = "https://xmlns.zombofant.net/mlxc/core/account/1.0"
-mlxc_namespaces.presence = "https://xmlns.zombofant.net/mlxc/core/presence/1.0"
-mlxc_namespaces.identity = "https://xmlns.zombofant.net/mlxc/core/identity/1.0"
+jabbercat_ns = types.SimpleNamespace()
+jabbercat_ns.core = "dns:jabbercat.org"
+jabbercat_ns.roster = "https://xmlns.jabbercat.org/core/roster/1.0"
+jabbercat_ns.account = "https://xmlns.jabbercat.org/core/account/1.0"
+jabbercat_ns.presence = "https://xmlns.jabbercat.org/core/presence/1.0"
+jabbercat_ns.identity = "https://xmlns.jabbercat.org/core/identity/1.0"
 
-mlxc_uid = "dns:mlxc.zombofant.net"
-mlxc_avatars_uid = "avatars"
+jclib_uid = "dns:jabbercat.org"
+jclib_avatars_uid = "avatars"
 
-KEYRING_SERVICE_NAME = "net.zombofant.mlxc"
+KEYRING_SERVICE_NAME = "net.zombofant.jclib"
 KEYRING_JID_FORMAT = "xmpp:{bare!s}"
 
 logger = logging.getLogger(__name__)
@@ -103,10 +103,10 @@ def xdgdataopen(resource, name, mode="rb", **kwargs):
     arguments).
 
     To open the first matching data file ``foo.xml`` for reading with a
-    resource of ``zombofant.net/mlxc``, one would call::
+    resource of ``zombofant.net/jclib``, one would call::
 
-        import mlxc.utils
-        f = mlxc.utils.xdgdataopen(("zombofant.net", "mlxc"), "foo.xml")
+        import jclib.utils
+        f = jclib.utils.xdgdataopen(("zombofant.net", "jclib"), "foo.xml")
 
     For writing, we would pass a different `mode`.
     """

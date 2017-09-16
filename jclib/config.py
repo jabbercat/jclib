@@ -8,10 +8,10 @@ import urllib.parse
 
 import aioxmpp.callbacks
 
-import mlxc.utils as utils
+import jclib.utils as utils
 
 
-UNIX_APPNAME = "mlxc.zombofant.net"
+UNIX_APPNAME = "jabbercat.org"
 
 
 logger = logging.getLogger(__name__)

@@ -3,9 +3,9 @@ import unittest
 
 import aioxmpp
 
-import mlxc.client as client
-import mlxc.identity
-import mlxc.instrumentable_list
+import jclib.client as client
+import jclib.identity
+import jclib.instrumentable_list
 
 from aioxmpp.testutils import (
     make_connected_client,
@@ -58,7 +58,7 @@ class TestRosterGroups(unittest.TestCase):
         )
         self.assertIsInstance(
             self.s.groups,
-            mlxc.instrumentable_list.ModelList
+            jclib.instrumentable_list.ModelList
         )
 
     def test_handle_group_added_adds_group(self):
@@ -86,7 +86,7 @@ class TestRosterGroups(unittest.TestCase):
 
 class TestClient(unittest.TestCase):
     def setUp(self):
-        self.accounts = mlxc.identity.Accounts()
+        self.accounts = jclib.identity.Accounts()
         self.acc = self.accounts.new_account(TEST_JID, None)
         self.accounts.set_account_enabled(self.acc, False)
         self.keyring = unittest.mock.Mock(["priority"])
