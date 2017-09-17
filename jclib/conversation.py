@@ -182,6 +182,8 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
             self.handle_client_stopped,
         )
 
+        self.client = client
+
         self.__clientmap = {}
         self.__convaddrmap = {}
 
@@ -252,20 +254,14 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
             self.__convaddrmap[key] = node
         return node
 
-    def open_onetoone_conversation(self, account, peer_jid, *,
-                                   autostart=True):
-        wrapper = P2PConversationNode(account, peer_jid)
-        self._backend.append(wrapper)
-        self.on_conversation_added(wrapper)
+    def open_muc_conversation(self,
+                              account: jclib.identity.Account,
+                              address: aioxmpp.JID,
+                              nick: str,
+                              password: typing.Optional[str]=None):
+        muc_client = self.client.client_by_account(account).summon(
+            aioxmpp.MUCClient
+        )
 
-        if autostart:
-            self.start_soon(wrapper)
-
-    def open_muc_conversation(self, account, muc_jid, nickname, *,
-                              autostart=True):
-        wrapper = MUCConversationNode(account, muc_jid, nickname)
-        self._backend.append(wrapper)
-        self.on_conversation_added(wrapper)
-
-        if autostart:
-            self.start_soon(wrapper)
+        room, _ = muc_client.join(address, nick, password=password)
+        self.adopt_conversation(account, room)

@@ -14,6 +14,7 @@ from aioxmpp.testutils import (
     CoroutineMock,
     run_coroutine,
     make_listener,
+    make_connected_client,
 )
 
 
@@ -261,4 +262,38 @@ class TestConversationManager(unittest.TestCase):
         first_signal.assert_called_once_with(
             conv.on_enter,
             conv.on_failure,
+        )
+
+    def test_open_muc_conversation_adopts_new_muc(self):
+        account = unittest.mock.Mock(["jid"])
+        muc_client = unittest.mock.Mock(spec=aioxmpp.MUCClient)
+        client = make_connected_client()
+        client.mock_services[aioxmpp.MUCClient] = muc_client
+        muc_client.join.return_value = (
+            unittest.mock.sentinel.room,
+            unittest.mock.sentinel.fut,
+        )
+        self.client.client_by_account.return_value = client
+
+        with contextlib.ExitStack() as stack:
+            adopt_conversation = stack.enter_context(
+                unittest.mock.patch.object(self.cm, "adopt_conversation")
+            )
+
+            result = self.cm.open_muc_conversation(
+                account,
+                unittest.mock.sentinel.address,
+                unittest.mock.sentinel.nick,
+                unittest.mock.sentinel.password,
+            )
+
+        muc_client.join.assert_called_once_with(
+            unittest.mock.sentinel.address,
+            unittest.mock.sentinel.nick,
+            password=unittest.mock.sentinel.password,
+        )
+
+        adopt_conversation.assert_called_once_with(
+            account,
+            unittest.mock.sentinel.room,
         )
