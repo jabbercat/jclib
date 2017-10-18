@@ -221,6 +221,7 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
                                       conversation=conversation)
         self._backend.append(wrapper)
         self.on_conversation_added(wrapper)
+        self.__convaddrmap[account, conversation.jid] = wrapper
 
     def _require_conversation(self, conv):
         jclib.tasks.manager.update_text(
