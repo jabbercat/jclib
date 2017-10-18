@@ -1,6 +1,7 @@
 import abc
 import asyncio
 import functools
+import logging
 import typing
 
 import aioxmpp.callbacks
@@ -12,6 +13,9 @@ import jclib.client
 import jclib.identity
 import jclib.instrumentable_list
 import jclib.tasks
+
+
+logger = logging.getLogger(__name__)
 
 
 def _connect_and_store_token(tokens, signal, handler):
@@ -216,6 +220,8 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
             self,
             account: jclib.identity.Account,
             conversation: aioxmpp.im.p2p.Conversation):
+        logger.debug("spontaneous p2p conversation %r (jid=%s) on account %s",
+                     conversation, conversation.jid, account)
         wrapper = P2PConversationNode(account,
                                       conversation.jid,
                                       conversation=conversation)
@@ -244,15 +250,24 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
             jclib.tasks.manager.start(self._require_conversation(conv))
 
     def adopt_conversation(self, account, conversation):
+        logger.debug("asked to adopt conversation %r (jid=%s) on account %s",
+                     conversation, conversation.jid, account)
         key = account, conversation.jid
         try:
             node = self.__convaddrmap[key]
         except KeyError:
+            logger.debug("creating new node for %r", conversation)
             node = ConversationNode.for_conversation(account, conversation)
             self._backend.append(node)
             self.on_conversation_added(node)
             jclib.tasks.manager.start(self._join_conversation(conversation))
             self.__convaddrmap[key] = node
+            logger.debug("node created")
+        else:
+            logger.debug(
+                "referring to existing node for this conversation (%r)",
+                node
+            )
         return node
 
     def open_muc_conversation(self,
