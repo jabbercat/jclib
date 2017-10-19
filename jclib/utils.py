@@ -414,8 +414,45 @@ def mkdir_exist_ok(path):
             raise
 
 
+def fsync_dir(path: pathlib.Path):
+    """
+    Call :func:`os.fsync` on a directory.
+
+    :param path: The directory to fsync.
+    """
+    fd = os.open(str(path), os.O_DIRECTORY | os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 @contextlib.contextmanager
-def safe_writer(destpath, mode="wb"):
+def safe_writer(destpath, mode="wb", extra_paranoia=False):
+    """
+    Safely overwrite a file.
+
+    This guards against the following situations:
+
+    * error/exception while writing the file (the original file stays intact
+      without modification)
+    * most cases of unclean shutdown (*either* the original *or* the new file
+      will be seen on disk)
+
+    It does that with the following means:
+
+    * a temporary file next to the target file is used for writing
+    * if an exception is raised in the context manager, the temporary file is
+      discarded and nothing else happens
+    * otherwise, the temporary file is synced to disk and then used to replace
+      the target file.
+
+    If `extra_paranoia` is true, the parent directory of the target file is
+    additionally synced after the replacement. `extra_paranoia` is only needed
+    if it is required that the new file is seen after a crash (and not the
+    original file).
+    """
+
     destpath = pathlib.Path(destpath)
     with tempfile.NamedTemporaryFile(
             mode=mode,
@@ -423,8 +460,12 @@ def safe_writer(destpath, mode="wb"):
             delete=False) as tmpfile:
         try:
             yield tmpfile
-        except:
+        except:  # NOQA
             os.unlink(tmpfile.name)
             raise
         else:
+            tmpfile.flush()
+            os.fsync(tmpfile.fileno())
             os.replace(tmpfile.name, str(destpath))
+            if extra_paranoia:
+                fsync_dir(destpath.parent)

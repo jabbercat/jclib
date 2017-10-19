@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import os.path
+import pathlib
 import unittest
 import unittest.mock
 import xml.sax.handler
@@ -537,6 +538,54 @@ class Testmkdir_exist_ok(unittest.TestCase):
         )
 
 
+class Testfsync_dir(unittest.TestCase):
+    def setUp(self):
+        self.base = unittest.mock.Mock()
+        self.os_open = self.base.os_open
+        self.os_fsync = self.base.os_fsync
+        self.os_close = self.base.os_close
+        self.path = unittest.mock.Mock(spec=pathlib.Path)
+
+        self.patches = [
+            unittest.mock.patch("os.open", new=self.os_open),
+            unittest.mock.patch("os.fsync", new=self.os_fsync),
+            unittest.mock.patch("os.close", new=self.os_close),
+        ]
+
+        for patch in self.patches:
+            patch.start()
+
+    def tearDown(self):
+        for patch in self.patches:
+            patch.stop()
+
+    def test_open_fsync_close(self):
+        utils.fsync_dir(self.path)
+
+        self.assertSequenceEqual(
+            list(self.base.mock_calls),
+            [
+                unittest.mock.call.os_open(
+                    str(self.path),
+                    os.O_DIRECTORY | os.O_RDONLY,
+                ),
+                unittest.mock.call.os_fsync(self.os_open()),
+                unittest.mock.call.os_close(self.os_open())
+            ]
+        )
+
+    def test_closes_on_fsync_exception(self):
+        class FooException(Exception):
+            pass
+
+        self.os_fsync.side_effect = FooException()
+
+        with self.assertRaises(FooException):
+            utils.fsync_dir(self.path)
+
+        self.os_close.assert_called_once_with(self.os_open())
+
+
 class Testsafe_writer(unittest.TestCase):
     def setUp(self):
         self.patchers = [
@@ -544,13 +593,18 @@ class Testsafe_writer(unittest.TestCase):
             unittest.mock.patch("tempfile.NamedTemporaryFile"),
             unittest.mock.patch("os.replace"),
             unittest.mock.patch("os.unlink"),
+            unittest.mock.patch("os.fsync"),
         ]
+        self.tmpfile = unittest.mock.Mock()
         self.path = unittest.mock.Mock()
         self.pathlib_Path = self.patchers[0].start()
         self.pathlib_Path.return_value = self.path
         self.tempfile_NamedTemporaryFile = self.patchers[1].start()
+        self.tempfile_NamedTemporaryFile().__enter__.return_value = self.tmpfile
+        self.tempfile_NamedTemporaryFile.reset_mock()
         self.os_replace = self.patchers[2].start()
         self.os_unlink = self.patchers[3].start()
+        self.os_fsync = self.patchers[4].start()
 
     def tearDown(self):
         for patcher in self.patchers:
@@ -606,5 +660,71 @@ class Testsafe_writer(unittest.TestCase):
             str(self.path),
         )
 
+    def test_correct_flush_and_sync_on_success(self):
+        self.common = unittest.mock.Mock()
 
-# foo
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                unittest.mock.patch("os.fsync", new=self.common.fsync),
+            )
+            stack.enter_context(
+                unittest.mock.patch("os.replace", new=self.common.replace),
+            )
+            stack.enter_context(
+                unittest.mock.patch.object(self.tmpfile, "flush",
+                                           new=self.common.flush),
+            )
+
+            cm = utils.safe_writer(
+                unittest.mock.sentinel.path,
+                mode=unittest.mock.sentinel.mode)
+            stack.enter_context(cm)
+
+        self.assertSequenceEqual(
+            self.common.mock_calls,
+            [
+                unittest.mock.call.flush(),
+                unittest.mock.call.fsync(self.tmpfile.fileno()),
+                unittest.mock.call.replace(unittest.mock.ANY,
+                                           unittest.mock.ANY)
+            ]
+        )
+
+    def test_extra_paranoia_flush(self):
+        self.common = unittest.mock.Mock()
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                unittest.mock.patch("os.fsync", new=self.common.fsync),
+            )
+            stack.enter_context(
+                unittest.mock.patch("os.replace", new=self.common.replace),
+            )
+            stack.enter_context(
+                unittest.mock.patch("os.open", new=self.common.open),
+            )
+            stack.enter_context(
+                unittest.mock.patch.object(self.tmpfile, "flush",
+                                           new=self.common.flush),
+            )
+            stack.enter_context(
+                unittest.mock.patch("jclib.utils.fsync_dir",
+                                    new=self.common.fsync_dir)
+            )
+
+            cm = utils.safe_writer(
+                unittest.mock.sentinel.path,
+                mode=unittest.mock.sentinel.mode,
+                extra_paranoia=True)
+            stack.enter_context(cm)
+
+        self.assertSequenceEqual(
+            self.common.mock_calls,
+            [
+                unittest.mock.call.flush(),
+                unittest.mock.call.fsync(self.tmpfile.fileno()),
+                unittest.mock.call.replace(unittest.mock.ANY,
+                                           unittest.mock.ANY),
+                unittest.mock.call.fsync_dir(self.path.parent),
+            ]
+        )
