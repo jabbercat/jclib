@@ -1,11 +1,13 @@
 import asyncio
 import contextlib
 import itertools
+import io
 import pathlib
 import tempfile
 import unittest
 import unittest.mock
 import uuid
+import xml.sax
 
 from datetime import datetime
 
@@ -2315,7 +2317,179 @@ class TestXMLFrontend(unittest.TestCase):
             .__truediv__()
         )
 
-    def test__load_account(self):
+    def test__load_from_file(self):
+        file_ = unittest.mock.MagicMock(spec=io.BytesIO)
+        file_.__enter__.return_value = file_
+        path = unittest.mock.MagicMock(spec=pathlib.Path)
+        path.open.return_value = file_
+
+        with contextlib.ExitStack() as stack:
+            read_single_xso = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xml.read_single_xso"),
+            )
+
+            result = self.f._load_from_file(
+                path,
+                unittest.mock.sentinel.storage_cls,
+            )
+
+        path.open.assert_called_once_with(
+            "rb",
+        )
+
+        read_single_xso.assert_called_once_with(
+            file_,
+            unittest.mock.sentinel.storage_cls,
+        )
+
+        self.assertEqual(
+            result,
+            read_single_xso(),
+        )
+
+    def test__load_from_file_returns_fresh_object_if_not_found(self):
+        storage_cls = unittest.mock.Mock()
+
+        path = unittest.mock.MagicMock(spec=pathlib.Path)
+        path.open.side_effect = FileNotFoundError()
+
+        with contextlib.ExitStack() as stack:
+            read_single_xso = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xml.read_single_xso"),
+            )
+
+            result = self.f._load_from_file(
+                path,
+                storage_cls,
+            )
+
+        path.open.assert_called_once_with(
+            "rb",
+        )
+
+        storage_cls.assert_called_once_with()
+
+        self.assertEqual(
+            result,
+            storage_cls(),
+        )
+
+    def test__load_from_file_creates_backup_and_returns_fresh_file_on_parser_error(self):  # NOQA
+        file_ = unittest.mock.MagicMock(spec=io.BytesIO)
+        file_.__enter__.return_value = file_
+        path = unittest.mock.MagicMock(spec=pathlib.Path)
+        path.open.return_value = file_
+        path.parts = ["foo", "bar", "baz", "basename.xml"]
+        storage_cls = unittest.mock.Mock()
+
+        with contextlib.ExitStack() as stack:
+            read_single_xso = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xml.read_single_xso"),
+            )
+            read_single_xso.side_effect = xml.sax.SAXException("")
+
+            os_replace = stack.enter_context(
+                unittest.mock.patch("os.replace"),
+            )
+
+            datetime = stack.enter_context(
+                unittest.mock.patch("jclib.storage.frontends.datetime")
+            )
+            datetime.utcnow.return_value.isoformat.return_value = \
+                "formatted-date"
+
+            result = self.f._load_from_file(
+                path,
+                storage_cls,
+            )
+
+        path.open.assert_called_once_with(
+            "rb",
+        )
+
+        read_single_xso.assert_called_once_with(
+            file_,
+            storage_cls,
+        )
+
+        datetime.utcnow.assert_called_once_with()
+        datetime.utcnow().isoformat.assert_called_once_with()
+
+        path.parent.__truediv__.assert_called_once_with(
+            "basename.xml-formatted-date.bak"
+        )
+
+        os_replace.assert_called_once_with(
+            path,
+            path.parent.__truediv__(),
+        )
+
+        storage_cls.assert_called_once_with()
+
+        self.assertEqual(
+            result,
+            storage_cls(),
+        )
+
+    def test__load_from_file_handles_replace_OSError(self):
+        file_ = unittest.mock.MagicMock(spec=io.BytesIO)
+        file_.__enter__.return_value = file_
+        path = unittest.mock.MagicMock(spec=pathlib.Path)
+        path.open.return_value = file_
+        path.parts = ["foo", "bar", "baz", "basename.xml"]
+        storage_cls = unittest.mock.Mock()
+
+        with contextlib.ExitStack() as stack:
+            read_single_xso = stack.enter_context(
+                unittest.mock.patch("aioxmpp.xml.read_single_xso"),
+            )
+            read_single_xso.side_effect = xml.sax.SAXException("")
+
+            os_replace = stack.enter_context(
+                unittest.mock.patch("os.replace"),
+            )
+            os_replace.side_effect = OSError
+
+            datetime = stack.enter_context(
+                unittest.mock.patch("jclib.storage.frontends.datetime")
+            )
+            datetime.utcnow.return_value.isoformat.return_value = \
+                "formatted-date"
+
+            result = self.f._load_from_file(
+                path,
+                storage_cls,
+            )
+
+        path.open.assert_called_once_with(
+            "rb",
+        )
+
+        read_single_xso.assert_called_once_with(
+            file_,
+            storage_cls,
+        )
+
+        datetime.utcnow.assert_called_once_with()
+        datetime.utcnow().isoformat.assert_called_once_with()
+
+        path.parent.__truediv__.assert_called_once_with(
+            "basename.xml-formatted-date.bak"
+        )
+
+        os_replace.assert_called_once_with(
+            path,
+            path.parent.__truediv__(),
+        )
+
+        storage_cls.assert_called_once_with()
+
+        self.assertEqual(
+            result,
+            storage_cls(),
+        )
+
+    def test__load_account_uses__load_from_file(self):
         level = frontends.AccountLevel(
             unittest.mock.sentinel.account,
         )
@@ -2326,8 +2500,8 @@ class TestXMLFrontend(unittest.TestCase):
             )
             _get_path.return_value = unittest.mock.MagicMock()
 
-            read_single_xso = stack.enter_context(
-                unittest.mock.patch("aioxmpp.xml.read_single_xso")
+            _load_from_file = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_load_from_file")
             )
 
             result = self.f._load(
@@ -2341,59 +2515,17 @@ class TestXMLFrontend(unittest.TestCase):
             account=unittest.mock.ANY,
         )
 
-        _get_path().open.assert_called_once_with(
-            "rb",
-        )
-
-        read_single_xso.assert_called_once_with(
-            _get_path().open().__enter__(),
+        _load_from_file.assert_called_once_with(
+            _get_path(),
             jclib.storage.account_model.XMLStorage,
         )
 
         self.assertEqual(
             result,
-            read_single_xso(),
+            _load_from_file(),
         )
 
-    def test__load_account_returns_fresh_object_if_nonexistant(self):
-        level = frontends.AccountLevel(
-            unittest.mock.sentinel.account,
-        )
-
-        path = unittest.mock.MagicMock()
-        path.open.side_effect = FileNotFoundError
-
-        with contextlib.ExitStack() as stack:
-            _get_path = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_get_path")
-            )
-            _get_path.return_value = path
-
-            read_single_xso = stack.enter_context(
-                unittest.mock.patch("aioxmpp.xml.read_single_xso")
-            )
-
-            result = self.f._load(
-                unittest.mock.sentinel.type_,
-                level,
-            )
-
-        _get_path.assert_called_once_with(
-            unittest.mock.sentinel.type_,
-            level.level,
-            account=unittest.mock.ANY,
-        )
-
-        _get_path().open.assert_called_once_with(
-            "rb",
-        )
-
-        self.assertIsInstance(
-            result,
-            jclib.storage.account_model.XMLStorage,
-        )
-
-    def test__load_peer(self):
+    def test__load_peer_uses__load_from_file(self):
         level = frontends.PeerLevel(
             unittest.mock.sentinel.account,
             unittest.mock.sentinel.peer,
@@ -2405,8 +2537,8 @@ class TestXMLFrontend(unittest.TestCase):
             )
             _get_path.return_value = unittest.mock.MagicMock()
 
-            read_single_xso = stack.enter_context(
-                unittest.mock.patch("aioxmpp.xml.read_single_xso")
+            _load_from_file = stack.enter_context(
+                unittest.mock.patch.object(self.f, "_load_from_file")
             )
 
             result = self.f._load(
@@ -2420,57 +2552,14 @@ class TestXMLFrontend(unittest.TestCase):
             account=unittest.mock.sentinel.account,
         )
 
-        _get_path().open.assert_called_once_with(
-            "rb",
-        )
-
-        read_single_xso.assert_called_once_with(
-            _get_path().open().__enter__(),
+        _load_from_file.assert_called_once_with(
+            _get_path(),
             jclib.storage.peer_model.XMLStorage,
         )
 
         self.assertEqual(
             result,
-            read_single_xso(),
-        )
-
-    def test__load_peer_returns_fresh_object_if_nonexistant(self):
-        level = frontends.PeerLevel(
-            unittest.mock.sentinel.account,
-            unittest.mock.sentinel.peer,
-        )
-
-        path = unittest.mock.MagicMock()
-        path.open.side_effect = FileNotFoundError
-
-        with contextlib.ExitStack() as stack:
-            _get_path = stack.enter_context(
-                unittest.mock.patch.object(self.f, "_get_path")
-            )
-            _get_path.return_value = path
-
-            read_single_xso = stack.enter_context(
-                unittest.mock.patch("aioxmpp.xml.read_single_xso")
-            )
-
-            result = self.f._load(
-                unittest.mock.sentinel.type_,
-                level,
-            )
-
-        _get_path.assert_called_once_with(
-            unittest.mock.sentinel.type_,
-            level.level,
-            account=unittest.mock.sentinel.account,
-        )
-
-        _get_path().open.assert_called_once_with(
-            "rb",
-        )
-
-        self.assertIsInstance(
-            result,
-            jclib.storage.peer_model.XMLStorage,
+            _load_from_file(),
         )
 
     def test__open_uses__load_to_obtain_data(self):
