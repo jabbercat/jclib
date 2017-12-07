@@ -212,7 +212,7 @@ def logged_async(coro, *, loop=None, name=None):
 
 @functools.lru_cache()
 def normalise_text_for_hash(text):
-    return " ".join(unicodedata.normalize("NFKC", text).split()).casefold()
+    return unicodedata.normalize("NFKC", text)
 
 
 def hsva_to_rgba(h, s, v, a):
