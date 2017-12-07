@@ -302,11 +302,13 @@ def colour_distance_hsv(hsv_a, hsv_b):
     )
 
 
-K_R = 0.299
-K_G = 0.587
+# K_R = 0.299
+# K_G = 0.587
 # K_R = 0.0593
 # K_G = 0.2627
-K_B = 1-K_R-K_G
+K_R = 0.2627
+K_B = 0.0593
+K_G = 1-K_R-K_B
 
 
 def ycbcr_to_rgb(y, cb, cr):
@@ -327,11 +329,11 @@ def clip_rgb(r, g, b):
 def angle_to_cbcr_edge(angle):
     cr = math.sin(angle)
     cb = math.cos(angle)
-    if abs(cr) > abs(cb):
-        factor = 0.5 / abs(cr)
-    else:
-        factor = 0.5 / abs(cb)
-    # factor = 0.5
+    # if abs(cr) > abs(cb):
+    #     factor = 0.5 / abs(cr)
+    # else:
+    #     factor = 0.5 / abs(cb)
+    factor = 0.5
     return cb * factor, cr * factor
 
 
@@ -399,7 +401,8 @@ def text_to_colour(text):
     # return r, g, b
 
     cb, cr = angle_to_cbcr_edge(hue * math.pi * 2)
-    r, g, b = clip_rgb(*ycbcr_to_rgb(0.5**0.45, cb, cr))
+    r, g, b = ycbcr_to_rgb(0.5, cb, cr)
+    r, g, b = clip_rgb(r, g, b)
     r *= 0.8
     g *= 0.8
     b *= 0.8
