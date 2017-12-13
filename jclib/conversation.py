@@ -222,13 +222,15 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
             conversation: aioxmpp.im.p2p.Conversation):
         logger.debug("spontaneous p2p conversation %r (jid=%s) on account %s",
                      conversation, conversation.jid, account)
-        wrapper = P2PConversationNode(account,
-                                      conversation.jid,
-                                      conversation=conversation)
-        self._backend.append(wrapper)
-        self.on_conversation_added(wrapper)
-        self.__convaddrmap[account, conversation.jid] = wrapper
+        # wrapper = P2PConversationNode(account,
+        #                               conversation.jid,
+        #                               conversation=conversation)
+        # self._backend.append(wrapper)
+        # self.on_conversation_added(wrapper)
+        # self.__convaddrmap[account, conversation.jid] = wrapper
+        self.adopt_conversation(account, conversation)
 
+    @asyncio.coroutine
     def _require_conversation(self, conv):
         jclib.tasks.manager.update_text(
             "Starting {}".format(conv.label)
@@ -236,14 +238,13 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
         yield from conv.require_conversation()
 
     @asyncio.coroutine
-    def _join_conversation(self, conv):
+    def _join_conversation(self,
+                           node: ConversationNode,
+                           done_future: asyncio.Future):
         jclib.tasks.manager.update_text(
-            "Starting {}".format(conv.label),
+            "Starting {}".format(node.label),
         )
-        yield from aioxmpp.callbacks.first_signal(
-            conv.on_enter,
-            conv.on_failure,
-        )
+        yield from done_future
 
     def start_soon(self, conv):
         if conv.conversation is None:
@@ -260,7 +261,16 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
             node = ConversationNode.for_conversation(account, conversation)
             self._backend.append(node)
             self.on_conversation_added(node)
-            jclib.tasks.manager.start(self._join_conversation(conversation))
+            jclib.tasks.manager.start(
+                self._join_conversation(
+                    node,
+                    # we need to create the future here to avoid races
+                    aioxmpp.callbacks.first_signal(
+                        conversation.on_enter,
+                        conversation.on_failure,
+                    )
+                )
+            )
             self.__convaddrmap[key] = node
             logger.debug("node created")
         else:

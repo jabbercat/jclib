@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import itertools
 import unittest
@@ -148,10 +149,20 @@ class TestConversationManager(unittest.TestCase):
                 unittest.mock.patch.object(self.cm, "_join_conversation")
             )
 
+            first_signal = stack.enter_context(
+                unittest.mock.patch("aioxmpp.callbacks.first_signal")
+            )
+
             self.cm.adopt_conversation(unittest.mock.sentinel.account, conv)
 
+        first_signal.assert_called_once_with(
+            conv.on_enter,
+            conv.on_failure,
+        )
+
         _join_conversation.assert_called_once_with(
-            conv,
+            for_conversation(),
+            first_signal(),
         )
 
         self.task_manager.start.assert_called_once_with(
@@ -244,25 +255,21 @@ class TestConversationManager(unittest.TestCase):
         self.assertNotEqual(result1, result2)
 
     def test__join_conversation(self):
-        conv = unittest.mock.Mock()
+        node = unittest.mock.Mock()
+        fut = asyncio.Future()
 
-        with contextlib.ExitStack() as stack:
-            first_signal = stack.enter_context(unittest.mock.patch(
-                "aioxmpp.callbacks.first_signal",
-                new=CoroutineMock(),
-            ))
-            first_signal.return_value = None
-
-            run_coroutine(self.cm._join_conversation(conv))
+        task = asyncio.ensure_future(self.cm._join_conversation(node, fut))
+        run_coroutine(asyncio.sleep(0))
 
         self.task_manager.update_text.assert_called_once_with(
-            "Starting {}".format(conv.label)
+            "Starting {}".format(node.label)
         )
 
-        first_signal.assert_called_once_with(
-            conv.on_enter,
-            conv.on_failure,
-        )
+        self.assertFalse(task.done())
+
+        fut.set_result(True)
+
+        run_coroutine(task)
 
     def test_open_muc_conversation_adopts_new_muc(self):
         account = unittest.mock.Mock(["jid"])
