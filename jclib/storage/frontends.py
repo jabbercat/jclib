@@ -787,25 +787,6 @@ class XMLFrontend(Frontend):
         storage_cls, _, _ = self.LEVEL_INFO[level.level]
         return self._load_from_file(path, storage_cls)
 
-        try:
-            with path.open("rb") as f:
-                return aioxmpp.xml.read_single_xso(
-                    f,
-                    storage_cls,
-                )
-            self.logger.debug(
-                "opened storage at %s for type %r at level %r",
-                path, type_, level,
-            )
-        except xml.sax.SAXException:
-            os.replace(
-                path,
-                path.parent / (path.parts[-1] + ".bak")
-            )
-            return storage_cls()
-        except FileNotFoundError:
-            return storage_cls()
-
     def _save(self, data, type_, level_type, *args):
         path = self._get_path(
             type_,
