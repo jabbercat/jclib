@@ -6,6 +6,7 @@ import unittest.mock
 
 import aioxmpp.im.p2p
 
+import jclib.archive
 import jclib.client
 import jclib.identity
 
@@ -78,6 +79,7 @@ class TestConversationManager(unittest.TestCase):
     def setUp(self):
         self.accounts = unittest.mock.Mock(spec=jclib.identity.Accounts)
         self.client = unittest.mock.Mock(spec=jclib.client.Client)
+        self.messages = unittest.mock.Mock(spec=jclib.archive.MessageManager)
         self.task_manager_patch = unittest.mock.patch(
             "jclib.tasks.manager",
             spec=jclib.tasks.TaskManager,
@@ -86,6 +88,7 @@ class TestConversationManager(unittest.TestCase):
         self.cm = conversation.ConversationManager(
             self.accounts,
             self.client,
+            self.messages,
         )
         self.listener = make_listener(self.cm)
 

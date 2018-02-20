@@ -10,6 +10,7 @@ import aioxmpp.im.conversation
 import aioxmpp.im.p2p
 import aioxmpp.im.service
 
+import jclib.archive
 import jclib.client
 import jclib.identity
 import jclib.instrumentable_list
@@ -28,6 +29,7 @@ def _connect_and_store_token(tokens, signal, handler):
 class ConversationNode(metaclass=abc.ABCMeta):
     on_ready = aioxmpp.callbacks.Signal()
     on_stale = aioxmpp.callbacks.Signal()
+    on_message = aioxmpp.callbacks.Signal()
 
     def __init__(self,
                  account: jclib.identity.Account,
@@ -177,8 +179,13 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
 
     def __init__(self,
                  accounts: jclib.identity.Accounts,
-                 client: jclib.client.Client, **kwargs):
+                 client: jclib.client.Client,
+                 messages: jclib.archive.MessageManager,
+                 **kwargs):
         super().__init__(jclib.instrumentable_list.ModelList(), **kwargs)
+        self.logger = logging.getLogger(
+            ".".join([__name__, type(self).__qualname__])
+        )
 
         client.on_client_prepare.connect(
             self.handle_client_prepare,
@@ -187,10 +194,34 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
             self.handle_client_stopped,
         )
 
+        self.accounts = accounts
         self.client = client
+        self.messages = messages
+
+        self.messages.on_message.connect(
+            self._handle_live_message,
+        )
 
         self.__clientmap = {}
         self.__convaddrmap = {}
+
+    def _handle_live_message(self,
+                             account_addr,
+                             conversation_addr,
+                             *args, **kwargs):
+        account = self.accounts.lookup_jid(account_addr)
+        try:
+            conv = self.__convaddrmap[account, conversation_addr]
+        except KeyError:
+            self.logger.warning(
+                "failed to find conversation for live message in %s",
+                conversation_addr,
+            )
+            return
+
+        self.logger.debug("forwarding message in %s to %s",
+                          conversation_addr, conv)
+        conv.on_message(*args, **kwargs)
 
     def handle_client_prepare(self, account, client):
         """
