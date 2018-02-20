@@ -136,7 +136,7 @@ class TestConversationManager(unittest.TestCase):
         )
 
     def test_adopt_conversation_starts_task_for_join(self):
-        conv = unittest.mock.Mock(spec=aioxmpp.im.p2p.Conversation)
+        conv = unittest.mock.Mock(spec=aioxmpp.muc.Room)
         conv.jid = TEST_JID1
 
         with contextlib.ExitStack() as stack:
@@ -170,10 +170,10 @@ class TestConversationManager(unittest.TestCase):
         )
 
     def test_adopt_conversation_deduplicates_conversations_by_jid(self):
-        conv1 = unittest.mock.Mock(spec=aioxmpp.im.p2p.Conversation)
+        conv1 = unittest.mock.Mock(spec=aioxmpp.muc.Room)
         conv1.jid = TEST_JID1
 
-        conv2 = unittest.mock.Mock(spec=aioxmpp.im.p2p.Conversation)
+        conv2 = unittest.mock.Mock(spec=aioxmpp.muc.Room)
         conv2.jid = TEST_JID1
 
         with contextlib.ExitStack() as stack:

@@ -7,6 +7,7 @@ import typing
 import aioxmpp.callbacks
 import aioxmpp.muc
 import aioxmpp.im.conversation
+import aioxmpp.im.p2p
 import aioxmpp.im.service
 
 import jclib.client
@@ -261,16 +262,20 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
             node = ConversationNode.for_conversation(account, conversation)
             self._backend.append(node)
             self.on_conversation_added(node)
-            jclib.tasks.manager.start(
-                self._join_conversation(
-                    node,
-                    # we need to create the future here to avoid races
-                    aioxmpp.callbacks.first_signal(
-                        conversation.on_enter,
-                        conversation.on_failure,
+            # FIXME: we should be able to do this neatly; p2p conversation
+            # emit on_enter while they are created, which would make the below
+            # future never resolve
+            if not isinstance(conversation, aioxmpp.im.p2p.Conversation):
+                jclib.tasks.manager.start(
+                    self._join_conversation(
+                        node,
+                        # we need to create the future here to avoid races
+                        aioxmpp.callbacks.first_signal(
+                            conversation.on_enter,
+                            conversation.on_failure,
+                        )
                     )
                 )
-            )
             self.__convaddrmap[key] = node
             logger.debug("node created")
         else:
