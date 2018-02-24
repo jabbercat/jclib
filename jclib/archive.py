@@ -139,6 +139,30 @@ class AccountMessageReceiver:
         self._client = None
 
 
+def get_member_display_name(
+        member: aioxmpp.im.conversation.AbstractConversationMember):
+    if hasattr(member, "nick"):  # XEP-0045
+        return member.nick
+    return str((member.direct_jid or member.conversation_jid).bare())
+
+
+def get_member_colour_input(
+        member: aioxmpp.im.conversation.AbstractConversationMember):
+    if hasattr(member, "nick"):
+        return member.nick
+    if member.direct_jid:
+        return str(member.direct_jid.bare())
+    # FIXME: we don’t want to use the full JID for MIX... :(
+    return member.conversation_jid
+
+
+def get_member_from_jid(
+        member: aioxmpp.im.conversation.AbstractConversationMember):
+    if member.direct_jid:
+        return member.direct_jid
+    return member.conversation_jid
+
+
 class MessageManager:
     """
     Messages are either kept in-memory (if the conversations privacy settings
@@ -195,17 +219,10 @@ class MessageManager:
         receiver = self._client_svcs.pop(client)
         receiver.shutdown_client(client)
 
-    def _get_display_name(
-            self,
-            member: aioxmpp.im.conversation.AbstractConversationMember) -> str:
-        if hasattr(member, "nick"):  # XEP-0045
-            return member.nick
-        return (member.direct_jid or member.conversation_jid).bare()
-
     def handle_live_message(
             self,
             account: aioxmpp.JID,
-            conversation: aioxmpp.JID,
+            conversation: aioxmpp.im.conversation.AbstractConversation,
             message: aioxmpp.Message,
             member: aioxmpp.im.conversation.AbstractConversationMember,
             source: aioxmpp.im.dispatcher.MessageSource,
@@ -216,54 +233,34 @@ class MessageManager:
             ):
         self.logger.debug(
             "handling live message for %s: conversation=%s, message=%s",
-            account, conversation, message,
+            account, conversation.jid, message,
         )
+        if hasattr(conversation, "muc_state"):
+            self.logger.debug("conversation is in state %s",
+                              conversation.muc_state)
 
         timestamp = delay_timestamp or datetime.utcnow()
 
-        display_name = self._get_display_name(member)
-
-        is_self = False
-        from_jid = None
-        if member is not None:
-            if member.direct_jid:
-                from_jid = member.direct_jid.bare()
-            else:
-                from_jid = member.conversation_jid
-            color_input = str(
-                (member.direct_jid or member.conversation_jid).bare()
-            )
-            if member.is_self:
-                from_ = "me"
-                is_self = True
-            else:
-                from_ = str(
-                    (member.direct_jid or member.conversation_jid).bare()
-                )
-
-            if hasattr(member, "nick"):
-                from_ = member.nick
-                color_input = member.nick
-
-        else:
-            from_ = str(message.from_)
-            color_input = None
+        display_name = get_member_display_name(member)
+        color_input = get_member_colour_input(member)
+        from_jid = get_member_from_jid(member)
 
         argv = (
             timestamp,
-            is_self,
+            member.is_self,
             from_jid,
-            from_,
+            display_name,
             color_input,
-            message.body.any()
+            message,
         )
 
-        data = self._in_memory_archive.setdefault((account, conversation), [])
+        data = self._in_memory_archive.setdefault((account,
+                                                   conversation.jid), [])
         data.append(argv)
 
         self.on_message(
             account,
-            conversation,
+            conversation.jid,
             *argv
         )
 
@@ -274,21 +271,37 @@ class MessageManager:
             max_count: int,
             min_age: typing.Optional[datetime] = None,
             max_age: typing.Optional[datetime] = None) -> typing.Iterable:
+        self.logger.debug(
+            "get_last_messages(%r, %r, max_count=%d, min_age=%r, max_age=%r)",
+            account, conversation, max_count, min_age, max_age,
+        )
         try:
             data = self._in_memory_archive[account, conversation]
         except KeyError:
-            return
+            self.logger.info(
+                "nothing in archive for account=%r, conversation=%r",
+                account, conversation,
+            )
+            return []
 
         max_count = max(0, max_count)
 
         for i, msg in enumerate(reversed(data)):
             ts = msg[0]
             if max_count <= 0 and ts <= min_age:
+                self.logger.debug("at limit already and %r <= %r",
+                                  ts, min_age)
                 break
-            if ts > max_age:
+            if ts < max_age:
+                self.logger.debug("too old: %r < %r",
+                                  ts, max_age)
                 break
+            max_count -= 1
         else:
+            self.logger.debug("taking whole archive \o/; i = %r", i)
             i += 1
         assert 0 <= i <= len(data)
+
+        self.logger.debug("i=%d, range: %d:%d", i, len(data)-i, len(data))
 
         return data[len(data)-i:]

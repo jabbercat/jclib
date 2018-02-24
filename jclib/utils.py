@@ -402,6 +402,7 @@ def text_to_colour(text):
 
     cb, cr = angle_to_cbcr_edge(hue * math.pi * 2)
     r, g, b = ycbcr_to_rgb(0.5, cb, cr)
+    print(text, cb, cr, r, g, b)
     r, g, b = clip_rgb(r, g, b)
     r *= 0.8
     g *= 0.8

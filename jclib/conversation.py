@@ -32,12 +32,16 @@ class ConversationNode(metaclass=abc.ABCMeta):
     on_message = aioxmpp.callbacks.Signal()
 
     def __init__(self,
+                 messages: jclib.archive.MessageManager,
                  account: jclib.identity.Account,
+                 conversation_address: aioxmpp.JID,
                  *,
                  conversation: typing.Optional[
                      aioxmpp.im.conversation.AbstractConversation]=None):
         super().__init__()
+        self._messages = messages
         self.account = account
+        self.conversation_address = conversation_address
         self.conversation = conversation
 
     @property
@@ -75,6 +79,14 @@ class ConversationNode(metaclass=abc.ABCMeta):
 
         return self.conversation
 
+    def get_last_messages(self, *args, **kwargs):
+        return self._messages.get_last_messages(
+            self.account.jid,
+            self.conversation_address,
+            *args,
+            **kwargs,
+        )
+
     @abc.abstractproperty
     def label(self) -> str:
         """
@@ -84,6 +96,7 @@ class ConversationNode(metaclass=abc.ABCMeta):
     @classmethod
     def for_conversation(
             cls,
+            messages: jclib.archive.MessageManager,
             account: jclib.identity.Account,
             conversation: aioxmpp.im.conversation.AbstractConversation):
         """
@@ -93,10 +106,10 @@ class ConversationNode(metaclass=abc.ABCMeta):
         :raises TypeError: if the class of `conversation` is not supported.
         """
         if isinstance(conversation, aioxmpp.im.p2p.Conversation):
-            return P2PConversationNode(account, conversation.jid,
+            return P2PConversationNode(messages, account, conversation.jid,
                                        conversation=conversation)
         if isinstance(conversation, aioxmpp.muc.Room):
-            return MUCConversationNode(account, conversation.jid,
+            return MUCConversationNode(messages, account, conversation.jid,
                                        None,
                                        conversation=conversation)
         raise TypeError("unknown conversation class: {!r}".format(
@@ -106,12 +119,14 @@ class ConversationNode(metaclass=abc.ABCMeta):
 
 class P2PConversationNode(ConversationNode):
     def __init__(self,
+                 messages: jclib.archive.MessageManager,
                  account: jclib.identity.Account,
                  peer_jid: aioxmpp.JID,
                  *,
                  conversation: typing.Optional[
                      aioxmpp.im.conversation.AbstractConversation]=None):
-        super().__init__(account, conversation=conversation)
+        super().__init__(messages, account,
+                         peer_jid.bare(), conversation=conversation)
         self.peer_jid = peer_jid
 
     @property
@@ -128,13 +143,14 @@ class P2PConversationNode(ConversationNode):
 
 class MUCConversationNode(ConversationNode):
     def __init__(self,
+                 messages: jclib.archive.MessageManager,
                  account: jclib.identity.Account,
                  muc_jid: aioxmpp.JID,
                  nickname: str,
                  *,
                  conversation: typing.Optional[
                      aioxmpp.im.conversation.AbstractConversation]=None):
-        super().__init__(account, conversation=conversation)
+        super().__init__(messages, account, muc_jid, conversation=conversation)
         self.muc_jid = muc_jid
         self.nickname = nickname
 
@@ -290,7 +306,8 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
             node = self.__convaddrmap[key]
         except KeyError:
             logger.debug("creating new node for %r", conversation)
-            node = ConversationNode.for_conversation(account, conversation)
+            node = ConversationNode.for_conversation(self.messages,
+                                                     account, conversation)
             self._backend.append(node)
             self.on_conversation_added(node)
             # FIXME: we should be able to do this neatly; p2p conversation

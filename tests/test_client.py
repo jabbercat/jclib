@@ -99,10 +99,19 @@ class TestClient(unittest.TestCase):
             self.c.client_by_account(self.acc)
 
     def test_create_client_for_account(self):
+        services = unittest.mock.Mock()
+
+
+        def handle_summon(cls):
+            return getattr(services, cls.__name__)
+
+
         with contextlib.ExitStack() as stack:
             PresenceManagedClient = stack.enter_context(
                 unittest.mock.patch("aioxmpp.PresenceManagedClient")
             )
+            PresenceManagedClient().summon.side_effect = handle_summon
+            PresenceManagedClient.reset_mock()
 
             self.accounts.set_account_enabled(self.acc, True)
 
@@ -138,6 +147,11 @@ class TestClient(unittest.TestCase):
 
         self.assertIn(
             unittest.mock.call(aioxmpp.im.p2p.Service),
+            PresenceManagedClient().summon.mock_calls,
+        )
+
+        self.assertIn(
+            unittest.mock.call(aioxmpp.VersionServer),
             PresenceManagedClient().summon.mock_calls,
         )
 
