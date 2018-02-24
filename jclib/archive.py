@@ -2,6 +2,7 @@ import abc
 import functools
 import logging
 import typing
+import uuid
 
 from datetime import datetime
 
@@ -163,6 +164,12 @@ def get_member_from_jid(
     return member.conversation_jid
 
 
+class InMemoryConversationState:
+    def __init__(self):
+        self.messages = []
+        self.read_markers = {}
+
+
 class MessageManager:
     """
     Messages are either kept in-memory (if the conversations privacy settings
@@ -196,8 +203,11 @@ class MessageManager:
         self._client.on_client_prepare.connect(self._prepare_client)
         self._client.on_client_stopped.connect(self._shutdown_client)
 
-        # (account_jid, conversation_jid) -> [(timestamp, member, message)]
-        self._in_memory_archive = {}
+        # (account_jid, conversation_jid) -> [message_uid]
+        self._in_memory_archive_conv_index = {}
+        # (account_jid, conversation_jid, message_id) -> message_uid
+        self._in_memory_archive_message_id_index = {}
+        self._in_memory_archive_data = {}
 
     def _prepare_client(self,
                         account: jclib.identity.Account,
@@ -218,6 +228,18 @@ class MessageManager:
                          client: jclib.client.Client):
         receiver = self._client_svcs.pop(client)
         receiver.shutdown_client(client)
+
+    def _autocreate_in_memory_conversation_state(
+            self,
+            account: aioxmpp.JID,
+            conversation: aioxmpp.JID) -> InMemoryConversationState:
+        key = account, conversation
+        try:
+            return self._in_memory_archive_conv_index[key]
+        except KeyError:
+            state = InMemoryConversationState()
+            self._in_memory_archive_conv_index[key] = state
+            return state
 
     def handle_live_message(
             self,
@@ -245,24 +267,86 @@ class MessageManager:
         color_input = get_member_colour_input(member)
         from_jid = get_member_from_jid(member)
 
-        argv = (
-            timestamp,
-            member.is_self,
-            from_jid,
-            display_name,
-            color_input,
-            message,
-        )
+        if message.xep0333_marker is not None:
+            marker = message.xep0333_marker
+            self.logger.debug(
+                "received %s marker for message id %s",
+                marker.TAG,
+                marker.id_,
+            )
 
-        data = self._in_memory_archive.setdefault((account,
-                                                   conversation.jid), [])
-        data.append(argv)
+            if not isinstance(marker, aioxmpp.misc.DisplayedMarker):
+                self.logger.debug(
+                    "%s-type markers are not handled yet",
+                    marker,
+                )
+                return
 
-        self.on_message(
-            account,
-            conversation.jid,
-            *argv
-        )
+            try:
+                marked_message_uid = self._in_memory_archive_message_id_index[
+                    account, conversation.jid, marker.id_,
+                ]
+            except KeyError:
+                self.logger.debug(
+                    "we don’t know this message id :("
+                )
+                return
+
+            self.logger.debug(
+                "marking message_uid %s",
+                marked_message_uid,
+            )
+
+            argv = (
+                timestamp,
+                member.is_self,
+                from_jid,
+                display_name,
+                color_input,
+                marked_message_uid,
+            )
+
+            state = self._autocreate_in_memory_conversation_state(
+                account, conversation.jid
+            )
+            state.read_markers[account, conversation.jid] = argv
+
+            self.on_marker(
+                account,
+                conversation.jid,
+                *argv,
+            )
+
+        elif message.body:
+            message_uid = uuid.uuid4()
+
+            argv = (
+                timestamp,
+                message_uid,
+                member.is_self,
+                from_jid,
+                display_name,
+                color_input,
+                message,
+            )
+
+            self._in_memory_archive_data[message_uid] = argv
+
+            self._in_memory_archive_message_id_index[
+                # FIXME: prefer origin-id here
+                account, conversation.jid, message.id_,
+            ] = message_uid
+
+            state = self._autocreate_in_memory_conversation_state(
+                account, conversation.jid
+            )
+            state.messages.append(message_uid)
+
+            self.on_message(
+                account,
+                conversation.jid,
+                *argv
+            )
 
     def get_last_messages(
             self,
@@ -276,7 +360,7 @@ class MessageManager:
             account, conversation, max_count, min_age, max_age,
         )
         try:
-            data = self._in_memory_archive[account, conversation]
+            state = self._in_memory_archive_conv_index[account, conversation]
         except KeyError:
             self.logger.info(
                 "nothing in archive for account=%r, conversation=%r",
@@ -286,7 +370,8 @@ class MessageManager:
 
         max_count = max(0, max_count)
 
-        for i, msg in enumerate(reversed(data)):
+        for i, message_uid in enumerate(reversed(state.messages)):
+            msg = self._in_memory_archive_data[message_uid]
             ts = msg[0]
             if max_count <= 0 and ts <= min_age:
                 self.logger.debug("at limit already and %r <= %r",
@@ -300,8 +385,11 @@ class MessageManager:
         else:
             self.logger.debug("taking whole archive \o/; i = %r", i)
             i += 1
-        assert 0 <= i <= len(data)
+        assert 0 <= i <= len(state.messages)
 
-        self.logger.debug("i=%d, range: %d:%d", i, len(data)-i, len(data))
+        self.logger.debug("i=%d, range: %d:%d", i,
+                          len(state.messages)-i,
+                          len(state.messages))
 
-        return data[len(data)-i:]
+        return [self._in_memory_archive_data[message_uid]
+                for message_uid in state.messages[len(state.messages)-i:]]

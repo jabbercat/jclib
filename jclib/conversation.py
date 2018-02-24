@@ -30,6 +30,7 @@ class ConversationNode(metaclass=abc.ABCMeta):
     on_ready = aioxmpp.callbacks.Signal()
     on_stale = aioxmpp.callbacks.Signal()
     on_message = aioxmpp.callbacks.Signal()
+    on_marker = aioxmpp.callbacks.Signal()
 
     def __init__(self,
                  messages: jclib.archive.MessageManager,
@@ -215,16 +216,24 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
         self.messages = messages
 
         self.messages.on_message.connect(
-            self._handle_live_message,
+            functools.partial(
+                self._forward_event,
+                "on_message"
+            )
+        )
+
+        self.messages.on_marker.connect(
+            functools.partial(
+                self._forward_event,
+                "on_marker"
+            )
         )
 
         self.__clientmap = {}
         self.__convaddrmap = {}
 
-    def _handle_live_message(self,
-                             account_addr,
-                             conversation_addr,
-                             *args, **kwargs):
+    def _forward_event(self, signal_name, account_addr, conversation_addr,
+                       *args, **kwargs):
         account = self.accounts.lookup_jid(account_addr)
         try:
             conv = self.__convaddrmap[account, conversation_addr]
@@ -237,7 +246,7 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
 
         self.logger.debug("forwarding message in %s to %s",
                           conversation_addr, conv)
-        conv.on_message(*args, **kwargs)
+        getattr(conv, signal_name)(*args, **kwargs)
 
     def handle_client_prepare(self, account, client):
         """
