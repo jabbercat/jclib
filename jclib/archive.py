@@ -153,7 +153,6 @@ def get_member_colour_input(
         return member.nick
     if member.direct_jid:
         return str(member.direct_jid.bare())
-    # FIXME: we don’t want to use the full JID for MIX... :(
     return member.conversation_jid
 
 
@@ -168,6 +167,7 @@ class InMemoryConversationState:
     def __init__(self):
         self.messages = []
         self.read_markers = {}
+        self.unread_count = 0
 
 
 class MessageManager:
@@ -188,6 +188,7 @@ class MessageManager:
     on_marker = aioxmpp.callbacks.Signal()
     on_flag = aioxmpp.callbacks.Signal()
     on_message_correction = aioxmpp.callbacks.Signal()
+    on_unread_count_changed = aioxmpp.callbacks.Signal()
 
     def __init__(self,
                  accounts: jclib.identity.Accounts,
@@ -311,6 +312,11 @@ class MessageManager:
             )
             state.read_markers[account, conversation.jid] = argv
 
+            if member.is_self:
+                self.set_read_up_to(account.jid,
+                                    conversation.jid,
+                                    marked_message_uid)
+
             self.on_marker(
                 account,
                 conversation.jid,
@@ -341,12 +347,21 @@ class MessageManager:
                 account, conversation.jid
             )
             state.messages.append(message_uid)
+            old_unread_count = state.unread_count
+            state.unread_count += 1
 
             self.on_message(
                 account,
                 conversation.jid,
                 *argv
             )
+
+            if old_unread_count != state.unread_count:
+                self.on_unread_count_changed(
+                    account,
+                    conversation.jid,
+                    state.unread_count,
+                )
 
     def get_last_messages(
             self,
@@ -393,3 +408,73 @@ class MessageManager:
 
         return [self._in_memory_archive_data[message_uid]
                 for message_uid in state.messages[len(state.messages)-i:]]
+
+    def get_unread_count(
+            self,
+            account: aioxmpp.JID,
+            conversation: aioxmpp.JID):
+        try:
+            state = self._in_memory_archive_conv_index[account, conversation]
+        except KeyError:
+            self.logger.info(
+                "nothing in archive for account=%r, conversation=%r",
+                account, conversation,
+            )
+            return 0
+        return state.unread_count
+
+    def set_read_up_to(
+            self,
+            account: aioxmpp.JID,
+            conversation: aioxmpp.JID,
+            message_uid):
+        try:
+            state = self._in_memory_archive_conv_index[account, conversation]
+        except KeyError:
+            self.logger.info(
+                "nothing in archive for account=%r, conversation=%r",
+                account, conversation,
+            )
+            return
+
+        old_unread_count = state.unread_count
+
+        state.unread_count = min(
+            state.unread_count,
+            self.get_number_of_messages_since(account, conversation,
+                                              message_uid)
+        )
+
+        if old_unread_count != state.unread_count:
+            self.on_unread_count_changed(
+                account,
+                conversation,
+                state.unread_count,
+            )
+
+    def get_number_of_messages_since(
+            self,
+            account: aioxmpp.JID,
+            conversation: aioxmpp.JID,
+            since_message_uid,
+            max_count: int = 1000) -> int:
+        self.logger.debug(
+            "get_number_of_messages_since(%r, %r, %r, max_count=%d)",
+            account, conversation, since_message_uid, max_count
+        )
+        try:
+            state = self._in_memory_archive_conv_index[account, conversation]
+        except KeyError:
+            self.logger.info(
+                "nothing in archive for account=%r, conversation=%r",
+                account, conversation,
+            )
+            return 0
+
+        for i, message_uid in enumerate(reversed(state.messages)):
+            if message_uid == since_message_uid:
+                return i
+            if i >= max_count - 1:
+                return i
+
+        return i

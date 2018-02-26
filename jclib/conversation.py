@@ -88,6 +88,13 @@ class ConversationNode(metaclass=abc.ABCMeta):
             **kwargs,
         )
 
+    def set_read_up_to(self, *args, **kwargs):
+        self._messages.set_read_up_to(
+            self.account.jid,
+            self.conversation_address,
+            *args, **kwargs,
+        )
+
     @abc.abstractproperty
     def label(self) -> str:
         """
