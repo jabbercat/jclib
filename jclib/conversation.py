@@ -95,6 +95,13 @@ class ConversationNode(metaclass=abc.ABCMeta):
             *args, **kwargs,
         )
 
+    def get_unread_count(self, *args, **kwargs):
+        return self._messages.get_unread_count(
+            self.account.jid,
+            self.conversation_address,
+            *args, **kwargs,
+        )
+
     @abc.abstractproperty
     def label(self) -> str:
         """
@@ -200,6 +207,7 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
     """
 
     on_conversation_added = aioxmpp.callbacks.Signal()
+    on_unread_count_changed = aioxmpp.callbacks.Signal()
 
     def __init__(self,
                  accounts: jclib.identity.Accounts,
@@ -236,6 +244,10 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
             )
         )
 
+        self.messages.on_unread_count_changed.connect(
+            self._handle_unread_count_changed,
+        )
+
         self.__clientmap = {}
         self.__convaddrmap = {}
 
@@ -254,6 +266,20 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
         self.logger.debug("forwarding message in %s to %s",
                           conversation_addr, conv)
         getattr(conv, signal_name)(*args, **kwargs)
+
+    def _handle_unread_count_changed(self, account_addr, conversation_addr,
+                                     new_count: int):
+        account = self.accounts.lookup_jid(account_addr)
+        try:
+            conv = self.__convaddrmap[account, conversation_addr]
+        except KeyError:
+            self.logger.warning(
+                "failed to find conversation for event in %s",
+                conversation_addr,
+            )
+            return
+
+        self.on_unread_count_changed(conv, new_count)
 
     def handle_client_prepare(self, account, client):
         """
