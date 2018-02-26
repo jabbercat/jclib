@@ -388,11 +388,11 @@ class MessageManager:
         for i, message_uid in enumerate(reversed(state.messages)):
             msg = self._in_memory_archive_data[message_uid]
             ts = msg[0]
-            if max_count <= 0 and ts <= min_age:
+            if max_count <= 0 and (min_age is None or ts <= min_age):
                 self.logger.debug("at limit already and %r <= %r",
                                   ts, min_age)
                 break
-            if ts < max_age:
+            if max_age is not None and ts < max_age:
                 self.logger.debug("too old: %r < %r",
                                   ts, max_age)
                 break
