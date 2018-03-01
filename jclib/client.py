@@ -181,6 +181,10 @@ class Client:
     @asyncio.coroutine
     def shutdown(self):
         futs = [asyncio.Future() for _ in self.clients]
+        if not futs:
+            # otherwise, wait complains down the road
+            return
+
         for fut, client in zip(futs, self.clients.values()):
             client.on_stopped.connect(fut, client.on_stopped.AUTO_FUTURE)
             client.on_failure.connect(fut, client.on_failure.AUTO_FUTURE)
