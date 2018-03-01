@@ -207,6 +207,7 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
     """
 
     on_conversation_added = aioxmpp.callbacks.Signal()
+    on_conversation_removed = aioxmpp.callbacks.Signal()
     on_unread_count_changed = aioxmpp.callbacks.Signal()
 
     def __init__(self,
@@ -386,3 +387,14 @@ class ConversationManager(jclib.instrumentable_list.ModelListView):
 
         room, _ = muc_client.join(address, nick, password=password)
         self.adopt_conversation(account, room)
+
+    @asyncio.coroutine
+    def close_conversation(self,
+                           account: jclib.identity.Account,
+                           conversation_address: aioxmpp.JID):
+        node = self.__convaddrmap[account, conversation_address]
+        if node.conversation is not None:
+            yield from node.conversation.leave()
+        del self.__convaddrmap[account, conversation_address]
+        self._backend.remove(node)
+        self.on_conversation_removed(node)
