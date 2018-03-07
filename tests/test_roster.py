@@ -671,6 +671,7 @@ class TestContactRosterService(unittest.TestCase):
             spec=aioxmpp.RosterClient,
         )
         self.roster.set_entry = CoroutineMock()
+        self.roster.remove_entry = CoroutineMock()
         self.writeman = unittest.mock.Mock(spec=jclib.storage.WriteManager)
         self.rs = roster.ContactRosterService(self.account, self.writeman)
         self.listener = make_listener(self.rs)
@@ -1315,6 +1316,20 @@ class TestContactRosterService(unittest.TestCase):
             remove_from_groups=unittest.mock.sentinel.tags_to_remove,
         )
 
+    def test_remove_uses_roster_service(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        item = unittest.mock.Mock(spec=roster.ContactRosterItem)
+
+        run_coroutine(self.rs.remove(
+            item,
+        ))
+
+        self.roster.remove_entry.assert_called_once_with(
+            item.address,
+        )
+
 
 class TestConferenceBookmarkService(unittest.TestCase):
     def setUp(self):
@@ -1453,6 +1468,22 @@ class TestConferenceBookmarkService(unittest.TestCase):
         )
 
         self.assertEqual(result, unittest.mock.sentinel.result)
+
+    def test_remove_uses_bookmark_service(self):
+        client = self._prep_client()
+        self.bookmarks.discard_bookmark = CoroutineMock()
+        self.rs.prepare_client(client)
+
+        item = unittest.mock.Mock(spec=roster.MUCRosterItem)
+
+        run_coroutine(
+            self.rs.remove(item)
+        )
+
+        item.to_bookmark.assert_called_once_with()
+        self.bookmarks.discard_bookmark.assert_called_once_with(
+            item.to_bookmark()
+        )
 
     def test__on_bookmark_changed_updates_item_and_emits_data_changed(self):
         with contextlib.ExitStack() as stack:

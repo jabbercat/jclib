@@ -495,6 +495,15 @@ class AbstractRosterService(
         :raises RuntimeError: if called while the roster is not writable.
         """
 
+    @abc.abstractmethod
+    @asyncio.coroutine
+    def remove(self, item: AbstractRosterItem):
+        """
+        Remove an item from the roster.
+
+        :raises RuntimeError: if called while the roster is not writable.
+        """
+
 
 class ContactRosterService(AbstractRosterService):
     def __init__(self,
@@ -553,6 +562,12 @@ class ContactRosterService(AbstractRosterService):
         yield from self._client.summon(aioxmpp.RosterClient).set_entry(
             item.address,
             name=new_label,
+        )
+
+    @asyncio.coroutine
+    def remove(self, item):
+        yield from self._client.summon(aioxmpp.RosterClient).remove_entry(
+            item.address,
         )
 
     @property
@@ -654,9 +669,11 @@ class ConferenceBookmarkService(AbstractRosterService):
     def is_writable(self):
         return self._client is not None
 
+    @asyncio.coroutine
     def update_tags(self, item, add_tags, remove_tags):
         raise NotImplementedError()
 
+    @asyncio.coroutine
     def set_label(self, item, new_label):
         bookmarks_svc = self._client.summon(aioxmpp.BookmarkClient)
         old = item.to_bookmark()
@@ -666,6 +683,12 @@ class ConferenceBookmarkService(AbstractRosterService):
             old,
             new,
         ))
+
+    @asyncio.coroutine
+    def remove(self, item):
+        bookmarks_svc = self._client.summon(aioxmpp.BookmarkClient)
+        bookmark = item.to_bookmark()
+        yield from bookmarks_svc.discard_bookmark(bookmark)
 
     def prepare_client(self, client):
         bookmarks_svc = client.summon(aioxmpp.BookmarkClient)
