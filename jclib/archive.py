@@ -353,7 +353,8 @@ class MessageManager:
             self.on_message(
                 account,
                 conversation.jid,
-                *argv
+                *argv,
+                tracker=tracker,
             )
 
             if old_unread_count != state.unread_count:
