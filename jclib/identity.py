@@ -1,3 +1,5 @@
+import base64
+import random
 import typing
 
 import aioxmpp.callbacks
@@ -11,6 +13,15 @@ import jclib.utils
 import jclib.xso
 
 
+def generate_resource():
+    rng = random.SystemRandom()
+    return "jabbercat-{}".format(
+        base64.b64encode(rng.getrandbits(24).to_bytes(3, 'little')).decode(
+            'ascii'
+        )
+    )
+
+
 class Account:
     def __init__(self, jid, colour):
         super().__init__()
@@ -20,6 +31,12 @@ class Account:
         self.stashed_xml = []
         self.colour = colour
         self.client = None
+
+    def autofill_resource(self):
+        if self._jid.resource is None:
+            self._jid = self._jid.replace(
+                resource=generate_resource()
+            )
 
     @property
     def jid(self):
@@ -40,6 +57,7 @@ class Account:
         result.enabled = not object_.disabled
         result.allow_unencrypted = bool(object_.allow_unencrypted)
         result.stashed_xml = list(object_._)
+        result.autofill_resource()
         return result
 
 
@@ -68,7 +86,7 @@ class Accounts(jclib.config.SimpleConfigurable,
                     colour: typing.Tuple[int, int, int]) -> Account:
         bare_jid = self._require_unique_jid(jid)
         result = Account(bare_jid, colour)
-        result.resource = jid.resource
+        result.autofill_resource()
         self._backend.append(result)
         self._jidmap[bare_jid] = result
         self.on_account_added(result)
