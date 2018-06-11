@@ -16,7 +16,11 @@ import jclib.xso
 def generate_resource():
     rng = random.SystemRandom()
     return "jabbercat-{}".format(
-        base64.b64encode(rng.getrandbits(24).to_bytes(3, 'little')).decode(
+        base64.urlsafe_b64encode(
+            rng.getrandbits(24).to_bytes(
+                3, 'little'
+            )
+        ).decode(
             'ascii'
         )
     )
