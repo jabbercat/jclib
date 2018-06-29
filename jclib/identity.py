@@ -103,7 +103,7 @@ class Accounts(jclib.config.SimpleConfigurable,
     def remove_account(self, account: Account):
         self.on_account_disabled(account)
         self.on_account_removed(account)
-        account = self._jidmap.pop(account.jid)
+        account = self._jidmap.pop(account.jid.bare())
         self._backend.remove(account)
 
     def set_account_enabled(self, account: Account, enabled: bool):
@@ -133,7 +133,7 @@ class Accounts(jclib.config.SimpleConfigurable,
             account = Account.from_xso(account_xso)
             self._backend.append(account)
             self.on_account_added(account)
-            self._jidmap[account.jid] = account
+            self._jidmap[account.jid.bare()] = account
             if account.enabled:
                 self.on_account_enabled(account)
 
