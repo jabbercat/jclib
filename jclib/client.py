@@ -47,6 +47,7 @@ class Client:
 
     def __init__(self, accounts: identity.Accounts, *, use_keyring=None):
         super().__init__()
+        self._accounts = accounts
         self.logger = logging.getLogger(
             type(self).__module__ + type(self).__qualname__
         )
@@ -172,6 +173,9 @@ class Client:
         self.logger.info("client stopped for account %r", account)
         client = self.clients.pop(account)
         account.client = None
+        if exc is not None:
+            self.logger.warning("client stopped with error, disabling account")
+            self._accounts.set_account_enabled(account, False)
         self.on_client_stopped(account, client)
 
     def on_account_disabled(self, account: identity.Account):
