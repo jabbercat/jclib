@@ -142,14 +142,14 @@ class AccountMessageReceiver:
 
 def get_member_display_name(
         member: aioxmpp.im.conversation.AbstractConversationMember):
-    if hasattr(member, "nick"):  # XEP-0045
+    if hasattr(member, "nick") and member.nick is not None:  # XEP-0045
         return member.nick
     return str((member.direct_jid or member.conversation_jid).bare())
 
 
 def get_member_colour_input(
         member: aioxmpp.im.conversation.AbstractConversationMember):
-    if hasattr(member, "nick"):
+    if hasattr(member, "nick") and member.nick is not None:
         return member.nick
     if member.direct_jid:
         return str(member.direct_jid.bare())
