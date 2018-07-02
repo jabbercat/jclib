@@ -15,6 +15,7 @@ import abc
 import asyncio
 import collections
 import copy
+import enum
 import itertools
 import logging
 import typing
@@ -27,6 +28,7 @@ import jclib.client
 import jclib.conversation
 import jclib.identity
 import jclib.instrumentable_list
+import jclib.metadata
 import jclib.storage
 import jclib.xso
 
@@ -729,7 +731,8 @@ class ConferenceBookmarkService(AbstractRosterService):
         self._writeman.request_writeback()
 
 
-class RosterManager(jclib.instrumentable_list.ModelListView[AbstractRosterItem]):
+class RosterManager(
+        jclib.instrumentable_list.ModelListView[AbstractRosterItem]):
     def __init__(self,
                  accounts: jclib.identity.Accounts,
                  client: jclib.client.Client,
@@ -772,7 +775,6 @@ class RosterManager(jclib.instrumentable_list.ModelListView[AbstractRosterItem])
             self._backend.remove_source(svc)
 
     def index(self, item: AbstractRosterItem) -> int:
-        print(self._backend.source_offset)
         return self._backend.source_offset(item.owner) + item.owner.index(item)
 
     @property
@@ -796,6 +798,77 @@ class RosterManager(jclib.instrumentable_list.ModelListView[AbstractRosterItem])
             self._tags.remove(tag)
         else:
             self._tags_counter[tag] = ctr
+
+
+class RosterMetadata(enum.Enum):
+    NAME = 'name'
+
+
+class RosterNameMetadataProvider(jclib.metadata.AbstractMetadataProvider):
+    published_keys = (
+        RosterMetadata.NAME,
+    )
+
+    def __init__(self, roster: RosterManager):
+        super().__init__()
+        self._roster = roster
+        self._roster.begin_insert_rows.connect(
+            self._begin_insert_rows,
+        )
+        self._roster.end_insert_rows.connect(
+            self._end_insert_rows,
+        )
+        self._roster.begin_remove_rows.connect(
+            self._begin_remove_rows,
+        )
+        self._roster.data_changed.connect(
+            self._data_changed,
+        )
+        self._jidmap = {}
+
+    def _begin_insert_rows(self, _, index1, index2):
+        self._inserting = (index1, index2)
+
+    def _end_insert_rows(self):
+        if not self._inserting:
+            return
+        index1, index2 = self._inserting
+        for item in self._roster[index1:index2+1]:
+            self._changed(item)
+
+    def _begin_remove_rows(self, _, index1, index2):
+        for item in self._roster[index1:index2+1]:
+            self._removing(item)
+
+    def _data_changed(self, _, index1, index2, column1, column2, roles):
+        for item in self._roster[index1:index2+1]:
+            self._changed(item)
+
+    def _removing(self, item):
+        del self._jidmap[item.account, item.address]
+        self.on_changed(RosterMetadata.NAME, item.address, None)
+
+    def _changed(self, item):
+        self._jidmap[item.account, item.address] = item
+        self.on_changed(RosterMetadata.NAME, item.address, item.label)
+
+    def get(self,
+            key: RosterMetadata,
+            account: jclib.identity.Account,
+            peer: aioxmpp.JID):
+        try:
+            item = self._jidmap[account, peer]
+        except KeyError:
+            return None
+
+        return item.label
+
+    @asyncio.coroutine
+    def fetch(self,
+              key: RosterMetadata,
+              account: jclib.identity.Account,
+              peer: aioxmpp.JID):
+        return self.get(key, account, peer)
 
 
 jclib.storage.xml.register(
