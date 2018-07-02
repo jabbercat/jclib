@@ -13,6 +13,7 @@ from datetime import timedelta
 
 import jclib.config
 import jclib.storage
+import jclib.metadata
 
 from . import identity, client, conversation, utils
 
@@ -129,7 +130,11 @@ class Main:
         self.loop = loop
         self.accounts = self.Accounts()
         self.client = self.Client(self.accounts)
-        self.writeman = jclib.storage.WriteManager(timedelta(seconds=5))
+        self.writeman = jclib.storage.WriteManager(timedelta(seconds=120))
+        self.metadata = jclib.metadata.MetadataFrontend()
+        self.metadata.register_provider(
+            jclib.metadata.presence_metadata_provider(self.client)
+        )
 
         self._terminated_at = None
 
