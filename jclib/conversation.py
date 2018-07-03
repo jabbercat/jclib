@@ -49,6 +49,10 @@ class ConversationNode(metaclass=abc.ABCMeta):
     def _node(self):
         return self.children
 
+    @abc.abstractproperty
+    def address(self):
+        pass
+
     @abc.abstractmethod
     @asyncio.coroutine
     def _start_conversation(
@@ -148,6 +152,10 @@ class P2PConversationNode(ConversationNode):
     def label(self) -> str:
         return str(self.peer_jid)
 
+    @property
+    def address(self):
+        return self.peer_jid
+
     @asyncio.coroutine
     def _start_conversation(
             self,
@@ -172,6 +180,10 @@ class MUCConversationNode(ConversationNode):
     @property
     def label(self):
         return str(self.muc_jid)
+
+    @property
+    def address(self):
+        return self.muc_jid
 
     @asyncio.coroutine
     def _start_conversation(
