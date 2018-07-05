@@ -176,6 +176,7 @@ class Main:
         self.loop.remove_signal_handler(signal.SIGTERM)
         self.loop.remove_signal_handler(signal.SIGINT)
         del self.main_future
+        self.writeman.force_writeback()
 
     def quit(self):
         if self.main_future.done():

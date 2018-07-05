@@ -46,6 +46,9 @@ class WriteManager:
     def _writeback_scheduled(self, invocations):
         logger.debug("executing scheduled writeback for %d clients",
                      len(invocations))
+        self._do_writeback()
+
+    def _do_writeback(self):
         self.on_writeback()
         jclib.storage.xml.flush_all()
 
@@ -55,3 +58,10 @@ class WriteManager:
         `delay` seconds.
         """
         self._scheduler()
+
+    def force_writeback(self):
+        """
+        Force a writeback right now.
+        """
+        logger.debug("writeback forced", stack_info=True)
+        self._do_writeback()
