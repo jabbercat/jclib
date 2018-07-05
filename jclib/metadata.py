@@ -360,6 +360,20 @@ class MetadataFrontend:
             self._provider_map[key] = provider
             self._signals[key] = aioxmpp.callbacks.AdHocSignal()
 
+        provider.on_changed.connect(self._distribute_on_changed)
+
+    def _distribute_on_changed(self,
+                               key: object,
+                               account: jclib.identity.Account,
+                               peer: aioxmpp.JID,
+                               value: object):
+        try:
+            signal = self._signals[key]
+        except KeyError:
+            return
+
+        signal(key, account, peer, value)
+
     @asyncio.coroutine
     def fetch(self,
               key: object,

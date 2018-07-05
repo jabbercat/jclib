@@ -23,6 +23,7 @@ def make_provider_mock(published_keys=[]):
     p = unittest.mock.Mock(spec=metadata.AbstractMetadataProvider)
     p.fetch = CoroutineMock()
     p.published_keys = set(published_keys)
+    p.on_changed = aioxmpp.callbacks.AdHocSignal()
     return p
 
 
@@ -681,3 +682,46 @@ class TestMetadataFrontend(unittest.TestCase):
 
         self.assertIsInstance(self.mf.changed_signal("k2"),
                               aioxmpp.callbacks.AdHocSignal)
+
+    def test_distributes_on_change_to_keyed_signals(self):
+        self.mf.register_provider(self.p2)
+
+        l1 = unittest.mock.Mock()
+        l1.return_value = None
+
+        l2 = unittest.mock.Mock()
+        l2.return_value = None
+
+        self.mf.changed_signal("k1").connect(l1)
+        self.mf.changed_signal("k2").connect(l2)
+
+        self.p2.on_changed("k1",
+                           unittest.mock.sentinel.account,
+                           unittest.mock.sentinel.peer,
+                           unittest.mock.sentinel.value)
+
+        l1.assert_called_once_with(
+            "k1",
+            unittest.mock.sentinel.account,
+            unittest.mock.sentinel.peer,
+            unittest.mock.sentinel.value
+        )
+
+        l2.assert_not_called()
+
+        l1.reset_mock()
+        l2.reset_mock()
+
+        self.p2.on_changed("k2",
+                           unittest.mock.sentinel.account,
+                           unittest.mock.sentinel.peer,
+                           unittest.mock.sentinel.value)
+
+        l2.assert_called_once_with(
+            "k2",
+            unittest.mock.sentinel.account,
+            unittest.mock.sentinel.peer,
+            unittest.mock.sentinel.value
+        )
+
+        l1.assert_not_called()
