@@ -22,6 +22,7 @@ import typing
 
 from datetime import datetime
 
+import aioxmpp
 import aioxmpp.callbacks
 
 import jclib.client
@@ -506,6 +507,10 @@ class AbstractRosterService(
         :raises RuntimeError: if called while the roster is not writable.
         """
 
+    @abc.abstractmethod
+    def get_by_address(self, peer: aioxmpp.JID) -> AbstractRosterItem:
+        pass
+
 
 class ContactRosterService(AbstractRosterService):
     def __init__(self,
@@ -647,6 +652,9 @@ class ContactRosterService(AbstractRosterService):
     def _on_tag_removed(self, tag: str):
         self.on_tag_removed(tag)
 
+    def get_by_address(self, peer: aioxmpp.JID):
+        return self.__addrmap[peer]
+
 
 class ConferenceBookmarkService(AbstractRosterService):
     def __init__(self,
@@ -730,6 +738,9 @@ class ConferenceBookmarkService(AbstractRosterService):
         self._backend.refresh_data(slice(index, index + 1), None)
         self._writeman.request_writeback()
 
+    def get_by_address(self, peer: aioxmpp.JID):
+        return self.__addrmap[peer]
+
 
 class RosterManager(
         jclib.instrumentable_list.ModelListView[AbstractRosterItem]):
@@ -777,6 +788,19 @@ class RosterManager(
     def index(self, item: AbstractRosterItem) -> int:
         return self._backend.source_offset(item.owner) + item.owner.index(item)
 
+    def get_by_address(self,
+                       account: jclib.identity.Account,
+                       peer: aioxmpp.JID) -> AbstractRosterItem:
+        svcs = self._client_svc_map[account.client]
+
+        for svc in svcs:
+            try:
+                return svc.get_by_address(peer)
+            except KeyError:
+                pass
+
+        raise KeyError((account, peer))
+
     @property
     def tags(self) -> jclib.instrumentable_list.AbstractModelListView[str]:
         """
@@ -802,12 +826,11 @@ class RosterManager(
 
 class RosterMetadata(enum.Enum):
     NAME = 'name'
+    AUTOJOIN = 'autojoin'
 
 
-class RosterNameMetadataProvider(jclib.metadata.AbstractMetadataProvider):
-    published_keys = (
-        RosterMetadata.NAME,
-    )
+class RosterMetadataProvider(jclib.metadata.AbstractMetadataProvider):
+    published_keys = RosterMetadata
 
     def __init__(self, roster: RosterManager):
         super().__init__()
@@ -825,6 +848,7 @@ class RosterNameMetadataProvider(jclib.metadata.AbstractMetadataProvider):
             self._data_changed,
         )
         self._jidmap = {}
+        self._autojoin_cache = {}
 
     def _begin_insert_rows(self, _, index1, index2):
         self._inserting = (index1, index2)
@@ -846,11 +870,30 @@ class RosterNameMetadataProvider(jclib.metadata.AbstractMetadataProvider):
 
     def _removing(self, item):
         del self._jidmap[item.account, item.address]
-        self.on_changed(RosterMetadata.NAME, item.address, None)
+        self.on_changed(RosterMetadata.NAME, item.account, item.address, None)
+
+        if isinstance(item, MUCRosterItem):
+            self.on_changed(RosterMetadata.AUTOJOIN,
+                            item.account, item.address,
+                            None)
 
     def _changed(self, item):
-        self._jidmap[item.account, item.address] = item
-        self.on_changed(RosterMetadata.NAME, item.address, item.label)
+        key = item.account, item.address
+        self._jidmap[key] = item
+        self.on_changed(RosterMetadata.NAME,
+                        item.account, item.address,
+                        item.label)
+
+        if isinstance(item, MUCRosterItem):
+            old = self._autojoin_cache.get(key)
+
+            if old != item.autojoin:
+                self.on_changed(RosterMetadata.AUTOJOIN,
+                                item.account, item.address,
+                                item.autojoin)
+                self._autojoin_cache[key] = item.autojoin
+        else:
+            self._autojoin_cache.pop(key, None)
 
     def get(self,
             key: RosterMetadata,

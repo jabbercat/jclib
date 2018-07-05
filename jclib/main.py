@@ -156,10 +156,33 @@ class Main:
             jclib.metadata.presence_metadata_provider(self.client)
         )
         self.metadata.register_provider(
-            jclib.roster.RosterNameMetadataProvider(self.roster)
+            jclib.roster.RosterMetadataProvider(self.roster)
+        )
+        self.metadata.changed_signal(
+            jclib.roster.RosterMetadata.AUTOJOIN
+        ).connect(
+            self._autojoin_changed
         )
 
         self._terminated_at = None
+
+    def _autojoin_changed(self, _, account, mucjid, new_value):
+        if new_value is True:
+            # follow autojoin
+            try:
+                item = self.roster.get_by_address(
+                    account,
+                    mucjid,
+                )
+            except KeyError:
+                return
+
+            self.conversations.open_muc_conversation(
+                account,
+                mucjid,
+                item.nick,
+                item.password
+            )
 
     def setup(self):
         self.loop.add_signal_handler(
