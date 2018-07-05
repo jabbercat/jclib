@@ -132,7 +132,10 @@ class Main:
         self.loop = loop
         self.accounts = self.Accounts()
         self.client = self.Client(self.accounts)
-        self.writeman = jclib.storage.WriteManager(timedelta(seconds=120))
+        self.writeman = jclib.storage.WriteManager(
+            5,
+            120,
+        )
         self.roster = jclib.roster.RosterManager(
             self.accounts,
             self.client,

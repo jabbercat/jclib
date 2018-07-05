@@ -14,63 +14,37 @@ import jclib.storage.manager
 
 class TestWriteManager(unittest.TestCase):
     def setUp(self):
+        self.delay = 0.1
+        self.max_delay = 0.2
         self.m = jclib.storage.manager.WriteManager(
-            writeback_interval=timedelta(seconds=0.1)
+            delay=self.delay,
+            max_delay=self.max_delay,
         )
         self.listener = make_listener(self.m)
 
-    def tearDown(self):
-        self.m.close()
+    def test_uses_delayed_invocation(self):
+        with unittest.mock.patch(
+                "jclib.utils.DelayedInvocation") as DelayedInvocation:
+            wm = jclib.storage.manager.WriteManager(
+                delay=unittest.mock.sentinel.delay,
+                max_delay=unittest.mock.sentinel.max_delay,
+                loop=unittest.mock.sentinel.loop,
+            )
 
-    def test_writeback_interval(self):
-        self.assertEqual(self.m.writeback_interval, timedelta(seconds=0.1))
+        DelayedInvocation.assert_called_once_with(
+            wm._writeback_scheduled,
+            unittest.mock.sentinel.delay,
+            max_delay=unittest.mock.sentinel.max_delay,
+            loop=unittest.mock.sentinel.loop,
+        )
 
-    def test_emits_on_writeback_regularly(self):
-        self.listener.on_writeback.assert_not_called()
-        run_coroutine(asyncio.sleep(0.15))
-        self.listener.on_writeback.assert_called_once_with()
+        self.assertEqual(wm._scheduler, DelayedInvocation())
 
-        self.listener.on_writeback.reset_mock()
-        run_coroutine(asyncio.sleep(0.1))
-        self.listener.on_writeback.assert_called_once_with()
-
-    def test_change_of_writeback_interval_causes_emit(self):
-        self.listener.on_writeback.assert_not_called()
-        self.m.writeback_interval = timedelta(seconds=0.2)
-        self.listener.on_writeback.assert_not_called()
-
-        run_coroutine(asyncio.sleep(0))
-        self.listener.on_writeback.assert_called_once_with()
-
-        self.listener.on_writeback.reset_mock()
-        run_coroutine(asyncio.sleep(0.3))
-        self.listener.on_writeback.assert_called_once_with()
-
-    def test_close_stops_loop(self):
-        self.listener.on_writeback.assert_not_called()
-        run_coroutine(asyncio.sleep(0.15))
-        self.listener.on_writeback.assert_called_once_with()
-
-        self.listener.on_writeback.reset_mock()
-        run_coroutine(asyncio.sleep(0.1))
-        self.listener.on_writeback.assert_called_once_with()
-
-        self.m.close()
-
-        self.listener.on_writeback.reset_mock()
-        run_coroutine(asyncio.sleep(0.1))
-        self.listener.on_writeback.assert_not_called()
-
-    def test_request_writeback(self):
-        self.listener.on_writeback.assert_not_called()
+    def test_request_writeback_causes_writeback(self):
         self.m.request_writeback()
+        run_coroutine(asyncio.sleep(self.delay/2))
         self.listener.on_writeback.assert_not_called()
-
-        run_coroutine(asyncio.sleep(0))
-        self.listener.on_writeback.assert_called_once_with()
-
-        self.listener.on_writeback.reset_mock()
-        run_coroutine(asyncio.sleep(0.15))
+        run_coroutine(asyncio.sleep(self.delay/2 + self.delay/10))
         self.listener.on_writeback.assert_called_once_with()
 
     def test_calls_xml_frontend_flush_after_writeback(self):
@@ -94,6 +68,8 @@ class TestWriteManager(unittest.TestCase):
             self.m.on_writeback.connect(
                 check_not_called,
             )
-            run_coroutine(asyncio.sleep(0.15))
+            self.m.request_writeback()
+            run_coroutine(asyncio.sleep(self.delay*1.1))
+            self.listener.on_writeback.assert_called_once_with()
             self.assertTrue(not_called, "flush is called before on_writeback")
             flush_all.assert_called_once_with()
