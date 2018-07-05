@@ -11,9 +11,11 @@ import xdg.BaseDirectory
 
 from datetime import timedelta
 
+import jclib.archive
 import jclib.config
 import jclib.storage
 import jclib.metadata
+import jclib.roster
 
 from . import identity, client, conversation, utils
 
@@ -131,9 +133,27 @@ class Main:
         self.accounts = self.Accounts()
         self.client = self.Client(self.accounts)
         self.writeman = jclib.storage.WriteManager(timedelta(seconds=120))
+        self.roster = jclib.roster.RosterManager(
+            self.accounts,
+            self.client,
+            self.writeman,
+        )
+        self.archive = jclib.archive.MessageManager(
+            self.accounts,
+            self.client,
+        )
+        self.conversations = conversation.ConversationManager(
+            self.accounts,
+            self.client,
+            self.archive,
+        )
+
         self.metadata = jclib.metadata.MetadataFrontend()
         self.metadata.register_provider(
             jclib.metadata.presence_metadata_provider(self.client)
+        )
+        self.metadata.register_provider(
+            jclib.roster.RosterNameMetadataProvider(self.roster)
         )
 
         self._terminated_at = None
