@@ -9,7 +9,9 @@ import os.path
 import pathlib
 import struct
 import tempfile
+import time
 import types
+import typing
 import unicodedata
 import xml.sax.handler
 
@@ -473,3 +475,145 @@ def safe_writer(destpath, mode="wb", extra_paranoia=False):
             os.replace(tmpfile.name, str(destpath))
             if extra_paranoia:
                 fsync_dir(destpath.parent)
+
+
+class DelayedInvocation:
+    """
+    Callable object which batches invocations and forwards them to a sink after
+    a configurable delay.
+
+    :param sink: The object which will be called with the batched invocations.
+    :param delay: The delay after which the `sink` will be called with the
+        batched arguments.
+    :type delay: :class:`float`
+    :param max_delay: Cap on the maximum delay from the first invocation of the
+        :class:`DelayedInvocation` object to the invocation of `sink`.
+    :type max_delay: :class:`float` or :data:`None`
+    :param loop: Event loop in which `sink` will be scheduled.
+
+    `delay` and `max_delay` are used to initialise the respective attributes.
+
+    The :class:`DelayedInvocation` can be called with arbitrary arguments. The
+    arguments are stored in a list internally and a timer is started to elapse
+    after :attr:`delay`. When the timer elapses, `sink` is called with the list
+    as its only argument.
+
+    If subsequent invocations happen before the timer elapses, the timer is
+    reset; so each further invocation of the :class:`DelayedInvocation` further
+    delays the invocation of `sink`.
+
+    If :attr:`max_delay` is not :data:`None`, the :class:`DelayedInvocation`
+    object limits the delay from the first call (where the timer is started) to
+    the invocation of `sink` to this value. So even if
+    :class:`DelayedInvocation` is called in intervals of ``delay*0.9``, it will
+    take at most :attr:`max_delay` from the first call until `sink` is invoked.
+
+    `sink` receives a list of tuples as argument. Each tuple consists of a
+    tuple and a dictionary. The tuple contains the positonial, the dictionary
+    the keyword arguments. Since :class:`DelayedInvocation` does not perform
+    any checking on the arguments, the positional tuple and the keyword
+    dictionary may differ in size on each invocation. `sink` must be prepared
+    to handle such situations.
+
+    .. autoattribute:: delay
+
+    .. autoattribute:: max_delay
+
+    .. note::
+
+        Type checking of arguments is not supported; Likewise, exceptions will
+        be handled by the event loops exception handler and -- obviously --
+        not propagated to the caller.
+
+        To have a backchannel from the `sink` to the caller, use
+        :class:`asyncio.Future` or similar objects as part of the arguments.
+    """
+
+    def __init__(self,
+                 sink: typing.Callable,
+                 delay: float,
+                 max_delay: float = None, *,
+                 loop: asyncio.BaseEventLoop = None):
+        super().__init__()
+        self.sink = sink
+        self.loop = loop or asyncio.get_event_loop()
+
+        self.delay = delay
+        self.max_delay = max_delay
+
+        self._calls = []
+        self._scheduled_call = None
+        self._first_call = None
+        self._latest = None
+        self._scheduled_at = None
+
+    @property
+    def delay(self) -> float:
+        """
+        The time in seconds from the last invocation of
+        :class:`DelayedInvocation` until the `sink` is called.
+        """
+        return self._delay
+
+    @delay.setter
+    def delay(self, value: float):
+        if value is None:
+            raise ValueError("delay must not be None")
+        if value < 0:
+            raise ValueError("delay must not be negative")
+        self._delay = value
+
+    @property
+    def max_delay(self) -> typing.Optional[float]:
+        """
+        The maximum time in seconds from the *first* fresh invocation of
+        :class:`DelayedInvocation` until the `sink` is called.
+
+        May be :data:`None` to remove the limit altogether.
+        """
+        return self._max_delay
+
+    @max_delay.setter
+    def max_delay(self, value: typing.Optional[float]):
+        if value is not None and value < 0:
+            raise ValueError("max_delay must not be negative")
+        self._max_delay = value
+
+    def _invoke(self):
+        calls = self._calls
+        self._calls = []
+        self.sink(calls)
+
+    def __call__(self, *args, **kwargs):
+        self._calls.append((args, kwargs))
+        now = None
+
+        if self._scheduled_call is None:
+            self._first_call = now = time.monotonic()
+            if self.max_delay is not None:
+                self._latest = self.max_delay + self._first_call
+            else:
+                self._latest = None
+
+        if (self._scheduled_call is not None and
+                self._latest is not None and
+                self._latest <= self._scheduled_at):
+            # do not re-schedule if scheduled and it is already scheduled at the
+            # latest possible point
+            return
+
+        if self._scheduled_call is not None:
+            self._scheduled_call.cancel()
+
+        delay = self.delay
+        if self._latest is not None:
+            now = now or time.monotonic()
+            scheduled_at = delay + now
+            if scheduled_at >= self._latest:
+                scheduled_at = self._latest
+                delay = max(0, scheduled_at - now)
+            self._scheduled_at = scheduled_at
+
+        self._scheduled_call = self.loop.call_later(
+            delay, self._invoke,
+        )

@@ -11,6 +11,10 @@ import xdg.BaseDirectory
 import aioxmpp.errors
 import aioxmpp.utils as aioxmpp_utils
 
+from aioxmpp.testutils import (
+    run_coroutine,
+)
+
 import jclib.utils as utils
 
 
@@ -728,3 +732,179 @@ class Testsafe_writer(unittest.TestCase):
                 unittest.mock.call.fsync_dir(self.path.parent),
             ]
         )
+
+
+class TestDelayedInvocation(unittest.TestCase):
+    def setUp(self):
+        self.sink = unittest.mock.Mock()
+        self.loop = asyncio.get_event_loop()
+        self.delay = 0.05
+        self.dac = utils.DelayedInvocation(
+            self.sink,
+            self.delay,
+            loop=self.loop,
+        )
+
+    def test_calls_sink_delayedly_with_arguments_in_list(self):
+        self.dac("arg1", "arg2", kwarg="foo")
+        self.sink.assert_not_called()
+
+        run_coroutine(asyncio.sleep(self.delay/2))
+
+        self.sink.assert_not_called()
+
+        run_coroutine(asyncio.sleep(self.delay/2 + self.delay/10))
+
+        self.sink.assert_called_once_with(
+            [(("arg1", "arg2",), {"kwarg": "foo"})]
+        )
+
+    def test_schedules_call_via_loop(self):
+        with unittest.mock.patch.object(self.loop, "call_later") as call_later:
+            self.dac("arg1", "arg2", kwarg="foo")
+
+        call_later.assert_called_once_with(
+            self.delay,
+            unittest.mock.ANY,
+        )
+
+    def test_multiple_calls_within_delay_delay_call_further(self):
+        self.dac("arg1")
+        run_coroutine(asyncio.sleep(self.delay/2 + self.delay/10))
+
+        self.dac("arg2")
+        run_coroutine(asyncio.sleep(self.delay/2))
+
+        self.sink.assert_not_called()
+
+        run_coroutine(asyncio.sleep(self.delay/2 + self.delay/10))
+
+        self.sink.assert_called_once_with(
+            [
+                (("arg1",), {}),
+                (("arg2",), {}),
+            ]
+        )
+
+    def test_delay_change_takes_effect_on_next_call(self):
+        self.dac("arg1")
+        run_coroutine(asyncio.sleep(self.delay/2 + self.delay/10))
+
+        self.sink.assert_not_called()
+
+        self.dac.delay = self.delay/2
+        self.dac("arg2")
+        run_coroutine(asyncio.sleep(self.delay/2 + self.delay/10))
+        self.sink.assert_called_once()
+
+    def test_max_delay_default(self):
+        self.assertIsNone(self.dac.max_delay)
+
+    def test_max_delay_is_settable(self):
+        self.dac.max_delay = 0.1
+        self.assertEqual(self.dac.max_delay, 0.1)
+
+    def test_max_delay_limits_scheduling_of_multiple_calls(self):
+        self.dac.max_delay = self.delay * 1.2
+
+        self.dac("arg1")
+        run_coroutine(asyncio.sleep(self.delay/2))
+
+        self.dac("arg2")
+        run_coroutine(asyncio.sleep(self.delay/2))
+        self.sink.assert_not_called()
+
+        run_coroutine(asyncio.sleep(self.delay*2/10))
+        self.sink.assert_called_once()
+
+    def test_max_delay_limits_scheduling_of_several_calls(self):
+        self.dac.max_delay = self.delay * 2
+
+        for i in range(7):
+            self.dac("arg{}".format(i))
+            run_coroutine(asyncio.sleep(self.delay/4 - self.delay/70))
+            self.sink.assert_not_called()
+
+        run_coroutine(asyncio.sleep(self.delay/4 + self.delay/10))
+        self.sink.assert_called_once_with(
+            [
+                (("arg{}".format(i),), {})
+                for i in range(7)
+            ]
+        )
+
+    def test_arguments_are_purged_on_invocation(self):
+        self.dac("arg1")
+        run_coroutine(asyncio.sleep(self.delay*1.1))
+
+        self.sink.assert_called_once_with(
+            [(("arg1",), {})]
+        )
+        self.sink.reset_mock()
+
+        self.dac("arg2")
+        run_coroutine(asyncio.sleep(self.delay*1.1))
+
+        self.sink.assert_called_once_with(
+            [(("arg2",), {})]
+        )
+
+    def test_max_delay_can_be_passed_via_constructor(self):
+        dac = utils.DelayedInvocation(
+            self.sink,
+            self.delay,
+            max_delay=0.6,
+        )
+        self.assertEqual(dac.max_delay, 0.6)
+
+    def test_max_delay_can_be_set_to_None(self):
+        self.dac.max_delay = 0.1
+        self.dac.max_delay = None
+
+    def test_reject_max_delay_less_than_zero(self):
+        with self.assertRaisesRegex(
+                ValueError,
+                "must not be negative"):
+            self.dac.max_delay = -0.1
+
+    def test_reject_max_delay_less_than_zero_in_constructor(self):
+        with self.assertRaisesRegex(
+                ValueError,
+                "max_delay must not be negative"):
+            utils.DelayedInvocation(
+                self.sink,
+                self.delay,
+                max_delay=-0.1
+            )
+
+    def test_delay_can_not_be_set_to_None(self):
+        self.dac.delay = 0.1
+
+        with self.assertRaisesRegex(
+                ValueError,
+                "must not be None"):
+            self.dac.delay = None
+
+    def test_reject_None_delay_in_constructor(self):
+        with self.assertRaisesRegex(
+                ValueError,
+                "delay must not be None"):
+            utils.DelayedInvocation(
+                self.sink,
+                None,
+            )
+
+    def test_reject_delay_less_than_zero(self):
+        with self.assertRaisesRegex(
+                ValueError,
+                "must not be negative"):
+            self.dac.delay = -0.1
+
+    def test_reject_delay_less_than_zero_in_constructor(self):
+        with self.assertRaisesRegex(
+                ValueError,
+                "delay must not be negative"):
+            utils.DelayedInvocation(
+                self.sink,
+                -0.1,
+            )
