@@ -270,6 +270,57 @@ class ContactRosterItem(AbstractRosterItem):
         return True
 
 
+class SubscriptionRequestItem(AbstractRosterItem):
+    def __init__(self,
+                 account: jclib.identity.Account,
+                 owner: "AbstractRosterService",
+                 address: aioxmpp.JID,
+                 **kwargs):
+        super().__init__(account, owner, address, **kwargs)
+
+    @property
+    def label(self) -> str:
+        return str(self._address)
+
+    @property
+    def tags(self):
+        return ()
+
+    @property
+    def subscription(self) -> str:
+        return "none"
+
+    @property
+    def approved(self) -> bool:
+        return False
+
+    @property
+    def ask(self) -> bool:
+        return False
+
+    @property
+    def can_manage_tags(self) -> bool:
+        return False
+
+    @property
+    def can_set_label(self) -> bool:
+        return False
+
+    def create_conversation(
+            self,
+            client: aioxmpp.Client) -> aioxmpp.im.p2p.Conversation:
+        svc = client.summon(aioxmpp.im.p2p.Service)
+        return svc.get_conversation(self.address)
+
+    @classmethod
+    def from_stanza(cls, account, owner, stanza):
+        return cls(
+            account,
+            owner,
+            stanza.from_,
+        )
+
+
 def contacts_to_json(contacts, ver=None):
     def contact_to_json(contact):
         result = {
@@ -742,6 +793,94 @@ class ConferenceBookmarkService(AbstractRosterService):
         return self.__addrmap[peer]
 
 
+class SubscriptionRequestService(AbstractRosterService):
+    def __init__(self,
+                 account: jclib.identity.Account,
+                 writeman: jclib.storage.WriteManager):
+        super().__init__(account, writeman)
+        self.__tokens = []
+        self.__addrmap = {}
+        self._client = None
+        self._roster_svc = None
+
+    def __connect(self, signal, handler):
+        self.__tokens.append(
+            (signal, signal.connect(handler))
+        )
+
+    def __disconnect_all(self):
+        for signal, token in self.__tokens:
+            signal.disconnect(token)
+        self.__tokens.clear()
+
+    def prepare_client(self, client: aioxmpp.Client):
+        self._client = client
+        self._roster_svc = client.summon(aioxmpp.RosterClient)
+        self.__connect(self._roster_svc.on_subscribe, self._on_subscribe)
+        self.__connect(self._roster_svc.on_entry_added, self._on_entry_added)
+
+    def shutdown_client(self, client: aioxmpp.Client):
+        assert client is self._client
+        self.__disconnect_all()
+        self._client = None
+        self._roster_svc = None
+
+    def _on_subscribe(self, stanza):
+        new_item = SubscriptionRequestItem.from_stanza(
+            self._account,
+            self,
+            stanza
+        )
+
+        if new_item.address in self.__addrmap:
+            return
+
+        self.__addrmap[new_item.address] = new_item
+        self._backend.append(new_item)
+
+    def _on_entry_added(self, item):
+        try:
+            to_delete = self.__addrmap.pop(item.jid)
+        except KeyError:
+            return
+
+        self._backend.remove(to_delete)
+
+    @property
+    def is_writable(self):
+        return self._roster_svc is not None
+
+    def get_by_address(self, peer: aioxmpp.JID) -> SubscriptionRequestItem:
+        return self.__addrmap[peer]
+
+    def load(self):
+        pass
+
+    def save(self):
+        pass
+
+    @asyncio.coroutine
+    def set_label(self, item: SubscriptionRequestItem, new_label: str):
+        raise NotImplementedError
+
+    @asyncio.coroutine
+    def update_tags(self,
+                    item: SubscriptionRequestItem,
+                    add_tags: typing.Iterable[str],
+                    remove_tags: typing.Iterable[str]):
+        raise NotImplementedError
+
+    @asyncio.coroutine
+    def remove(self, item: SubscriptionRequestItem):
+        item = self.__addrmap.pop(item.address)
+        st = aioxmpp.Presence(
+            type_=aioxmpp.PresenceType.UNSUBSCRIBED,
+            to=item.address,
+        )
+        yield from self._client.send(st)
+        self._backend.remove(item)
+
+
 class RosterManager(
         jclib.instrumentable_list.ModelListView[AbstractRosterItem]):
     def __init__(self,
@@ -768,7 +907,8 @@ class RosterManager(
                         client: jclib.client.Client):
         svcs = []
         self._client_svc_map[client] = svcs
-        for class_ in [ContactRosterService, ConferenceBookmarkService]:
+        for class_ in [ContactRosterService, ConferenceBookmarkService,
+                       SubscriptionRequestService]:
             instance = class_(account, self._writeman)
             instance.on_tag_added.connect(self._on_tag_added)
             instance.on_tag_removed.connect(self._on_tag_removed)
