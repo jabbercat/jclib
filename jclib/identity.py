@@ -29,7 +29,8 @@ def generate_resource():
 class Account:
     def __init__(self, jid, colour):
         super().__init__()
-        self._jid = jid
+        self._jid = jid.bare()
+        self.resource = jid.resource
         self.enabled = True
         self.allow_unencrypted = False
         self.stashed_xml = []
@@ -37,17 +38,22 @@ class Account:
         self.client = None
 
     def autofill_resource(self):
-        if self._jid.resource is None:
-            self._jid = self._jid.replace(
-                resource=generate_resource()
-            )
+        if self.resource is None:
+            self.resource = generate_resource()
+
+    @property
+    def full_jid(self):
+        self.autofill_resource()
+        return self._jid.replace(resource=self.resource)
 
     @property
     def jid(self):
         return self._jid
 
     def to_xso(self):
-        result = jclib.xso.AccountSettings(self._jid)
+        result = jclib.xso.AccountSettings(self._jid.replace(
+            resource=self.resource
+        ))
         result.disabled = not self.enabled
         result.allow_unencrypted = self.allow_unencrypted
         result.colour = " ".join(map(str, self.colour))
@@ -103,7 +109,7 @@ class Accounts(jclib.config.SimpleConfigurable,
     def remove_account(self, account: Account):
         self.on_account_disabled(account)
         self.on_account_removed(account)
-        account = self._jidmap.pop(account.jid.bare())
+        account = self._jidmap.pop(account.jid)
         self._backend.remove(account)
 
     def set_account_enabled(self, account: Account, enabled: bool):
@@ -133,7 +139,7 @@ class Accounts(jclib.config.SimpleConfigurable,
             account = Account.from_xso(account_xso)
             self._backend.append(account)
             self.on_account_added(account)
-            self._jidmap[account.jid.bare()] = account
+            self._jidmap[account.jid] = account
             if account.enabled:
                 self.on_account_enabled(account)
 
