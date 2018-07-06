@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import functools
 import logging
 
@@ -48,6 +49,9 @@ class Client:
     def __init__(self, accounts: identity.Accounts, *, use_keyring=None):
         super().__init__()
         self._accounts = accounts
+        self._custom_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1,
+        )
         self.logger = logging.getLogger(
             type(self).__module__ + type(self).__qualname__
         )
@@ -69,7 +73,8 @@ class Client:
             raise PasswordStoreIsUnsafe()
 
         return (yield from self.loop.run_in_executor(
-            None,
+            self._custom_executor,
+            dbus_aware_keyring_wrapper,
             keyring.get_password,
             utils.KEYRING_SERVICE_NAME,
             utils.KEYRING_JID_FORMAT.format(
@@ -85,7 +90,8 @@ class Client:
         if password is None:
             try:
                 yield from self.loop.run_in_executor(
-                    None,
+                    self._custom_executor,
+                    dbus_aware_keyring_wrapper,
                     keyring.delete_password,
                     utils.KEYRING_SERVICE_NAME,
                     utils.KEYRING_JID_FORMAT.format(
@@ -96,7 +102,8 @@ class Client:
                 pass
         else:
             yield from self.loop.run_in_executor(
-                None,
+                self._custom_executor,
+                dbus_aware_keyring_wrapper,
                 keyring.set_password,
                 utils.KEYRING_SERVICE_NAME,
                 utils.KEYRING_JID_FORMAT.format(
