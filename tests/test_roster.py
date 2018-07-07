@@ -664,6 +664,47 @@ class Testcontacts_to_json(unittest.TestCase):
         self.assertEqual(aioxmpp_roster.version, "fnord")
 
 
+class TestSubscriptionRequestItem(unittest.TestCase):
+    def test_from_stanza(self):
+        st = aioxmpp.Presence(
+            type_=aioxmpp.PresenceType.SUBSCRIBE,
+            from_=TEST_JID1.bare(),
+        )
+
+        item = roster.SubscriptionRequestItem.from_stanza(
+            unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
+            st,
+        )
+
+        self.assertEqual(item.account, unittest.mock.sentinel.account)
+        self.assertEqual(item.owner, unittest.mock.sentinel.owner)
+        self.assertEqual(item.address, TEST_JID1.bare())
+
+        self.assertFalse(item.can_manage_tags)
+        self.assertFalse(item.can_set_label)
+
+    def test_create_conversation_uses_p2p_service(self):
+        client = unittest.mock.Mock()
+        item = roster.SubscriptionRequestItem(
+            unittest.mock.sentinel.account,
+            unittest.mock.sentinel.owner,
+            TEST_JID1,
+        )
+
+        result = item.create_conversation(client)
+
+        client.summon.assert_called_once_with(
+            aioxmpp.im.p2p.Service,
+        )
+
+        client.summon().get_conversation.assert_called_once_with(
+            item.address,
+        )
+
+        self.assertEqual(result, client.summon().get_conversation())
+
+
 class TestContactRosterService(unittest.TestCase):
     def setUp(self):
         self.account = unittest.mock.Mock(["jid"])
@@ -1521,6 +1562,410 @@ class TestConferenceBookmarkService(unittest.TestCase):
         self.writeman.request_writeback.assert_called_once_with()
 
 
+class TestSubscriptionRequestService(unittest.TestCase):
+    def setUp(self):
+        self.account = unittest.mock.Mock(["jid"])
+        self.roster = unittest.mock.Mock(
+            spec=aioxmpp.RosterClient,
+        )
+        self.writeman = unittest.mock.Mock(spec=jclib.storage.WriteManager)
+        self.rs = roster.SubscriptionRequestService(self.account, self.writeman)
+        self.listener = make_listener(self.rs)
+
+    def _prep_client(self):
+        client = make_connected_client()
+        client.send = CoroutineMock()
+        client.mock_services[aioxmpp.RosterClient] = self.roster
+        return client
+
+    def test_not_writable_by_default(self):
+        self.assertFalse(self.rs.is_writable)
+
+    def test_prepare_client_summons_roster_and_connects_signals(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        self.roster.on_subscribe.connect.assert_called_once_with(
+            self.rs._on_subscribe,
+        )
+
+        self.roster.on_entry_added.connect\
+            .assert_called_once_with(
+                self.rs._on_entry_updated,
+            )
+
+        self.roster.on_entry_subscription_state_changed.connect\
+            .assert_called_once_with(
+                self.rs._on_entry_updated,
+            )
+
+    def test_prepare_client_makes_service_writable(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        self.assertTrue(self.rs.is_writable)
+
+    def test_shutdown_client_disconnects_signals(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+        self.rs.shutdown_client(client)
+
+        self.roster.on_subscribe.disconnect.assert_called_once_with(
+            self.roster.on_subscribe.connect(),
+        )
+
+        self.roster.on_entry_added.disconnect.assert_called_once_with(
+            self.roster.on_entry_added.connect(),
+        )
+
+        self.roster.on_entry_subscription_state_changed.disconnect\
+            .assert_called_once_with(
+                self.roster.on_entry_subscription_state_changed.connect(),
+            )
+
+    def test_shutdown_makes_service_non_writable(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+        self.rs.shutdown_client(client)
+
+        self.assertFalse(self.rs.is_writable)
+
+    def test__on_subscribe_creates_item(self):
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        from_stanza.assert_called_once_with(
+            self.account,
+            self.rs,
+            unittest.mock.sentinel.stanza,
+        )
+
+        self.assertEqual(len(self.rs), 1)
+        self.assertEqual(self.rs[0], from_stanza())
+
+    def test__on_subscribe_eliminates_duplicates(self):
+        items = [
+            roster.SubscriptionRequestItem(
+                unittest.mock.sentinel.account,
+                unittest.mock.sentinel.owner,
+                TEST_JID1,
+            ),
+            roster.SubscriptionRequestItem(
+                unittest.mock.sentinel.account,
+                unittest.mock.sentinel.owner,
+                TEST_JID2,
+            ),
+            roster.SubscriptionRequestItem(
+                unittest.mock.sentinel.account,
+                unittest.mock.sentinel.owner,
+                TEST_JID1,
+            )
+        ]
+
+        def generate_items():
+            yield from items
+
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.side_effect = generate_items()
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        self.assertEqual(len(self.rs), 2)
+        self.assertIs(self.rs[0], items[0])
+        self.assertIs(self.rs[1], items[1])
+
+    def test__on_entry_updated_does_nothing_for_unknown_jid(self):
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = unittest.mock.sentinel.jid1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        aioxmpp_roster_item = unittest.mock.Mock(["jid"])
+        aioxmpp_roster_item.jid = unittest.mock.sentinel.jid2
+        aioxmpp_roster_item.subscription = "both"
+
+        self.rs._on_entry_updated(aioxmpp_roster_item)
+
+        self.assertEqual(len(self.rs), 1)
+        self.assertEqual(self.rs[0], from_stanza())
+
+    def test__on_entry_updated_does_nothing_for_subscription_none(self):
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = unittest.mock.sentinel.jid1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        aioxmpp_roster_item = unittest.mock.Mock(["jid"])
+        aioxmpp_roster_item.jid = unittest.mock.sentinel.jid1
+        aioxmpp_roster_item.subscription = "none"
+
+        self.rs._on_entry_updated(aioxmpp_roster_item)
+
+        self.assertEqual(len(self.rs), 1)
+        self.assertEqual(self.rs[0], from_stanza())
+
+    def test__on_entry_updated_does_nothing_for_subscription_to(self):
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = unittest.mock.sentinel.jid1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        aioxmpp_roster_item = unittest.mock.Mock(["jid"])
+        aioxmpp_roster_item.jid = unittest.mock.sentinel.jid1
+        aioxmpp_roster_item.subscription = "to"
+
+        self.rs._on_entry_updated(aioxmpp_roster_item)
+
+        self.assertEqual(len(self.rs), 1)
+        self.assertEqual(self.rs[0], from_stanza())
+
+    def test__on_entry_updated_removes_entry_for_subscription_from(self):
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = unittest.mock.sentinel.jid1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        aioxmpp_roster_item = unittest.mock.Mock(["jid"])
+        aioxmpp_roster_item.jid = unittest.mock.sentinel.jid1
+        aioxmpp_roster_item.subscription = "from"
+
+        self.rs._on_entry_updated(aioxmpp_roster_item)
+
+        self.assertEqual(len(self.rs), 0)
+
+    def test__on_entry_updated_removes_entry_for_subscription_both(self):
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = unittest.mock.sentinel.jid1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        aioxmpp_roster_item = unittest.mock.Mock(["jid"])
+        aioxmpp_roster_item.jid = unittest.mock.sentinel.jid1
+        aioxmpp_roster_item.subscription = "both"
+
+        self.rs._on_entry_updated(aioxmpp_roster_item)
+
+        self.assertEqual(len(self.rs), 0)
+
+    def test_get_by_address_returns_item(self):
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = unittest.mock.sentinel.jid
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        self.assertEqual(
+            self.rs.get_by_address(unittest.mock.sentinel.jid),
+            from_stanza(),
+        )
+
+    def test_set_label_raises_NotImplementedError(self):
+        with self.assertRaises(NotImplementedError):
+            run_coroutine(self.rs.set_label(unittest.mock.sentinel.item,
+                                            unittest.mock.sentinel.label))
+
+    def test_update_tags_raises_NotImplementedError(self):
+        with self.assertRaises(NotImplementedError):
+            run_coroutine(self.rs.update_tags(
+                unittest.mock.sentinel.item,
+                unittest.mock.sentinel.add_tags,
+                unittest.mock.sentinel.remove_tags,
+            ))
+
+    def test_remove_sends_unsubscribed(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = TEST_JID1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        run_coroutine(self.rs.remove(from_stanza.return_value))
+
+        client.send.assert_called_once_with(unittest.mock.ANY)
+
+        _, (st, ), _ = client.send.mock_calls[-1]
+
+        self.assertIsInstance(st, aioxmpp.Presence)
+        self.assertEqual(st.type_, aioxmpp.PresenceType.UNSUBSCRIBED)
+        self.assertEqual(st.to, TEST_JID1)
+
+    def test_remove_removes_item(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = TEST_JID1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        run_coroutine(self.rs.remove(from_stanza.return_value))
+
+        self.assertEqual(len(self.rs), 0)
+
+        with self.assertRaises(KeyError):
+            self.rs.get_by_address(TEST_JID1)
+
+    def test_remove_removes_item_after_send(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = TEST_JID1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        def check(*args, **kwargs):
+            self.assertEqual(len(self.rs), 1)
+
+        client.send.side_effect = check
+
+        run_coroutine(self.rs.remove(from_stanza.return_value))
+
+    def test_approve_does_not_remove_item(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = TEST_JID1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        run_coroutine(self.rs.approve(from_stanza.return_value))
+
+        self.assertEqual(len(self.rs), 1)
+
+        self.assertEqual(self.rs.get_by_address(TEST_JID1), from_stanza())
+
+    def test_approve_sends_subscribed_if_not_subscribe(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = TEST_JID1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        run_coroutine(self.rs.approve(from_stanza.return_value, False))
+
+        client.send.assert_called_once_with(unittest.mock.ANY)
+
+        _, (st, ), _ = client.send.mock_calls[-1]
+
+        self.assertIsInstance(st, aioxmpp.Presence)
+        self.assertEqual(st.type_, aioxmpp.PresenceType.SUBSCRIBED)
+        self.assertEqual(st.to, TEST_JID1)
+
+    def test_approve_enqueues_subscribed_and_sends_subcsribe_if_subscribe(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = TEST_JID1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        run_coroutine(self.rs.approve(from_stanza.return_value))
+
+        client.send.assert_called_once_with(unittest.mock.ANY)
+
+        _, (st, ), _ = client.send.mock_calls[-1]
+
+        self.assertIsInstance(st, aioxmpp.Presence)
+        self.assertEqual(st.type_, aioxmpp.PresenceType.SUBSCRIBE)
+        self.assertEqual(st.to, TEST_JID1)
+
+        client.enqueue.assert_called_once_with(unittest.mock.ANY)
+
+        _, (st, ), _ = client.enqueue.mock_calls[-1]
+
+        self.assertIsInstance(st, aioxmpp.Presence)
+        self.assertEqual(st.type_, aioxmpp.PresenceType.SUBSCRIBED)
+        self.assertEqual(st.to, TEST_JID1)
+
+    def test_approve_calls_enqueue_before_send_if_subscribe(self):
+        client = self._prep_client()
+        self.rs.prepare_client(client)
+
+        with contextlib.ExitStack() as stack:
+            from_stanza = stack.enter_context(
+                unittest.mock.patch.object(roster.SubscriptionRequestItem,
+                                           "from_stanza")
+            )
+            from_stanza.return_value.address = TEST_JID1
+
+            self.rs._on_subscribe(unittest.mock.sentinel.stanza)
+
+        def check_send(*args, **kwargs):
+            client.send.assert_not_called()
+
+        client.enqueue.side_effect = check_send
+
+        run_coroutine(self.rs.approve(from_stanza.return_value))
+
+        client.send.assert_called_once_with(unittest.mock.ANY)
+        client.enqueue.assert_called_once_with(unittest.mock.ANY)
+
+
 class TestRosterManager(unittest.TestCase):
     def setUp(self):
         self.accounts = unittest.mock.Mock(spec=jclib.identity.Accounts)
@@ -1573,7 +2018,7 @@ class TestRosterManager(unittest.TestCase):
             _items.mock_calls,
         )
 
-    def test__prepare_client_creates_bookmark_service_and_links_it(self):
+    def test__prepare_client_creates_subscription_service_and_links_it(self):
         client = unittest.mock.Mock(spec=aioxmpp.Client)
         account = unittest.mock.Mock(spec=jclib.identity.Account)
 
@@ -1608,6 +2053,41 @@ class TestRosterManager(unittest.TestCase):
             _items.mock_calls,
         )
 
+    def test__prepare_client_creates_bookmark_service_and_links_it(self):
+        client = unittest.mock.Mock(spec=aioxmpp.Client)
+        account = unittest.mock.Mock(spec=jclib.identity.Account)
+
+        with contextlib.ExitStack() as stack:
+            SubscriptionRequestService = stack.enter_context(
+                unittest.mock.patch("jclib.roster.SubscriptionRequestService")
+            )
+
+            _items = stack.enter_context(
+                unittest.mock.patch.object(self.gr, "_backend")
+            )
+
+            self.gr._prepare_client(account, client)
+
+        self.assertSequenceEqual(
+            SubscriptionRequestService.mock_calls,
+            [
+                unittest.mock.call(account, self.writeman),
+                unittest.mock.call().on_tag_added.connect(
+                    self.gr._on_tag_added,
+                ),
+                unittest.mock.call().on_tag_removed.connect(
+                    self.gr._on_tag_removed,
+                ),
+                unittest.mock.call().load(),
+                unittest.mock.call().prepare_client(client),
+            ]
+        )
+
+        self.assertIn(
+            unittest.mock.call.append_source(SubscriptionRequestService()),
+            _items.mock_calls,
+        )
+
     def test__shutdown_client_cleans_up_previously_created_services(self):
         client = unittest.mock.Mock(spec=aioxmpp.Client)
         account = unittest.mock.Mock(spec=jclib.identity.Account)
@@ -1619,6 +2099,10 @@ class TestRosterManager(unittest.TestCase):
 
             ConferenceBookmarkService = stack.enter_context(
                 unittest.mock.patch("jclib.roster.ConferenceBookmarkService")
+            )
+
+            SubscriptionRequestService = stack.enter_context(
+                unittest.mock.patch("jclib.roster.SubscriptionRequestService")
             )
 
             _items = stack.enter_context(
@@ -1633,6 +2117,9 @@ class TestRosterManager(unittest.TestCase):
         ConferenceBookmarkService().shutdown_client.assert_called_once_with(
             client
         )
+        SubscriptionRequestService().shutdown_client.assert_called_once_with(
+            client
+        )
 
         self.assertIn(
             unittest.mock.call.remove_source(ContactRosterService()),
@@ -1641,6 +2128,11 @@ class TestRosterManager(unittest.TestCase):
 
         self.assertIn(
             unittest.mock.call.remove_source(ConferenceBookmarkService()),
+            _items.mock_calls,
+        )
+
+        self.assertIn(
+            unittest.mock.call.remove_source(SubscriptionRequestService()),
             _items.mock_calls,
         )
 

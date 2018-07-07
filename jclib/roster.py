@@ -817,7 +817,9 @@ class SubscriptionRequestService(AbstractRosterService):
         self._client = client
         self._roster_svc = client.summon(aioxmpp.RosterClient)
         self.__connect(self._roster_svc.on_subscribe, self._on_subscribe)
-        self.__connect(self._roster_svc.on_entry_added, self._on_entry_added)
+        self.__connect(self._roster_svc.on_entry_added, self._on_entry_updated)
+        self.__connect(self._roster_svc.on_entry_subscription_state_changed,
+                       self._on_entry_updated)
 
     def shutdown_client(self, client: aioxmpp.Client):
         assert client is self._client
@@ -838,7 +840,10 @@ class SubscriptionRequestService(AbstractRosterService):
         self.__addrmap[new_item.address] = new_item
         self._backend.append(new_item)
 
-    def _on_entry_added(self, item):
+    def _on_entry_updated(self, item):
+        if item.subscription != "from" and item.subscription != "both":
+            return
+
         try:
             to_delete = self.__addrmap.pop(item.jid)
         except KeyError:
@@ -880,6 +885,28 @@ class SubscriptionRequestService(AbstractRosterService):
         yield from self._client.send(st)
         self._backend.remove(item)
 
+    @asyncio.coroutine
+    def approve(self, item: SubscriptionRequestItem, subscribe: bool = True):
+        # note: we don’t remove the item here because we anticipate a
+        # on_entry_added or on_entry_changed event for the relevant roster item,
+        # otherwise it hasn’t worked
+
+        st_subscribed = aioxmpp.Presence(
+            type_=aioxmpp.PresenceType.SUBSCRIBED,
+            to=item.address,
+        )
+
+        if subscribe:
+            st_subscribe = aioxmpp.Presence(
+                type_=aioxmpp.PresenceType.SUBSCRIBE,
+                to=item.address,
+            )
+
+            self._client.enqueue(st_subscribed)
+            yield from self._client.send(st_subscribe)
+        else:
+            yield from self._client.send(st_subscribed)
+
 
 class RosterManager(
         jclib.instrumentable_list.ModelListView[AbstractRosterItem]):
@@ -907,7 +934,8 @@ class RosterManager(
                         client: jclib.client.Client):
         svcs = []
         self._client_svc_map[client] = svcs
-        for class_ in [ContactRosterService, ConferenceBookmarkService,
+        for class_ in [ContactRosterService,
+                       ConferenceBookmarkService,
                        SubscriptionRequestService]:
             instance = class_(account, self._writeman)
             instance.on_tag_added.connect(self._on_tag_added)
