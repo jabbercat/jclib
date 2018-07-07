@@ -313,7 +313,7 @@ class MessageManager:
             state.read_markers[account, conversation.jid] = argv
 
             if member.is_self:
-                self.set_read_up_to(account.jid,
+                self.set_read_up_to(account,
                                     conversation.jid,
                                     marked_message_uid)
 
