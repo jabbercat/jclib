@@ -122,7 +122,7 @@ class TaskManager:
         """
         return self._tasks[asyncio_task]
 
-    def current(self) -> typing.Union[AnnotatedTask, None]:
+    def current(self) -> typing.Optional[AnnotatedTask]:
         """
         Return the currently running :class:`AnnotatedTask`.
 
