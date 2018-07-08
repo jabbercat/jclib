@@ -7,7 +7,7 @@ import keyring
 
 import aioxmpp
 
-from . import identity, utils, instrumentable_list
+from . import identity, utils, instrumentable_list, tasks
 
 
 class PasswordStoreIsUnsafe(RuntimeError):
@@ -120,6 +120,42 @@ class Client:
                 return result
         return None
 
+    @asyncio.coroutine
+    def _client_suspended(self, client):
+        tasks.manager.update_text("Reconnecting {}".format(
+            client.local_jid.bare()
+        ))
+        fut = asyncio.Future()
+        client.on_stream_established.connect(
+            fut,
+            client.on_stream_established.AUTO_FUTURE
+        )
+        client.on_failure.connect(
+            fut,
+            client.on_failure.AUTO_FUTURE,
+        )
+        yield from fut
+
+    @asyncio.coroutine
+    def _client_connecting(self, client):
+        tasks.manager.update_text("Connecting to {}".format(
+            client.local_jid.bare()
+        ))
+        fut = asyncio.Future()
+        client.on_stream_established.connect(
+            fut,
+            client.on_stream_established.AUTO_FUTURE
+        )
+        client.on_stream_suspended.connect(
+            fut,
+            client.on_stream_suspended.AUTO_FUTURE
+        )
+        client.on_failure.connect(
+            fut,
+            client.on_failure.AUTO_FUTURE,
+        )
+        yield from fut
+
     def _new_client(self, account: identity.Account):
         assert account.client is None
 
@@ -140,6 +176,7 @@ class Client:
         result.summon(aioxmpp.im.p2p.Service)
         account.client = result
         self.on_client_prepare(account, result)
+        tasks.manager.start(self._client_connecting(result))
         return result
 
     def on_account_enabled(self, account: identity.Account):
@@ -172,6 +209,8 @@ class Client:
 
     def on_stream_suspended(self, account):
         self.logger.info("stream suspended for account %r", account)
+        client = account.client
+        tasks.manager.start(self._client_suspended(client))
 
     def on_stream_destroyed(self, account):
         self.logger.info("stream destroyed for account %r", account)
