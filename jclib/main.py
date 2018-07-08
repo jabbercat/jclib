@@ -156,6 +156,9 @@ class Main:
             jclib.metadata.presence_metadata_provider(self.client)
         )
         self.metadata.register_provider(
+            jclib.metadata.service_metadata_provider(self.client)
+        )
+        self.metadata.register_provider(
             jclib.roster.RosterMetadataProvider(self.roster)
         )
         self.metadata.changed_signal(

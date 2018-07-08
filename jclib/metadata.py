@@ -7,6 +7,8 @@ import typing
 import aioxmpp
 import aioxmpp.cache
 
+from aioxmpp.utils import namespaces
+
 import jclib.client
 import jclib.identity
 
@@ -77,6 +79,10 @@ class Tempfail(KeyError):
 
 class PresenceMetadata(enum.Enum):
     STANZA = 'stanza'
+
+
+class ServiceMetadata(enum.Enum):
+    HTTP_UPLOAD_ADDRESS = 'http-upload'
 
 
 class AbstractMetadataProviderService(metaclass=abc.ABCMeta):
@@ -150,6 +156,46 @@ class PresenceMetadataProviderService(AbstractMetadataProviderService,
             return None
 
         return stanza
+
+
+class ServiceMetadataProviderService(AbstractMetadataProviderService,
+                                     aioxmpp.service.Service):
+    ORDER_AFTER = [
+        jclib.client.Discovery,
+    ]
+
+    PUBLISHED_KEYS = ServiceMetadata
+
+    def __init__(self, client, **kwargs):
+        super().__init__(client, **kwargs)
+        self._svc = self.dependencies[jclib.client.Discovery]
+
+    @aioxmpp.service.depsignal(jclib.client.Discovery, "on_updated")
+    def _on_updated(self):
+        for k in self.PUBLISHED_KEYS:
+            self.on_changed(k, None, self.get(k, None))
+
+    @asyncio.coroutine
+    def fetch(self, key: ServiceMetadata, peer: aioxmpp.JID):
+        if peer is not None:
+            raise ValueError("service metadata not available for peers")
+
+        if key == ServiceMetadata.HTTP_UPLOAD_ADDRESS:
+            return (yield from self._svc.fetch_any_service(
+                [namespaces.xep0363_http_upload]
+            ))
+
+    def get(self, key: ServiceMetadata, peer: aioxmpp.JID):
+        if peer is not None:
+            raise ValueError("service metadata not available for peers")
+
+        try:
+            if key == ServiceMetadata.HTTP_UPLOAD_ADDRESS:
+                return self._svc.get_any_service(
+                    [namespaces.xep0363_http_upload]
+                )
+        except RuntimeError:
+            pass
 
 
 class AbstractMetadataProvider(metaclass=abc.ABCMeta):
@@ -343,6 +389,10 @@ class LRUMetadataProvider(ServiceMetadataProvider):
 
 def presence_metadata_provider(client: jclib.client.Client):
     return ServiceMetadataProvider(PresenceMetadataProviderService, client)
+
+
+def service_metadata_provider(client: jclib.client.Client):
+    return ServiceMetadataProvider(ServiceMetadataProviderService, client)
 
 
 class MetadataFrontend:

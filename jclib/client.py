@@ -42,6 +42,88 @@ class RosterGroups(aioxmpp.service.Service):
         self.groups.remove(group)
 
 
+class Discovery(aioxmpp.service.Service):
+    ORDER_AFTER = [aioxmpp.DiscoClient]
+
+    on_updated = aioxmpp.callbacks.Signal()
+
+    def __init__(self, client, **kwargs):
+        super().__init__(client, **kwargs)
+        self.feature_map = {}
+        self._feature_map_ready = asyncio.Event()
+        self._disco_svc = self.dependencies[aioxmpp.DiscoClient]
+
+    @aioxmpp.service.depsignal(aioxmpp.Client, "on_stream_destroyed")
+    def _stream_destroyed(self):
+        self._feature_map_ready.clear()
+        self.feature_map.clear()
+
+    @asyncio.coroutine
+    def _merge_features(self, service_address: aioxmpp.JID):
+        self.logger.debug("obtaining features of %s", service_address)
+        info = yield from self._disco_svc.query_info(service_address)
+
+        for feature in info.features:
+            try:
+                services = self.feature_map[feature]
+            except KeyError:
+                services = self.feature_map[feature] = set()
+            services.add(service_address)
+
+    @asyncio.coroutine
+    def _discover_items(self, service_address: aioxmpp.JID):
+        self.logger.debug("obtaining services of %s", service_address)
+        items = yield from self._disco_svc.query_items(service_address)
+
+        tasks = []
+        tasks.append(self._merge_features(service_address))
+        for item in items.items:
+            if item.node:
+                continue
+
+            self.logger.debug
+            tasks.append(self._merge_features(item.jid))
+
+        yield from asyncio.gather(*tasks)
+
+    @aioxmpp.service.depsignal(aioxmpp.Client, "on_stream_established",
+                               defer=True)
+    @asyncio.coroutine
+    def _stream_established(self):
+        server_address = self.client.local_jid.replace(
+            localpart=None,
+            resource=None,
+        )
+        self.logger.info("discovering services offered by %s",
+                         server_address)
+        yield from self._discover_items(server_address)
+        self.logger.info("discovered %d features", len(self.feature_map))
+        self.logger.debug("feature_map = %r", self.feature_map)
+        self._feature_map_ready.set()
+        self.on_updated()
+
+    @asyncio.coroutine
+    def find_any_service(self, features):
+        yield from self._feature_map_ready.wait()
+        return self.get_any_service(features)
+
+    def get_any_service(self, features):
+        if not self._feature_map_ready.is_set():
+            raise RuntimeError("feature information not available")
+
+        feature_iter = iter(features)
+        services = frozenset(self.feature_map[next(feature_iter)])
+        for feature in feature_iter:
+            if not services:
+                break
+            services = services & self.feature_map[feature]
+
+        if services:
+            return next(iter(services))
+
+        return None
+
+
 class Client:
     on_client_prepare = aioxmpp.callbacks.Signal()
     on_client_stopped = aioxmpp.callbacks.Signal()
@@ -173,6 +255,7 @@ class Client:
         result.summon(aioxmpp.PresenceClient)
         result.summon(aioxmpp.RosterClient)
         result.summon(RosterGroups)
+        result.summon(Discovery)
         result.summon(aioxmpp.im.p2p.Service)
         account.client = result
         self.on_client_prepare(account, result)
