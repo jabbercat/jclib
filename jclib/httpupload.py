@@ -16,7 +16,6 @@ import jclib.tasks
 logger = logging.getLogger(__name__)
 
 
-@aiohttp.streamer
 def stream_file_with_status(
         writer,
         annotation,
@@ -33,6 +32,13 @@ def stream_file_with_status(
         yield from writer.write(data)
         ctr += len(data)
         annotation.progress_ratio = ctr / size
+
+
+try:
+    stream_file_with_status = aiohttp.streamer(stream_file_with_status)
+except AttributeError:
+    # not supported by this version of aiohttp
+    stream_file_with_status = None
 
 
 async def guess_mime_type(path: pathlib.Path):
@@ -108,7 +114,7 @@ async def upload_file(client: aioxmpp.Client,
 
     task_annotation = jclib.tasks.manager.current()
     with path.open("rb") as file_:
-        if task_annotation is not None:
+        if task_annotation is not None and stream_file_with_status is not None:
             data = stream_file_with_status(
                 annotation=task_annotation,
                 file_object=file_,
