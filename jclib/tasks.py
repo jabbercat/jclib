@@ -1,8 +1,12 @@
 import asyncio
 import functools
+import logging
 import typing
 
 import aioxmpp.callbacks
+
+
+logger = logging.getLogger(__name__)
 
 
 class AnnotatedTask:
@@ -71,6 +75,11 @@ class TaskManager:
         self._tasks = {}
 
     def _task_done(self, task):
+        try:
+            task.result()
+        except:
+            logger.warning("task crashed:", exc_info=True)
+
         del self._tasks[task]
 
     def _on_task_changed(self, annotated):
