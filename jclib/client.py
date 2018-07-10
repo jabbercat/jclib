@@ -296,7 +296,7 @@ class Client:
         client = account.client
         tasks.manager.start(self._client_suspended(client))
 
-    def on_stream_destroyed(self, account, reason=None)
+    def on_stream_destroyed(self, account, reason=None):
         self.logger.info("stream destroyed for account %r (reason: %s)", account, reason)
 
     def on_stopped(self, account, exc=None):
