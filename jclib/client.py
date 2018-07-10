@@ -291,13 +291,13 @@ class Client:
     def on_stream_established(self, account):
         self.logger.info("stream established for account %r", account)
 
-    def on_stream_suspended(self, account):
-        self.logger.info("stream suspended for account %r", account)
+    def on_stream_suspended(self, account, reason):
+        self.logger.info("stream suspended for account %r (reason: %s)", account, reason)
         client = account.client
         tasks.manager.start(self._client_suspended(client))
 
-    def on_stream_destroyed(self, account):
-        self.logger.info("stream destroyed for account %r", account)
+    def on_stream_destroyed(self, account, reason=None)
+        self.logger.info("stream destroyed for account %r (reason: %s)", account, reason)
 
     def on_stopped(self, account, exc=None):
         self.logger.info("client stopped for account %r", account)
