@@ -112,11 +112,11 @@ class Discovery(aioxmpp.service.Service):
             raise RuntimeError("feature information not available")
 
         feature_iter = iter(features)
-        services = frozenset(self.feature_map[next(feature_iter)])
+        services = frozenset(self.feature_map.get(next(feature_iter), set()))
         for feature in feature_iter:
             if not services:
                 break
-            services = services & self.feature_map[feature]
+            services = services & self.feature_map.get(feature, set())
 
         if services:
             return next(iter(services))
