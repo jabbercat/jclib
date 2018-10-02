@@ -149,10 +149,10 @@ def get_member_display_name(
 
 def get_member_colour_input(
         member: aioxmpp.im.conversation.AbstractConversationMember):
-    if hasattr(member, "nick") and member.nick is not None:
-        return member.nick
     if member.direct_jid:
         return str(member.direct_jid.bare())
+    if hasattr(member, "nick") and member.nick is not None:
+        return member.nick
     return member.conversation_jid
 
 
