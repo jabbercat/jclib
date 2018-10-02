@@ -17,6 +17,8 @@ import xml.sax.handler
 
 import xdg.BaseDirectory
 
+import hsluv
+
 import aioxmpp.errors
 import aioxmpp.xml
 import aioxmpp.xso
@@ -402,9 +404,10 @@ def text_to_colour(text):
     # r, g, b, _ = hsva_to_rgba(h, s, v, 1)
     # return r, g, b
 
-    cb, cr = angle_to_cbcr_edge(hue * math.pi * 2)
-    r, g, b = ycbcr_to_rgb(0.5, cb, cr)
-    print(text, cb, cr, r, g, b)
+    # cb, cr = angle_to_cbcr_edge(hue * math.pi * 2)
+    # r, g, b = ycbcr_to_rgb(0.5, cb, cr)
+    r, g, b = hsluv.hsluv_to_rgb((hue * 360, 100, 50))
+    # print(text, cb, cr, r, g, b)
     r, g, b = clip_rgb(r, g, b)
     r *= 0.8
     g *= 0.8
