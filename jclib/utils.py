@@ -42,6 +42,10 @@ KEYRING_JID_FORMAT = "xmpp:{bare!s}"
 logger = logging.getLogger(__name__)
 
 
+if not hasattr(asyncio, "ensure_future"):
+    asyncio.ensure_future = getattr(asyncio, "async")
+
+
 def is_write_mode(mode):
     if not mode.startswith("r") or "+" in mode:
         return True
@@ -207,7 +211,7 @@ def logged_async(coro, *, loop=None, name=None):
     function, that is, the task which was created, is used.
     """
     loop = asyncio.get_event_loop() if loop is None else loop
-    task = asyncio.async(coro, loop=loop)
+    task = asyncio.ensure_future(coro, loop=loop)
     task.add_done_callback(functools.partial(
         _logged_task_done,
         name=name or task))
