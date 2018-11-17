@@ -31,4 +31,7 @@ setup(
     ],
     keywords="asyncio xmpp client aioxmpp",
     packages=find_packages(exclude=["tests"]),
+    install_requires=[
+        "hsluv~=0.0.2"
+    ]
 )
