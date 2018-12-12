@@ -15,14 +15,24 @@ class PasswordStoreIsUnsafe(RuntimeError):
 
 
 def dbus_aware_keyring_wrapper(method, *args):
-    try:
-        import dbus
-    except ImportError:
-        # nothing to do!
-        pass
+    import secretstorage
+    if secretstorage.__version_tuple__ >= (3, 0, 0):
+        # uses a different dbus backend, we don’t need this, but instead
+        # have to actually create an asyncio event loop here.
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
     else:
-        import dbus.mainloop.glib
-        dbus.set_default_main_loop(dbus.mainloop.glib.DBusGMainLoop())
+        try:
+            import dbus
+        except ImportError:
+            # nothing to do!
+            pass
+        else:
+            import dbus.mainloop.glib
+            dbus.set_default_main_loop(dbus.mainloop.glib.DBusGMainLoop())
+
     return method(*args)
 
 
